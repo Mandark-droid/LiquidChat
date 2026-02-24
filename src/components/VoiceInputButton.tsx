@@ -14,15 +14,89 @@ import { theme } from '../config/theme';
 interface VoiceInputButtonProps {
   sttModel: string;
   disabled?: boolean;
+  speaking?: boolean;
   onTranscription: (text: string) => void;
   onError?: (message: string) => void;
+  onRecordingStart?: () => void;
+  onRecordingEnd?: () => void;
 }
+
+function SpeakingBars() {
+  const bar1 = useRef(new Animated.Value(0.4)).current;
+  const bar2 = useRef(new Animated.Value(0.6)).current;
+  const bar3 = useRef(new Animated.Value(0.3)).current;
+
+  useEffect(() => {
+    const animate = (anim: Animated.Value, delay: number) =>
+      Animated.loop(
+        Animated.sequence([
+          Animated.delay(delay),
+          Animated.timing(anim, {
+            toValue: 1,
+            duration: 300,
+            useNativeDriver: true,
+          }),
+          Animated.timing(anim, {
+            toValue: 0.3,
+            duration: 300,
+            useNativeDriver: true,
+          }),
+        ]),
+      );
+
+    const a1 = animate(bar1, 0);
+    const a2 = animate(bar2, 100);
+    const a3 = animate(bar3, 200);
+    a1.start();
+    a2.start();
+    a3.start();
+
+    return () => {
+      a1.stop();
+      a2.stop();
+      a3.stop();
+    };
+  }, []);
+
+  return (
+    <View style={speakingStyles.container}>
+      {[bar1, bar2, bar3].map((anim, i) => (
+        <Animated.View
+          key={i}
+          style={[
+            speakingStyles.bar,
+            { transform: [{ scaleY: anim }] },
+          ]}
+        />
+      ))}
+    </View>
+  );
+}
+
+const speakingStyles = StyleSheet.create({
+  container: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 3,
+    height: 18,
+  },
+  bar: {
+    width: 3,
+    height: 14,
+    borderRadius: 1.5,
+    backgroundColor: theme.colors.accent,
+  },
+});
 
 export default function VoiceInputButton({
   sttModel,
   disabled,
+  speaking,
   onTranscription,
   onError,
+  onRecordingStart,
+  onRecordingEnd,
 }: VoiceInputButtonProps) {
   const {
     state,
@@ -37,19 +111,31 @@ export default function VoiceInputButton({
     onError,
   });
 
-  const pulseAnim = useRef(new Animated.Value(1)).current;
+  const scaleAnim = useRef(new Animated.Value(1)).current;
+  const prevStateRef = useRef<VoiceInputState>(state);
+
+  useEffect(() => {
+    // Fire callbacks on state transitions
+    if (state === 'recording' && prevStateRef.current !== 'recording') {
+      onRecordingStart?.();
+    }
+    if (state !== 'recording' && prevStateRef.current === 'recording') {
+      onRecordingEnd?.();
+    }
+    prevStateRef.current = state;
+  }, [state]);
 
   useEffect(() => {
     if (state === 'recording') {
       const animation = Animated.loop(
         Animated.sequence([
-          Animated.timing(pulseAnim, {
-            toValue: 0.5,
+          Animated.timing(scaleAnim, {
+            toValue: 1.15,
             duration: 600,
             useNativeDriver: true,
           }),
-          Animated.timing(pulseAnim, {
-            toValue: 1,
+          Animated.timing(scaleAnim, {
+            toValue: 1.0,
             duration: 600,
             useNativeDriver: true,
           }),
@@ -58,7 +144,7 @@ export default function VoiceInputButton({
       animation.start();
       return () => animation.stop();
     } else {
-      pulseAnim.setValue(1);
+      scaleAnim.setValue(1);
     }
   }, [state]);
 
@@ -81,25 +167,34 @@ export default function VoiceInputButton({
       return <Text style={styles.progressText}>{sttDownloadProgress}%</Text>;
     }
     if (sttInitializing || state === 'transcribing') {
-      return <ActivityIndicator size="small" color={theme.colors.accent} />;
+      return <ActivityIndicator size="small" color={theme.colors.agentThinking} />;
+    }
+    if (speaking) {
+      return <SpeakingBars />;
     }
     if (state === 'recording') {
-      return <Text style={styles.iconEmoji}>⏹️</Text>;
+      return <Text style={styles.iconEmoji}>{'\u23F9\uFE0F'}</Text>;
     }
-    return <Text style={styles.iconEmoji}>🎙️</Text>;
+    return <Text style={styles.iconEmoji}>{'\uD83C\uDFA4\uFE0F'}</Text>;
+  };
+
+  const getButtonStyle = () => {
+    if (state === 'recording') return styles.recordingButton;
+    if (speaking) return styles.speakingButton;
+    return styles.idleButton;
   };
 
   return (
     <View style={styles.wrapper}>
       <Animated.View
         style={[
-          state === 'recording' && { opacity: pulseAnim },
+          state === 'recording' && { transform: [{ scale: scaleAnim }] },
         ]}
       >
         <TouchableOpacity
           style={[
             styles.button,
-            state === 'recording' && styles.recordingButton,
+            getButtonStyle(),
             isDisabled && state !== 'recording' && styles.disabledButton,
           ]}
           onPress={handlePress}
@@ -126,13 +221,24 @@ const styles = StyleSheet.create({
   button: {
     width: 40,
     height: 40,
-    borderRadius: 8,
-    backgroundColor: theme.colors.surfaceLight,
+    borderRadius: 20,
     justifyContent: 'center',
     alignItems: 'center',
   },
+  idleButton: {
+    backgroundColor: 'transparent',
+    borderWidth: 2,
+    borderColor: theme.colors.accent,
+  },
   recordingButton: {
-    backgroundColor: theme.colors.error,
+    backgroundColor: 'transparent',
+    borderWidth: 2,
+    borderColor: theme.colors.agentListening,
+  },
+  speakingButton: {
+    backgroundColor: 'transparent',
+    borderWidth: 2,
+    borderColor: theme.colors.accent,
   },
   disabledButton: {
     opacity: 0.4,
@@ -147,7 +253,7 @@ const styles = StyleSheet.create({
   },
   durationText: {
     fontSize: 9,
-    color: theme.colors.error,
+    color: theme.colors.agentListening,
     fontWeight: '600',
     marginTop: 1,
   },

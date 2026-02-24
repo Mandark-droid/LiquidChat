@@ -59,6 +59,8 @@ export interface ChatSettings {
   memoryEnabled: boolean;
   autoRemember: boolean;
   embeddingModel: string;
+  orchestrationEnabled: boolean;
+  intentRoutingEnabled: boolean;
 }
 
 export interface MemoryResult {
@@ -75,6 +77,9 @@ export interface DocumentResult extends MemoryResult {
 }
 
 export type ModelCategory = 'text' | 'vision' | 'audio' | 'specialized' | 'custom' | 'embedding';
+export type ModelTier = 'hot' | 'warm' | 'cold';
+export type ModelState = 'unloaded' | 'loading' | 'ready' | 'error';
+export type IntentType = 'ACTION' | 'QUERY' | 'REASON' | 'CHAT';
 
 export interface LiquidModel {
   name: string;
@@ -88,6 +93,23 @@ export interface LiquidModel {
   supportsAudio: boolean;
   isCustom?: boolean;
   hfRepo?: string;
+  supportsThinking?: boolean;
+}
+
+export type AgentState =
+  | { kind: 'idle' }
+  | { kind: 'listening' }
+  | { kind: 'thinking' }
+  | { kind: 'acting'; toolName: string }
+  | { kind: 'vision' }
+  | { kind: 'error'; message: string };
+
+export type ActionChainStepStatus = 'pending' | 'running' | 'success' | 'error';
+
+export interface ActionChainStep {
+  toolName: string;
+  status: ActionChainStepStatus;
+  resultMessage?: string;
 }
 
 export const DEFAULT_SETTINGS: ChatSettings = {
@@ -110,4 +132,6 @@ export const DEFAULT_SETTINGS: ChatSettings = {
   memoryEnabled: false,
   autoRemember: true,
   embeddingModel: 'qwen3-embedding-0.6b',
+  orchestrationEnabled: false,
+  intentRoutingEnabled: false,
 };

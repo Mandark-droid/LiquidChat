@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { theme } from '../config/theme';
+import PrivacyBadge from './PrivacyBadge';
 import type { ChatMetrics } from '../types';
 
 interface MetricsBarProps {
@@ -20,6 +21,7 @@ const MetricsBar: React.FC<MetricsBarProps> = ({
 }) => {
   return (
     <View style={styles.container}>
+      <PrivacyBadge />
       <View style={styles.metric}>
         <Text style={styles.label}>Tokens</Text>
         <Text style={styles.value}>

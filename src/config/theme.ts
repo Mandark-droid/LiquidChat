@@ -21,6 +21,14 @@ export const theme = {
     toolCallBorder: '#3A8FB7',  // Liquid Blue border
     skyBlue: '#A7D3FF',         // Sky Blue - notifications/accents
     sunsetOrange: '#FF8C42',    // Sunset Orange - highlights/CTA
+    agentListening: '#8B5CF6',  // Purple - voice listening state
+    agentThinking: '#F59E0B',   // Amber - thinking/processing state
+    agentActing: '#10B981',     // Green - executing tool actions
+    agentVision: '#EC4899',     // Pink - vision mode active
+    agentError: '#EF4444',      // Red - error state
+    memoryChipBg: '#F5E6CA',    // Sand tint - memory chip background
+    memoryChipBorder: '#D4C4A8', // Sand border - memory chip border
+    memoryChipText: '#6B5D4F',  // Brown - memory chip text
   },
   spacing: {
     xs: 4,

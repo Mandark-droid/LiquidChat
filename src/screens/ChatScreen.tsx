@@ -36,12 +36,20 @@ import {
   getDefaultSystemPrompt,
 } from '../tools/registry';
 import { getModelBySlug } from '../config/models';
+import { modelLifecycle } from '../services/ModelLifecycleManager';
+import { actionLogger } from '../services/ActionLogger';
+import { memoryService } from '../services/MemoryService';
+import { useIntentRouter } from '../hooks/useIntentRouter';
 import MessageBubble from '../components/MessageBubble';
 import MetricsBar from '../components/MetricsBar';
+import AgentStateBar from '../components/AgentStateBar';
+import ActionChainProgress from '../components/ActionChainProgress';
+import VisionModeOverlay from '../components/VisionModeOverlay';
 import VoiceInputButton from '../components/VoiceInputButton';
 import MemoryChips from '../components/MemoryChips';
 import ScreenshotPreview from '../components/ScreenshotPreview';
 import { useMemory } from '../hooks/useMemory';
+import { triggerSuccessHaptic } from '../utils/haptics';
 import { theme } from '../config/theme';
 import type {
   Chat,
@@ -50,6 +58,8 @@ import type {
   ChatSettings,
   ToolCall,
   ToolResult,
+  AgentState,
+  ActionChainStep,
 } from '../types';
 import { DEFAULT_SETTINGS } from '../types';
 
@@ -80,6 +90,9 @@ export default function ChatScreen({
   const [loadProgress, setLoadProgress] = useState(0);
   const [liveTokenCount, setLiveTokenCount] = useState(0);
   const [liveTokensPerSecond, setLiveTokensPerSecond] = useState(0);
+  const [agentState, setAgentState] = useState<AgentState>({ kind: 'idle' });
+  const [actionChainSteps, setActionChainSteps] = useState<ActionChainStep[]>([]);
+  const [isVisionActive, setIsVisionActive] = useState(false);
 
   const scrollViewRef = useRef<ScrollView>(null);
   const cactusLMRef = useRef<CactusLM | null>(null);
@@ -87,6 +100,9 @@ export default function ChatScreen({
   const isCustomModelRef = useRef(false);
   const abortRef = useRef(false);
   const chatRef = useRef<Chat | null>(null);
+
+  // Intent routing hook
+  const { routeAndLoad } = useIntentRouter();
 
   // Memory hook
   const {
@@ -145,6 +161,17 @@ export default function ChatScreen({
   };
 
   const releaseModel = async () => {
+    // B. Orchestration path: delegate to lifecycle manager
+    if (settings?.orchestrationEnabled) {
+      // Just clear refs; lifecycle manager owns the instances
+      cactusLMRef.current = null;
+      nativeCactusRef.current = null;
+      isCustomModelRef.current = false;
+      setModelLoaded(false);
+      return;
+    }
+
+    // Original path
     try {
       if (cactusLMRef.current) {
         await cactusLMRef.current.destroy();
@@ -161,6 +188,34 @@ export default function ChatScreen({
   };
 
   const initializeModel = async (modelSlug: string) => {
+    // A. Orchestration path: delegate to ModelLifecycleManager
+    if (settings?.orchestrationEnabled) {
+      setIsModelLoading(true);
+      setLoadProgress(0);
+      setModelLoaded(false);
+      try {
+        if (!modelLifecycle.initialized) await modelLifecycle.init();
+        const managed = await modelLifecycle.ensure(modelSlug);
+        // Store refs for generation
+        cactusLMRef.current = managed.instance;
+        nativeCactusRef.current = managed.nativeInstance;
+        isCustomModelRef.current = managed.isCustomModel;
+        setModelLoaded(true);
+        setModelDisplayName(getModelBySlug(modelSlug)?.name || modelSlug);
+        console.log(`[LiquidChat] Orchestration: loaded "${modelSlug}" via lifecycle manager`);
+      } catch (error) {
+        const errMsg = error instanceof Error ? error.message : String(error);
+        Alert.alert('Model Error', `Failed to load model "${modelSlug}":\n\n${errMsg}`);
+        isCustomModelRef.current = false;
+        nativeCactusRef.current = null;
+        cactusLMRef.current = null;
+      } finally {
+        setIsModelLoading(false);
+      }
+      return;
+    }
+
+    // Original non-orchestration path
     setIsModelLoading(true);
     setLoadProgress(0);
     setModelLoaded(false);
@@ -433,6 +488,7 @@ export default function ChatScreen({
     setInputText('');
     setSelectedImage(null);
     setIsGenerating(true);
+    setAgentState({ kind: 'thinking' });
     setStreamingText('');
     setMetrics(null);
     setLiveTokenCount(0);
@@ -440,6 +496,26 @@ export default function ChatScreen({
     scrollToBottom();
 
     try {
+      // C. Intent routing: when enabled, route message to best model
+      if (settings?.orchestrationEnabled && settings?.intentRoutingEnabled && text) {
+        const hasCorpus = memoryService.getStats().documentCount > 0;
+        const { modelSlug: targetSlug, swapped } = await routeAndLoad(
+          text,
+          settings.model,
+          hasCorpus,
+        );
+        if (swapped && targetSlug !== settings.model) {
+          // Swap refs to the newly loaded model
+          const managed = modelLifecycle.getLoadedModels().find(m => m.slug === targetSlug);
+          if (managed) {
+            cactusLMRef.current = managed.instance;
+            nativeCactusRef.current = managed.nativeInstance;
+            isCustomModelRef.current = managed.isCustomModel;
+            setModelDisplayName(getModelBySlug(targetSlug)?.name || targetSlug);
+          }
+        }
+      }
+
       // Recall relevant memories before generating
       let memoryContext = '';
       if (settings?.memoryEnabled) {
@@ -498,6 +574,7 @@ export default function ChatScreen({
       if (abortRef.current) return;
       const errMsg =
         error instanceof Error ? error.message : 'Generation failed';
+      setAgentState({ kind: 'error', message: errMsg });
 
       const errorMessage: ChatMessage = {
         role: 'assistant' as const,
@@ -510,6 +587,7 @@ export default function ChatScreen({
     } finally {
       setIsGenerating(false);
       setStreamingText('');
+      setAgentState({ kind: 'idle' });
     }
   };
 
@@ -639,12 +717,43 @@ export default function ChatScreen({
     triggerMediumHaptic();
     let updatedMessages = [...currentMessages];
 
-    for (const tc of toolCalls) {
+    // Initialize action chain steps
+    const steps: ActionChainStep[] = toolCalls.map(tc => ({
+      toolName: tc.name,
+      status: 'pending' as const,
+    }));
+    setActionChainSteps([...steps]);
+
+    for (let i = 0; i < toolCalls.length; i++) {
+      const tc = toolCalls[i];
+      setAgentState({ kind: 'acting', toolName: tc.name });
+
+      // Mark current step running
+      steps[i] = { ...steps[i], status: 'running' };
+      setActionChainSteps([...steps]);
+
+      const toolStart = Date.now();
       try {
         const result: ToolResult = await executeTool(
           tc.name,
           tc.arguments,
         );
+
+        // Mark step success
+        steps[i] = { ...steps[i], status: 'success', resultMessage: result.message };
+        setActionChainSteps([...steps]);
+
+        // D. Log tool execution when orchestration is enabled
+        if (settings?.orchestrationEnabled) {
+          actionLogger.log({
+            toolName: tc.name,
+            arguments: tc.arguments,
+            success: result.success,
+            message: result.message,
+            modelSlug: settings.model,
+            durationMs: Date.now() - toolStart,
+          });
+        }
 
         const toolMessage: ChatMessage = {
           role: 'tool' as any,
@@ -665,6 +774,22 @@ export default function ChatScreen({
               : 'Tool execution failed',
         };
 
+        // Mark step error
+        steps[i] = { ...steps[i], status: 'error', resultMessage: errResult.message };
+        setActionChainSteps([...steps]);
+
+        // D. Log failed tool execution
+        if (settings?.orchestrationEnabled) {
+          actionLogger.log({
+            toolName: tc.name,
+            arguments: tc.arguments,
+            success: false,
+            message: errResult.message,
+            modelSlug: settings.model,
+            durationMs: Date.now() - toolStart,
+          });
+        }
+
         const toolMessage: ChatMessage = {
           role: 'tool' as any,
           content: `[${tc.name}]: Error - ${errResult.message}`,
@@ -675,12 +800,23 @@ export default function ChatScreen({
         updatedMessages = [...updatedMessages, toolMessage];
         setMessages(updatedMessages);
       }
+
+      // Haptic between steps
+      if (i < toolCalls.length - 1) {
+        triggerLightHaptic();
+      }
     }
 
+    // Chain completed
+    triggerSuccessHaptic();
     await saveMessages(updatedMessages);
+
+    // Clear action chain after delay
+    setTimeout(() => setActionChainSteps([]), 2000);
 
     // Generate follow-up response after tool execution
     try {
+      setAgentState({ kind: 'thinking' });
       setIsGenerating(true);
       setStreamingText('');
       setLiveTokenCount(0);
@@ -720,12 +856,15 @@ export default function ChatScreen({
     } finally {
       setIsGenerating(false);
       setStreamingText('');
+      setAgentState({ kind: 'idle' });
     }
   };
 
   const handleStop = () => {
     abortRef.current = true;
     setIsGenerating(false);
+    setAgentState({ kind: 'idle' });
+    setActionChainSteps([]);
     stopSpeaking();
 
     if (streamingText) {
@@ -781,56 +920,59 @@ export default function ChatScreen({
   );
 
   const renderMessages = () => (
-    <ScrollView
-      ref={scrollViewRef}
-      style={styles.messagesContainer}
-      contentContainerStyle={styles.messagesContent}
-      onContentSizeChange={scrollToBottom}
-      keyboardShouldPersistTaps="handled"
-    >
-      {messages.length === 0 && !isGenerating && (
-        <View style={styles.emptyState}>
-          <Image
-            source={require('../assets/liquidchat_logo.png')}
-            style={styles.emptyLogoImage}
+    <View style={styles.messagesWrapper}>
+      <ScrollView
+        ref={scrollViewRef}
+        style={styles.messagesContainer}
+        contentContainerStyle={styles.messagesContent}
+        onContentSizeChange={scrollToBottom}
+        keyboardShouldPersistTaps="handled"
+      >
+        {messages.length === 0 && !isGenerating && (
+          <View style={styles.emptyState}>
+            <Image
+              source={require('../assets/liquidchat_logo.png')}
+              style={styles.emptyLogoImage}
+            />
+            <Text style={styles.emptyBranding}>🌵💧</Text>
+            <Text style={styles.emptyTitle}>LiquidChat</Text>
+            <Text style={styles.emptySubtitle}>
+              {modelLoaded
+                ? 'Model loaded. Start chatting!'
+                : isModelLoading
+                  ? 'Loading model...'
+                  : 'Select a model to begin'}
+            </Text>
+          </View>
+        )}
+
+        {messages.map((msg, index) => (
+          <MessageBubble
+            key={`${msg.timestamp}-${index}`}
+            message={msg}
           />
-          <Text style={styles.emptyBranding}>🌵💧</Text>
-          <Text style={styles.emptyTitle}>LiquidChat</Text>
-          <Text style={styles.emptySubtitle}>
-            {modelLoaded
-              ? 'Model loaded. Start chatting!'
-              : isModelLoading
-                ? 'Loading model...'
-                : 'Select a model to begin'}
-          </Text>
-        </View>
-      )}
+        ))}
 
-      {messages.map((msg, index) => (
-        <MessageBubble
-          key={`${msg.timestamp}-${index}`}
-          message={msg}
-        />
-      ))}
+        {isGenerating && streamingText && (
+          <MessageBubble
+            message={{
+              role: 'assistant',
+              content: streamingText,
+              timestamp: Date.now(),
+            }}
+            isStreaming={true}
+          />
+        )}
 
-      {isGenerating && streamingText && (
-        <MessageBubble
-          message={{
-            role: 'assistant',
-            content: streamingText,
-            timestamp: Date.now(),
-          }}
-          isStreaming={true}
-        />
-      )}
-
-      {isGenerating && !streamingText && (
-        <View style={styles.thinkingContainer}>
-          <ActivityIndicator size="small" color={theme.colors.accent} />
-          <Text style={styles.thinkingText}>Thinking...</Text>
-        </View>
-      )}
-    </ScrollView>
+        {isGenerating && !streamingText && (
+          <View style={styles.thinkingContainer}>
+            <ActivityIndicator size="small" color={theme.colors.accent} />
+            <Text style={styles.thinkingText}>Thinking...</Text>
+          </View>
+        )}
+      </ScrollView>
+      <VisionModeOverlay active={isVisionActive} />
+    </View>
   );
 
   const renderImagePreview = () => {
@@ -911,6 +1053,8 @@ export default function ChatScreen({
             disabled={isGenerating || !modelLoaded}
             onTranscription={handleVoiceTranscription}
             onError={(err) => Alert.alert('Voice Input Error', err)}
+            onRecordingStart={() => setAgentState({ kind: 'listening' })}
+            onRecordingEnd={() => setAgentState({ kind: 'idle' })}
           />
         )}
 
@@ -971,7 +1115,14 @@ export default function ChatScreen({
           liveTokensPerSecond={liveTokensPerSecond}
           modelName={modelDisplayName}
         />
+        <AgentStateBar agentState={agentState} />
         {renderMessages()}
+        {actionChainSteps.length > 0 && (
+          <ActionChainProgress
+            steps={actionChainSteps}
+            totalPlanned={actionChainSteps.length}
+          />
+        )}
         {renderInputArea()}
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -1022,6 +1173,10 @@ const styles = StyleSheet.create({
   headerRight: {
     width: 40,
     alignItems: 'flex-end',
+  },
+  messagesWrapper: {
+    flex: 1,
+    position: 'relative',
   },
   messagesContainer: {
     flex: 1,

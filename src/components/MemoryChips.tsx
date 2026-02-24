@@ -8,6 +8,7 @@ import {
   Alert,
 } from 'react-native';
 import { theme } from '../config/theme';
+import { triggerLightHaptic } from '../utils/haptics';
 import type { MemoryResult } from '../types';
 
 interface MemoryChipsProps {
@@ -19,6 +20,7 @@ export default function MemoryChips({ memories, onDismiss }: MemoryChipsProps) {
   if (memories.length === 0) return null;
 
   const handleChipPress = (memory: MemoryResult) => {
+    triggerLightHaptic();
     Alert.alert(
       'Recalled Memory',
       memory.text,
@@ -28,6 +30,7 @@ export default function MemoryChips({ memories, onDismiss }: MemoryChipsProps) {
 
   return (
     <View style={styles.container}>
+      <Text style={styles.sectionLabel}>FROM MEMORY</Text>
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
@@ -40,8 +43,9 @@ export default function MemoryChips({ memories, onDismiss }: MemoryChipsProps) {
             onPress={() => handleChipPress(memory)}
           >
             <Text style={styles.chipText} numberOfLines={1}>
-              {memory.text.length > 60
-                ? memory.text.slice(0, 60) + '...'
+              {'\uD83E\uDDE0'}{' '}
+              {memory.text.length > 55
+                ? memory.text.slice(0, 55) + '...'
                 : memory.text}
             </Text>
           </TouchableOpacity>
@@ -56,25 +60,33 @@ export default function MemoryChips({ memories, onDismiss }: MemoryChipsProps) {
 
 const styles = StyleSheet.create({
   container: {
-    maxHeight: 40,
+    maxHeight: 56,
     marginBottom: theme.spacing.sm,
+  },
+  sectionLabel: {
+    fontSize: 9,
+    fontWeight: '700',
+    color: theme.colors.textMuted,
+    letterSpacing: 1,
+    marginLeft: theme.spacing.sm,
+    marginBottom: 3,
   },
   scrollContent: {
     paddingHorizontal: theme.spacing.xs,
     gap: theme.spacing.sm,
   },
   chip: {
-    backgroundColor: theme.colors.toolCallBg,
+    backgroundColor: theme.colors.memoryChipBg,
     borderRadius: theme.borderRadius.full,
     paddingHorizontal: theme.spacing.lg,
     paddingVertical: theme.spacing.sm,
     borderWidth: 1,
-    borderColor: theme.colors.toolCallBorder,
+    borderColor: theme.colors.memoryChipBorder,
     maxWidth: 220,
   },
   chipText: {
     fontSize: 13,
-    color: theme.colors.accent,
+    color: theme.colors.memoryChipText,
     fontWeight: '600',
   },
   dismissChip: {
