@@ -63,20 +63,20 @@ class IntentRouterService {
     if (ACTION_VERBS.includes(firstWord)) {
       return {
         intent: 'ACTION',
-        targetModelSlug: 'lfm25-mobile-actions',
+        targetModelSlug: 'lfm2-1.2b',
         confidence: 0.9,
         reason: `Imperative verb "${firstWord}" detected`,
       };
     }
 
     // Check REASON: reasoning patterns (only if thinking model available)
-    const thinkingModel = getModelBySlug('lfm25-1.2b-thinking');
+    const thinkingModel = getModelBySlug('lfm2.5-1.2b-thinking');
     if (thinkingModel) {
       for (const pattern of REASON_PATTERNS) {
         if (pattern.test(trimmed)) {
           return {
             intent: 'REASON',
-            targetModelSlug: 'lfm25-1.2b-thinking',
+            targetModelSlug: 'lfm2.5-1.2b-thinking',
             confidence: 0.8,
             reason: `Reasoning pattern matched`,
           };
@@ -90,7 +90,7 @@ class IntentRouterService {
         if (pattern.test(trimmed)) {
           return {
             intent: 'QUERY',
-            targetModelSlug: 'lfm2-1.2b-rag',
+            targetModelSlug: 'lfm2-1.2b',
             confidence: 0.85,
             reason: `Query pattern matched`,
           };

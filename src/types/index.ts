@@ -1,4 +1,4 @@
-import type { Message } from 'cactus-react-native';
+import type { CactusLMMessage } from 'cactus-react-native';
 
 export interface ToolCall {
   name: string;
@@ -11,7 +11,7 @@ export interface ToolResult {
   data?: any;
 }
 
-export interface ChatMessage extends Message {
+export interface ChatMessage extends CactusLMMessage {
   timestamp: number;
   tokens?: number;
   timeToFirstTokenMs?: number;
@@ -92,6 +92,7 @@ export interface LiquidModel {
   supportsVision: boolean;
   supportsAudio: boolean;
   isCustom?: boolean;
+  isSTT?: boolean;
   hfRepo?: string;
   supportsThinking?: boolean;
 }
@@ -113,7 +114,7 @@ export interface ActionChainStep {
 }
 
 export const DEFAULT_SETTINGS: ChatSettings = {
-  model: 'lfm25-mobile-actions',
+  model: 'lfm2-1.2b',
   temperature: 0.7,
   topP: 0.9,
   topK: 40,
@@ -132,6 +133,6 @@ export const DEFAULT_SETTINGS: ChatSettings = {
   memoryEnabled: false,
   autoRemember: true,
   embeddingModel: 'qwen3-embedding-0.6b',
-  orchestrationEnabled: false,
+  orchestrationEnabled: true,
   intentRoutingEnabled: false,
 };

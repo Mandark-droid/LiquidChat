@@ -1,6 +1,6 @@
-import { CactusLM } from 'cactus-react-native';
 import * as RNFS from '@dr.pogodin/react-native-fs';
 import { VectorStore } from './VectorStore';
+import { modelLifecycle, type ManagedModel } from './ModelLifecycleManager';
 import type { MemoryResult, DocumentResult } from '../types';
 
 function generateId(): string {
@@ -54,7 +54,7 @@ function chunkText(text: string, maxChars: number = 500, overlap: number = 50): 
 class MemoryService {
   private memoryStore: VectorStore;
   private documentStore: VectorStore;
-  private embeddingModel: CactusLM | null = null;
+  private managedModel: ManagedModel | null = null;
   private initialized = false;
   private initializing = false;
   private modelSlug = 'qwen3-embedding-0.6b';
@@ -77,20 +77,16 @@ class MemoryService {
         this.documentStore.load(),
       ]);
 
-      // Initialize embedding model
-      this.embeddingModel = new CactusLM({ model: this.modelSlug });
-      await this.embeddingModel.download({
-        onProgress: (progress: number) => {
-          console.log(`[MemoryService] Embedding model download: ${(progress * 100).toFixed(1)}%`);
-        },
-      });
-      await this.embeddingModel.init();
+      // Use ModelLifecycleManager for robust download + native fallback support
+      if (!modelLifecycle.initialized) await modelLifecycle.init();
+      this.managedModel = await modelLifecycle.ensure(this.modelSlug);
 
       this.initialized = true;
       console.log('[MemoryService] Initialized successfully');
     } catch (e) {
-      console.error('[MemoryService] Init failed:', e);
-      this.embeddingModel = null;
+      const msg = e instanceof Error ? e.message : String(e);
+      console.warn(`[MemoryService] Init unavailable: ${msg}`);
+      this.managedModel = null;
       throw e;
     } finally {
       this.initializing = false;
@@ -104,11 +100,8 @@ class MemoryService {
         this.memoryStore.save(),
         this.documentStore.save(),
       ]);
-
-      if (this.embeddingModel) {
-        await this.embeddingModel.destroy();
-        this.embeddingModel = null;
-      }
+      // ModelLifecycleManager owns the model instance — don't destroy it here
+      this.managedModel = null;
     } catch (e) {
       console.warn('[MemoryService] Destroy error:', e);
     }
@@ -122,11 +115,11 @@ class MemoryService {
   }
 
   private async embed(text: string): Promise<number[]> {
-    if (!this.embeddingModel) {
+    if (!this.managedModel?.instance) {
       throw new Error('Embedding model not initialized');
     }
-    const result = await this.embeddingModel.embed({ text });
-    return result;
+    const result = await this.managedModel.instance.embed({ text });
+    return result.embedding;
   }
 
   // === Memory (auto-remember interactions) ===

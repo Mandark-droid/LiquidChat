@@ -1,6 +1,4 @@
 import { CactusLM } from 'cactus-react-native';
-import { Cactus } from 'cactus-react-native/src/native';
-import * as RNFS from '@dr.pogodin/react-native-fs';
 import DeviceInfo from 'react-native-device-info';
 import { LIQUID_MODELS, getModelBySlug } from '../config/models';
 import { getDeviceProfile, getModelTier, type DeviceProfile } from '../config/modelTiers';
@@ -97,44 +95,6 @@ class ModelLifecycleManager {
     }
   }
 
-  private async downloadFromHF(slug: string, hfRepo: string, destDir: string): Promise<void> {
-    const apiUrl = `https://huggingface.co/api/models/${hfRepo}`;
-    const apiResponse = await fetch(apiUrl);
-    if (!apiResponse.ok) {
-      throw new Error(`Failed to fetch model info from HuggingFace (HTTP ${apiResponse.status})`);
-    }
-    const repoInfo = await apiResponse.json();
-    const filesToDownload: string[] = (repoInfo.siblings || [])
-      .map((s: { rfilename: string }) => s.rfilename)
-      .filter((name: string) => !name.startsWith('.'));
-
-    if (filesToDownload.length === 0) {
-      throw new Error(`No files found in HuggingFace repo: ${hfRepo}`);
-    }
-
-    if (!(await RNFS.exists(destDir))) {
-      await RNFS.mkdir(destDir);
-    }
-
-    for (const fileName of filesToDownload) {
-      const parts = fileName.split('/');
-      if (parts.length > 1) {
-        const subDir = `${destDir}/${parts.slice(0, -1).join('/')}`;
-        if (!(await RNFS.exists(subDir))) {
-          await RNFS.mkdir(subDir);
-        }
-      }
-      const fileUrl = `https://huggingface.co/${hfRepo}/resolve/main/${fileName}`;
-      const destPath = `${destDir}/${fileName}`;
-      const result = RNFS.downloadFile({ fromUrl: fileUrl, toFile: destPath });
-      const response = await result.promise;
-      if (response.statusCode !== 200) {
-        throw new Error(`Failed to download ${fileName} (HTTP ${response.statusCode})`);
-      }
-    }
-    console.log(`[ModelLifecycle] Downloaded "${slug}" from HuggingFace (${hfRepo})`);
-  }
-
   private async loadModel(slug: string): Promise<ManagedModel> {
     const modelDef = getModelBySlug(slug);
     const estimatedRam = modelDef ? Math.round(modelDef.sizeMb * RAM_MULTIPLIER) : 500;
@@ -166,137 +126,27 @@ class ModelLifecycleManager {
     this.notify();
 
     try {
-      // Loading strategy: custom/HF models go straight to local/HF path;
-      // registry models try CactusLM first, then fall through to local/HF.
-      let loaded = false;
+      // Use CactusLM high-level SDK: handles registry lookup, download, and init.
+      // The model key (slug like "lfm2-1.2b") maps directly to the registry key
+      // derived from weight filenames on Cactus-Compute HuggingFace repos.
+      console.log(`[ModelLifecycle] Loading "${slug}" via CactusLM SDK...`);
+      const cactusLM = new CactusLM({ model: slug });
 
-      // Step 1: Try CactusLM registry (skip for custom models)
-      if (!modelDef?.isCustom) {
-        let modelInfo: any = null;
-        try {
-          console.log(`[ModelLifecycle] Step 1: Checking registry for "${slug}"...`);
-          const tempCactusLM = new CactusLM();
-          const registryModels = await tempCactusLM.getModels();
-          modelInfo = registryModels.find((m: any) => m.slug === slug) || null;
-          console.log(`[ModelLifecycle] Registry lookup: "${slug}" ${modelInfo ? 'FOUND' : 'NOT FOUND'} (${registryModels.length} models available)`);
-          await tempCactusLM.destroy();
-        } catch (regErr) {
-          console.log(`[ModelLifecycle] Registry unavailable: ${regErr}`);
-        }
-
-        if (modelInfo) {
-          try {
-            console.log(`[ModelLifecycle] Step 1a: Loading registry model "${slug}"...`);
-            const cactusLM = new CactusLM({ model: slug });
-            await cactusLM.download({ onProgress: () => {} });
-            console.log(`[ModelLifecycle] Download complete for "${slug}", calling init()...`);
-
-            try {
-              await cactusLM.init();
-              managed.instance = cactusLM;
-              managed.nativeInstance = null;
-              managed.isCustomModel = false;
-              loaded = true;
-              console.log(`[ModelLifecycle] CactusLM init succeeded for "${slug}"`);
-            } catch (initErr) {
-              console.log(`[ModelLifecycle] CactusLM init failed for "${slug}": ${initErr}`);
-              console.log(`[ModelLifecycle] Falling back to native Cactus...`);
-              const { CactusFileSystem } = require('cactus-react-native/src/native');
-              const modelPath = await CactusFileSystem.getModelPath(slug);
-              console.log(`[ModelLifecycle] Native model path: ${modelPath}`);
-              const nativeCactus = new Cactus();
-              await nativeCactus.init(modelPath, 2048);
-              managed.instance = null;
-              managed.nativeInstance = nativeCactus;
-              managed.isCustomModel = true;
-              loaded = true;
-              console.log(`[ModelLifecycle] Native Cactus fallback succeeded for "${slug}"`);
-            }
-          } catch (registryErr) {
-            console.log(`[ModelLifecycle] Registry path failed for "${slug}": ${registryErr}`);
-            console.log(`[ModelLifecycle] Falling through to local/HF path...`);
+      // Download if not already cached
+      await cactusLM.download({
+        onProgress: (progress: number) => {
+          if (progress % 0.25 < 0.01) {
+            console.log(`[ModelLifecycle] Download "${slug}": ${Math.round(progress * 100)}%`);
           }
-        }
-      } else {
-        console.log(`[ModelLifecycle] Skipping registry for custom model "${slug}"`);
-      }
+        },
+      });
+      console.log(`[ModelLifecycle] Download complete for "${slug}", initializing...`);
 
-      // Step 2: Local files + HF download (used for custom models and as fallback)
-      if (!loaded) {
-        console.log(`[ModelLifecycle] Step 2: Checking local files for "${slug}"...`);
-        const userModelsDir = `${RNFS.DocumentDirectoryPath}/models`;
-        const cactusModelsDir = `${RNFS.DocumentDirectoryPath}/cactus/models`;
-
-        let files: any[] = [];
-        try {
-          if (await RNFS.exists(userModelsDir)) {
-            files = [...(await RNFS.readDir(userModelsDir))];
-          }
-        } catch {}
-        try {
-          if (await RNFS.exists(cactusModelsDir)) {
-            files = [...files, ...(await RNFS.readDir(cactusModelsDir))];
-          }
-        } catch {}
-        console.log(`[ModelLifecycle] Local entries found: ${files.map((f: any) => f.name).join(', ') || '(none)'}`);
-
-        // Cactus weight folders
-        const cactusWeightDirs: any[] = [];
-        for (const f of files) {
-          if (f.isDirectory()) {
-            const hasConfig = await RNFS.exists(`${f.path}/config.txt`);
-            if (hasConfig) cactusWeightDirs.push(f);
-          }
-        }
-
-        const ggufFiles = files.filter((f: any) => f.name.endsWith('.gguf'));
-
-        let modelPath: string | null = null;
-
-        // Try matching weight folders
-        let matchedDir = cactusWeightDirs.find((f: any) => f.name === slug);
-        if (!matchedDir) {
-          matchedDir = cactusWeightDirs.find((f: any) =>
-            f.name.toLowerCase().includes(slug.toLowerCase()),
-          );
-        }
-
-        if (matchedDir) {
-          modelPath = matchedDir.path;
-        } else if (cactusWeightDirs.length > 0 && !ggufFiles.length) {
-          modelPath = cactusWeightDirs[0].path;
-        } else {
-          // Try GGUF files
-          let matchedFile = ggufFiles.find((f: any) => f.name === `${slug}.gguf`);
-          if (!matchedFile) {
-            matchedFile = ggufFiles.find((f: any) =>
-              f.name.toLowerCase().includes(slug.toLowerCase()),
-            );
-          }
-          if (matchedFile) {
-            modelPath = matchedFile.path;
-          }
-        }
-
-        if (!modelPath && modelDef?.hfRepo) {
-          // Auto-download from HuggingFace
-          const modelDir = `${RNFS.DocumentDirectoryPath}/models/${slug}`;
-          console.log(`[ModelLifecycle] Downloading "${slug}" from HuggingFace (${modelDef.hfRepo})...`);
-          await this.downloadFromHF(slug, modelDef.hfRepo, modelDir);
-          modelPath = modelDir;
-        }
-
-        if (!modelPath) {
-          throw new Error(`No model files found for "${slug}"`);
-        }
-
-        console.log(`[ModelLifecycle] Loading native model from: ${modelPath}`);
-        const nativeCactus = new Cactus();
-        await nativeCactus.init(modelPath, 2048);
-        managed.instance = null;
-        managed.nativeInstance = nativeCactus;
-        managed.isCustomModel = true;
-      }
+      await cactusLM.init();
+      managed.instance = cactusLM;
+      managed.nativeInstance = null;
+      managed.isCustomModel = false;
+      console.log(`[ModelLifecycle] CactusLM init succeeded for "${slug}"`);
 
       managed.state = 'ready';
       managed.lastUsed = Date.now();

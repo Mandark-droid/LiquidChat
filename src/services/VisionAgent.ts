@@ -1,4 +1,4 @@
-import { CactusLM, type Message } from 'cactus-react-native';
+import { CactusLM, type CactusLMMessage } from 'cactus-react-native';
 
 class VisionAgent {
   private vlm: CactusLM | null = null;
@@ -33,7 +33,7 @@ class VisionAgent {
       await this.init();
     }
 
-    const messages: Message[] = [
+    const messages: CactusLMMessage[] = [
       {
         role: 'user',
         content: 'Describe all UI elements visible on this screen, including their approximate positions (top, center, bottom) and types (button, text, input, icon). Be concise.',
@@ -54,7 +54,7 @@ class VisionAgent {
       await this.init();
     }
 
-    const messages: Message[] = [
+    const messages: CactusLMMessage[] = [
       {
         role: 'user',
         content: `Look at this screen and help me: ${userIntent}\n\nDescribe what you see and which UI element I should interact with to accomplish this task. Include the element's text or description and its position.`,

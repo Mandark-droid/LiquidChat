@@ -36,18 +36,9 @@ export const LIQUID_MODELS: LiquidModel[] = [
     supportsVision: false,
     supportsAudio: false,
   },
-  // === Specialized Models ===
-  {
-    name: 'LFM2-1.2B-RAG',
-    slug: 'lfm2-1.2b-rag',
-    category: 'specialized',
-    sizeMb: 600,
-    description: 'Optimized for retrieval-augmented generation.',
-    supportsCompletion: true,
-    supportsToolCalling: false,
-    supportsVision: false,
-    supportsAudio: false,
-  },
+  // NOTE: LFM2-1.2B-RAG removed — its HF weights ("lfm2-1.2b-rag.zip")
+  // lack the int4/int8 pair required by the CactusLM registry.
+  // RAG functionality uses the base lfm2-1.2b model with corpus init.
   // === Vision Models ===
   {
     name: 'LFM2-VL-450M',
@@ -61,8 +52,8 @@ export const LIQUID_MODELS: LiquidModel[] = [
     supportsAudio: false,
   },
   {
-    name: 'LFM2-VL-1.6B',
-    slug: 'lfm2-vl-1.6b',
+    name: 'LFM2.5-VL-1.6B',
+    slug: 'lfm2.5-vl-1.6b',
     category: 'vision',
     sizeMb: 900,
     description: 'Standard vision-language model.',
@@ -76,23 +67,27 @@ export const LIQUID_MODELS: LiquidModel[] = [
     name: 'Whisper Small',
     slug: 'whisper-small',
     category: 'audio',
-    sizeMb: 244,
+    sizeMb: 192,
     description: 'Fast on-device speech-to-text transcription.',
     supportsCompletion: false,
     supportsToolCalling: false,
     supportsVision: false,
     supportsAudio: true,
+    isSTT: true,
+    hfRepo: 'cactus-compute/whisper-small',
   },
   {
     name: 'Whisper Medium',
     slug: 'whisper-medium',
     category: 'audio',
-    sizeMb: 769,
+    sizeMb: 615,
     description: 'Higher accuracy speech-to-text transcription.',
     supportsCompletion: false,
     supportsToolCalling: false,
     supportsVision: false,
     supportsAudio: true,
+    isSTT: true,
+    hfRepo: 'cactus-compute/whisper-medium',
   },
   // === Embedding Models ===
   {
@@ -109,7 +104,7 @@ export const LIQUID_MODELS: LiquidModel[] = [
   // === Thinking Model ===
   {
     name: 'LFM2.5-1.2B-Thinking',
-    slug: 'lfm25-1.2b-thinking',
+    slug: 'lfm2.5-1.2b-thinking',
     category: 'specialized',
     sizeMb: 750,
     description: 'Optimized for step-by-step reasoning and planning.',
@@ -119,20 +114,8 @@ export const LIQUID_MODELS: LiquidModel[] = [
     supportsAudio: false,
     supportsThinking: true,
   },
-  // === Custom Fine-tuned Model ===
-  {
-    name: 'LFM2.5 Mobile Actions',
-    slug: 'lfm25-mobile-actions',
-    category: 'custom',
-    sizeMb: 600,
-    description: 'Fine-tuned for mobile action tool calling. Downloads cactus-format weights from HuggingFace.',
-    supportsCompletion: true,
-    supportsToolCalling: true,
-    supportsVision: false,
-    supportsAudio: false,
-    isCustom: true,
-    hfRepo: 'kshitijthakkar/lfm25-mobile-actions-cactus',
-  },
+  // NOTE: lfm25-mobile-actions removed — requires CACT-format weights
+  // incompatible with stock cactus-react-native 1.7.0.
 ];
 
 export function getModelsByCategory(category: string): LiquidModel[] {

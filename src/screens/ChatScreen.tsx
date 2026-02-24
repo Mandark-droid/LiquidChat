@@ -19,9 +19,7 @@ import {
   launchImageLibrary,
   type ImagePickerResponse,
 } from 'react-native-image-picker';
-import { CactusLM, type Message } from 'cactus-react-native';
-import { Cactus } from 'cactus-react-native/src/native';
-import * as RNFS from '@dr.pogodin/react-native-fs';
+import { CactusLM, type CactusLMMessage } from 'cactus-react-native';
 import { storage } from '../utils/storage';
 import { generateChatTitle } from '../utils/chatHelpers';
 import { triggerLightHaptic, triggerMediumHaptic } from '../utils/haptics';
@@ -96,8 +94,6 @@ export default function ChatScreen({
 
   const scrollViewRef = useRef<ScrollView>(null);
   const cactusLMRef = useRef<CactusLM | null>(null);
-  const nativeCactusRef = useRef<any>(null);
-  const isCustomModelRef = useRef(false);
   const abortRef = useRef(false);
   const chatRef = useRef<Chat | null>(null);
 
@@ -139,7 +135,7 @@ export default function ChatScreen({
       setMessages(chat.messages);
       setSettings(chat.settings);
       setModelDisplayName(chat.model);
-      initializeModel(chat.settings.model);
+      initializeModel(chat.settings.model, chat.settings);
     } else {
       const saved = await storage.getSettings();
       const defaultSettings = saved ?? DEFAULT_SETTINGS;
@@ -156,30 +152,22 @@ export default function ChatScreen({
       setSettings(defaultSettings);
       setModelDisplayName(defaultSettings.model);
       await storage.saveChat(newChat);
-      initializeModel(defaultSettings.model);
+      initializeModel(defaultSettings.model, defaultSettings);
     }
   };
 
   const releaseModel = async () => {
-    // B. Orchestration path: delegate to lifecycle manager
     if (settings?.orchestrationEnabled) {
-      // Just clear refs; lifecycle manager owns the instances
+      // Lifecycle manager owns the instances; just clear refs
       cactusLMRef.current = null;
-      nativeCactusRef.current = null;
-      isCustomModelRef.current = false;
       setModelLoaded(false);
       return;
     }
 
-    // Original path
     try {
       if (cactusLMRef.current) {
         await cactusLMRef.current.destroy();
         cactusLMRef.current = null;
-      }
-      if (nativeCactusRef.current) {
-        await nativeCactusRef.current.destroy();
-        nativeCactusRef.current = null;
       }
     } catch (e) {
       // Ignore destroy errors
@@ -187,27 +175,24 @@ export default function ChatScreen({
     setModelLoaded(false);
   };
 
-  const initializeModel = async (modelSlug: string) => {
+  const initializeModel = async (modelSlug: string, activeSettings?: ChatSettings | null) => {
+    // Use passed-in settings to avoid stale React state closure on first call
+    const currentSettings = activeSettings !== undefined ? activeSettings : settings;
     // A. Orchestration path: delegate to ModelLifecycleManager
-    if (settings?.orchestrationEnabled) {
+    if (currentSettings?.orchestrationEnabled) {
       setIsModelLoading(true);
       setLoadProgress(0);
       setModelLoaded(false);
       try {
         if (!modelLifecycle.initialized) await modelLifecycle.init();
         const managed = await modelLifecycle.ensure(modelSlug);
-        // Store refs for generation
         cactusLMRef.current = managed.instance;
-        nativeCactusRef.current = managed.nativeInstance;
-        isCustomModelRef.current = managed.isCustomModel;
         setModelLoaded(true);
         setModelDisplayName(getModelBySlug(modelSlug)?.name || modelSlug);
         console.log(`[LiquidChat] Orchestration: loaded "${modelSlug}" via lifecycle manager`);
       } catch (error) {
         const errMsg = error instanceof Error ? error.message : String(error);
         Alert.alert('Model Error', `Failed to load model "${modelSlug}":\n\n${errMsg}`);
-        isCustomModelRef.current = false;
-        nativeCactusRef.current = null;
         cactusLMRef.current = null;
       } finally {
         setIsModelLoading(false);
@@ -215,187 +200,37 @@ export default function ChatScreen({
       return;
     }
 
-    // Original non-orchestration path
+    // Non-orchestration path: use CactusLM SDK directly
     setIsModelLoading(true);
     setLoadProgress(0);
     setModelLoaded(false);
-    isCustomModelRef.current = false;
 
     try {
       await releaseModel();
 
-      console.log(`[LiquidChat] ==================== MODEL INIT START ====================`);
-      console.log(`[LiquidChat] initializeModel called with slug: "${modelSlug}"`);
+      console.log(`[LiquidChat] Loading "${modelSlug}" via CactusLM SDK...`);
+      const cactusLM = new CactusLM({ model: modelSlug });
+      cactusLMRef.current = cactusLM;
 
-      // Step 1: Check if model is in CactusLM registry (may fail if offline)
-      let modelInfo: any = null;
-      try {
-        const tempCactusLM = new CactusLM();
-        const models = await tempCactusLM.getModels();
-        console.log(`[LiquidChat] Available registry models:`, models.map((m: any) => ({ name: m.name, slug: m.slug })));
-        modelInfo = models.find((m: any) => m.slug === modelSlug) || null;
-        console.log(`[LiquidChat] Model "${modelSlug}" in registry:`, modelInfo ? 'YES' : 'NO');
-        await tempCactusLM.destroy();
-      } catch (registryErr) {
-        console.log(`[LiquidChat] Registry check failed (offline?): ${registryErr}`);
-        console.log(`[LiquidChat] Falling through to local model detection...`);
-      }
+      await cactusLM.download({
+        onProgress: (progress: number) => {
+          setLoadProgress(Math.round(progress * 100));
+        },
+      });
+      console.log(`[LiquidChat] Download complete for "${modelSlug}", initializing...`);
 
-      if (modelInfo) {
-        // Step 2a: Registry model - use standard CactusLM flow
-        console.log(`[LiquidChat] Using registry model: "${modelSlug}"`);
-        const cactusLM = new CactusLM({ model: modelSlug });
-        cactusLMRef.current = cactusLM;
-
-        console.log('[LiquidChat] Starting download (or verifying model exists)...');
-        await cactusLM.download({
-          onProgress: (progress: number) => {
-            console.log(`[LiquidChat] Download progress: ${(progress * 100).toFixed(1)}%`);
-            setLoadProgress(Math.round(progress * 100));
-          },
-        });
-        console.log('[LiquidChat] Download completed/verified');
-
-        console.log('[LiquidChat] Calling cactusLM.init()...');
-        try {
-          await cactusLM.init();
-          setModelLoaded(true);
-          setModelDisplayName(getModelBySlug(modelSlug)?.name || modelSlug);
-        } catch (initErr) {
-          // CactusLM.init() failed (likely device registration issue)
-          // Fall back to native Cactus with the already-downloaded model files
-          console.log(`[LiquidChat] CactusLM init failed: ${initErr}`);
-          console.log('[LiquidChat] Falling back to native Cactus for registry model...');
-          cactusLMRef.current = null;
-
-          // Get the model path from CactusFileSystem
-          const { CactusFileSystem } = require('cactus-react-native/src/native');
-          const modelPath = await CactusFileSystem.getModelPath(modelSlug);
-          console.log(`[LiquidChat] Native model path: ${modelPath}`);
-
-          const nativeCactus = new Cactus();
-          await nativeCactus.init(modelPath, 2048);
-          nativeCactusRef.current = nativeCactus;
-          isCustomModelRef.current = true;
-          setModelLoaded(true);
-          setModelDisplayName(getModelBySlug(modelSlug)?.name || modelSlug);
-          console.log('[LiquidChat] Native Cactus fallback succeeded!');
-        }
-      } else {
-        // Step 2b: Not in registry - check for local model files
-        console.log(`[LiquidChat] Model not in registry, checking for local models...`);
-
-        if (!RNFS || !RNFS.DocumentDirectoryPath) {
-          throw new Error('File system not available');
-        }
-
-        // Search both the user models dir and the CactusLM SDK models dir
-        const userModelsDir = `${RNFS.DocumentDirectoryPath}/models`;
-        const cactusModelsDir = `${RNFS.DocumentDirectoryPath}/cactus/models`;
-
-        if (!(await RNFS.exists(userModelsDir))) {
-          await RNFS.mkdir(userModelsDir);
-        }
-
-        let files: any[] = [];
-        try {
-          files = [...(await RNFS.readDir(userModelsDir))];
-        } catch {}
-        try {
-          if (await RNFS.exists(cactusModelsDir)) {
-            files = [...files, ...(await RNFS.readDir(cactusModelsDir))];
-          }
-        } catch {}
-
-        console.log(`[LiquidChat] All model entries found:`, files.map((f: any) => f.name));
-
-        // Check for Cactus v1.x weight folders (directories with config.txt)
-        const cactusWeightDirs: any[] = [];
-        for (const f of files) {
-          if (f.isDirectory()) {
-            const hasConfig = await RNFS.exists(`${f.path}/config.txt`);
-            if (hasConfig) {
-              cactusWeightDirs.push(f);
-            }
-          }
-        }
-        console.log(`[LiquidChat] Found ${cactusWeightDirs.length} Cactus weight folders:`, cactusWeightDirs.map((f: any) => f.name));
-
-        const ggufFiles = files.filter((f: any) => f.name.endsWith('.gguf'));
-        console.log(`[LiquidChat] Found ${ggufFiles.length} GGUF files:`, ggufFiles.map((f: any) => f.name));
-
-        let modelPath: string;
-        let modelName: string;
-
-        // Try Cactus weight folders first, then GGUF
-        let matchedDir = cactusWeightDirs.find((f: any) => f.name === modelSlug);
-        if (!matchedDir) {
-          matchedDir = cactusWeightDirs.find((f: any) =>
-            f.name.toLowerCase().includes(modelSlug.toLowerCase()),
-          );
-        }
-
-        if (matchedDir) {
-          modelPath = matchedDir.path;
-          modelName = matchedDir.name;
-          console.log(`[LiquidChat] Using Cactus weight folder: ${matchedDir.name}`);
-        } else if (cactusWeightDirs.length > 0) {
-          modelPath = cactusWeightDirs[0].path;
-          modelName = cactusWeightDirs[0].name;
-          console.log(`[LiquidChat] No slug match, using first Cactus weight folder: ${modelName}`);
-        } else if (ggufFiles.length > 0) {
-          let matchedFile = ggufFiles.find((f: any) => f.name === `${modelSlug}.gguf`);
-          if (!matchedFile) {
-            matchedFile = ggufFiles.find((f: any) =>
-              f.name.toLowerCase().includes(modelSlug.toLowerCase()),
-            );
-          }
-          if (matchedFile) {
-            modelPath = matchedFile.path;
-            modelName = matchedFile.name.replace('.gguf', '');
-          } else {
-            modelPath = ggufFiles[0].path;
-            modelName = ggufFiles[0].name.replace('.gguf', '');
-          }
-          console.log(`[LiquidChat] Using GGUF file: ${modelName}`);
-        } else {
-          throw new Error(
-            `No model files found for "${modelSlug}". Push model weights to the device or select a registry model.`,
-          );
-        }
-
-        // Update chat to reflect the actually loaded model
-        if (chatRef.current && chatRef.current.model !== modelName) {
-          chatRef.current.model = modelName;
-          await storage.saveChat(chatRef.current);
-          console.log(`[LiquidChat] Updated chat model to: ${modelName}`);
-        }
-
-        // Initialize with native Cactus
-        console.log(`[LiquidChat] Initializing native Cactus with path: ${modelPath}`);
-        const nativeCactus = new Cactus();
-        await nativeCactus.init(modelPath, 2048);
-        nativeCactusRef.current = nativeCactus;
-        isCustomModelRef.current = true;
-        setModelLoaded(true);
-        setModelDisplayName(modelName);
-        console.log(`[LiquidChat] Native Cactus initialized successfully`);
-      }
-
-      console.log('[LiquidChat] ==================== MODEL INIT SUCCESS ====================');
+      await cactusLM.init();
+      setModelLoaded(true);
+      setModelDisplayName(getModelBySlug(modelSlug)?.name || modelSlug);
+      console.log(`[LiquidChat] Model "${modelSlug}" loaded successfully`);
     } catch (error) {
       const errMsg =
         error instanceof Error ? error.message : String(error);
-      console.error('[LiquidChat] ==================== MODEL INIT FAILED ====================');
-      console.error('[LiquidChat] Error:', errMsg);
+      console.error(`[LiquidChat] Failed to load "${modelSlug}": ${errMsg}`);
       Alert.alert(
         'Model Error',
         `Failed to load model "${modelSlug}":\n\n${errMsg}\n\nTry selecting a different model from the Models tab.`,
       );
-
-      // Clean up on error
-      isCustomModelRef.current = false;
-      nativeCactusRef.current = null;
       cactusLMRef.current = null;
     } finally {
       setIsModelLoading(false);
@@ -509,8 +344,6 @@ export default function ChatScreen({
           const managed = modelLifecycle.getLoadedModels().find(m => m.slug === targetSlug);
           if (managed) {
             cactusLMRef.current = managed.instance;
-            nativeCactusRef.current = managed.nativeInstance;
-            isCustomModelRef.current = managed.isCustomModel;
             setModelDisplayName(getModelBySlug(targetSlug)?.name || targetSlug);
           }
         }
@@ -597,13 +430,13 @@ export default function ChatScreen({
   ): Promise<{ text: string; functionCalls?: Array<{ name: string; arguments: string }> }> => {
     const systemPrompt = buildSystemPrompt(settings?.systemPrompt, memoryContext);
 
-    const formattedMessages: Message[] = [
+    const formattedMessages: CactusLMMessage[] = [
       { role: 'system', content: systemPrompt },
     ];
 
     for (const msg of allMessages) {
       if (msg.role === 'system') continue;
-      const formatted: Message = {
+      const formatted: CactusLMMessage = {
         role: msg.role as 'user' | 'assistant',
         content: msg.content,
       };
@@ -642,55 +475,32 @@ export default function ChatScreen({
 
     let functionCalls: Array<{ name: string; arguments: string }> | undefined;
 
-    if (isCustomModelRef.current && nativeCactusRef.current) {
-      // Native Cactus path for custom models
-      const result = await nativeCactusRef.current.complete(
-        formattedMessages,
-        settings?.maxTokens ?? 512,
-        {
-          temperature: settings?.temperature ?? 0.7,
-          topP: settings?.topP ?? 0.9,
-          topK: settings?.topK ?? 40,
-          maxTokens: settings?.maxTokens ?? 512,
-        },
-        undefined, // tools
-        (token: string, _tokenId: number) => onToken(token),
-      );
-      fullResponse = result.text || fullResponse;
-      functionCalls = result.functionCalls;
-    } else if (cactusLMRef.current) {
-      // CactusLM path for registry models
-      const result = await cactusLMRef.current.complete({
-        messages: formattedMessages,
-        options: {
-          temperature: settings?.temperature ?? 0.7,
-          topP: settings?.topP ?? 0.9,
-          topK: settings?.topK ?? 40,
-          maxTokens: settings?.maxTokens ?? 512,
-        },
-        onToken,
-      });
-      fullResponse = result.text || fullResponse;
-      functionCalls = result.functionCalls;
-
-      if (result.timings) {
-        const totalTime = Date.now() - startTime;
-        setMetrics({
-          totalTokens: result.timings.predicted_n || tokenCount,
-          timeToFirstTokenMs: firstTokenTime
-            ? firstTokenTime - startTime
-            : 0,
-          totalTimeMs: totalTime,
-          tokensPerSecond:
-            result.timings.predicted_per_second ||
-            (tokenCount / totalTime) * 1000,
-          prefillTokens: result.timings.prompt_n || 0,
-          decodeTokens: result.timings.predicted_n || tokenCount,
-        });
-      }
-    } else {
+    if (!cactusLMRef.current) {
       throw new Error('No model loaded');
     }
+
+    const result = await cactusLMRef.current.complete({
+      messages: formattedMessages,
+      options: {
+        temperature: settings?.temperature ?? 0.7,
+        topP: settings?.topP ?? 0.9,
+        topK: settings?.topK ?? 40,
+        maxTokens: settings?.maxTokens ?? 512,
+      },
+      onToken,
+    });
+    fullResponse = result.response || fullResponse;
+    functionCalls = result.functionCalls;
+
+    const totalTime = Date.now() - startTime;
+    setMetrics({
+      totalTokens: result.totalTokens || tokenCount,
+      timeToFirstTokenMs: firstTokenTime ? firstTokenTime - startTime : 0,
+      totalTimeMs: result.totalTimeMs || totalTime,
+      tokensPerSecond: result.decodeTps || (tokenCount / totalTime) * 1000,
+      prefillTokens: result.prefillTokens || 0,
+      decodeTokens: result.decodeTokens || tokenCount,
+    });
 
     // Compute metrics if not already set
     if (!metrics) {
@@ -890,7 +700,7 @@ export default function ChatScreen({
           chatRef.current.model = newModel;
           await storage.saveChat(chatRef.current);
         }
-        await initializeModel(newModel);
+        await initializeModel(newModel, updated);
       }
     });
   };
@@ -1067,7 +877,7 @@ export default function ChatScreen({
           multiline
           maxLength={4096}
           editable={!isGenerating}
-          onSubmitEditing={handleSend}
+          onSubmitEditing={() => handleSend()}
           blurOnSubmit={false}
         />
 
@@ -1080,7 +890,7 @@ export default function ChatScreen({
           </TouchableOpacity>
         ) : (
           <TouchableOpacity
-            onPress={handleSend}
+            onPress={() => handleSend()}
             style={[
               styles.sendButton,
               (!inputText.trim() && !selectedImage) ||
