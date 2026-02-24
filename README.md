@@ -8,6 +8,14 @@
   Fully local personal agent — on-device LLM inference with real native Android tool execution.
 </p>
 
+<p align="center">
+  <a href="https://www.liquid.ai"><img src="https://img.shields.io/badge/Powered%20by-Liquid%20AI-6366f1?style=flat-square" alt="Liquid AI"/></a>
+  <a href="https://github.com/cactus-compute/cactus"><img src="https://img.shields.io/badge/Runtime-Cactus%20Engine-22c55e?style=flat-square" alt="Cactus Engine"/></a>
+  <a href="https://huggingface.co/kshitijthakkar"><img src="https://img.shields.io/badge/Models-Hugging%20Face-ff9d00?style=flat-square&logo=huggingface&logoColor=white" alt="Hugging Face"/></a>
+  <img src="https://img.shields.io/badge/Platform-Android-3ddc84?style=flat-square&logo=android&logoColor=white" alt="Android"/>
+  <img src="https://img.shields.io/badge/React%20Native-0.81.1-61dafb?style=flat-square&logo=react&logoColor=white" alt="React Native"/>
+</p>
+
 ---
 
 ## Overview
