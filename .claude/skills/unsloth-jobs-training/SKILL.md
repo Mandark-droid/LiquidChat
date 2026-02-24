@@ -106,11 +106,23 @@ hf jobs uv run \
 
 Job ID: `699d9b0f52d1c53b7df7d678` — GPU: A10G — Started: 2026-02-24
 
+## Hardware tiers and batch sizes
+
+| Flavor | VRAM | Batch size | Eff. batch | Est. time | Plan required |
+|--------|------|------------|------------|-----------|---------------|
+| `a10g-large` | 24GB | 2 | 8 | ~2-3h | Pro |
+| `l40sx1` | 48GB | 4 | 16 | ~1-1.5h | Pro |
+| `a100-large` | 80GB | 8 | 32 | ~45-60m | Enterprise |
+
+Gradient accumulation is always 4. Adjust batch size to match VRAM.
+
 ## Troubleshooting
 
 | Error | Fix |
 |-------|-----|
-| `UnicodeEncodeError` in CLI | Job still submitted fine — ignore or use `PYTHONUTF8=1` prefix |
+| `402 Payment Required` (insufficient credits) | Top up at https://huggingface.co/settings/billing |
+| `402 Payment Required` (plan restriction) | GPU tier requires higher plan — use `a10g-large` as fallback |
+| `UnicodeEncodeError` in CLI | Job still submitted fine — use `PYTHONUTF8=1` prefix |
 | OOM on GPU | Reduce `--batch-size 1`, increase `--gradient-accumulation 8` |
 | Job timeout | Increase `--timeout 6h` or reduce `--num-epochs` |
 | Hub push fails | Verify `--secrets HF_TOKEN` is set and token has write access |
