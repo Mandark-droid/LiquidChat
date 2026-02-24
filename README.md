@@ -5,16 +5,22 @@
 <h1 align="center">LiquidChat</h1>
 
 <p align="center">
-  On-device mobile chat app for testing fine-tuned Liquid AI models with real native Android tool execution.
+  Fully local personal agent — on-device LLM inference with real native Android tool execution.
 </p>
 
 ---
 
 ## Overview
 
-LiquidChat is a React Native mobile application built to test and validate the fine-tuned model [`kshitijthakkar/LFM2.5-1.2B-Instruct-mobile-actions`](https://huggingface.co/kshitijthakkar/LFM2.5-1.2B-Instruct-mobile-actions). The model was fine-tuned on the [`google/mobile-actions`](https://huggingface.co/datasets/google/mobile-actions) dataset to translate natural language instructions into executable function calls for Android system tools.
+LiquidChat is a React Native mobile application and personal agent platform built on the [Cactus React Native](https://github.com/cactus-compute/cactus) inference engine. All model execution happens entirely on-device — no cloud APIs, no network required.
 
-The app uses the [Cactus React Native](https://github.com/cactus-compute/cactus) framework for fully on-device LLM inference — no cloud APIs, no network required for generation.
+The working prototype (v0.x) demonstrates the core loop: a LoRA fine-tuned LFM2.5-1.2B-Instruct model translates natural language into structured function calls that execute real Android device actions. The v1.0 roadmap expands this into a full multi-model orchestrator with voice input, vision pipeline, persistent semantic memory, and 30+ native tools.
+
+> **Current State (v0.x — Shipping)**
+> LFM2.5-1.2B-Instruct fine-tuned on 31,550 samples with LoRA (r=16, alpha=16) via Unsloth. 7 native tools with auto-execution. Token streaming, tool parsing, chat history, HF Hub dataset export, multi-model browser, custom model loading, TTS, haptics.
+
+> **In Progress (v1.0 — Phase 1)**
+> System Controls (+10 tools), multi-model orchestration, model lifecycle management, intent routing, and agent dashboard. See the [implementation roadmap](#roadmap) below.
 
 ## How It Works
 
@@ -24,9 +30,9 @@ The app uses the [Cactus React Native](https://github.com/cactus-compute/cactus)
 4. The app parses the function call and executes the real native Android action
 5. The tool result is displayed in the chat
 
-## Supported Tools
+## Tools
 
-The model was trained on 7 mobile action tools, all of which execute real device actions:
+### Current Tools (7 — Shipping)
 
 | Tool | Description | Implementation |
 |------|-------------|----------------|
@@ -38,126 +44,222 @@ The model was trained on 7 mobile action tools, all of which execute real device
 | `show_map` | Shows a location on the map | `geo:` URL scheme |
 | `create_contact` | Creates a new contact | Contacts content intent |
 
-## Features
+### Phase 1 — System Controls (+10, in progress)
 
-- **On-device inference** — All model execution happens locally on the device via Cactus framework
-- **Token streaming** — Real-time token-by-token generation display
-- **Tool call parsing** — Supports JSON format matching the `google/mobile-actions` training format
-- **Auto tool execution** — Parsed function calls are automatically executed as native device actions
-- **Quick actions** — Pre-built shortcut chips for common tool commands
-- **Multi-model support** — Browse and download Liquid AI models (LFM2 350M to 2.6B, vision, audio)
-- **Custom model loading** — Load Cactus v1.x weight folders or GGUF files from device storage
-- **Configurable system prompt** — Edit the system prompt with tool definitions from Settings
-- **Chat history** — Persistent chat storage with multiple conversations
-- **HuggingFace Hub export** — Push chat history as JSONL datasets for further fine-tuning
-- **Inference metrics** — Live tokens/second, time-to-first-token display
-- **Text-to-speech** — Optional auto-speak for assistant responses
-- **Haptic feedback** — Vibration on send and tool execution
+| Tool | Description |
+|------|-------------|
+| `set_brightness` | Set screen brightness (0–100) |
+| `set_volume` | Set volume for a given stream |
+| `toggle_bluetooth` | Enable/disable Bluetooth |
+| `toggle_airplane_mode` | Toggle airplane mode |
+| `toggle_dnd` | Toggle Do Not Disturb |
+| `set_alarm` | Set an alarm by time and label |
+| `set_timer` | Start a countdown timer |
+| `take_screenshot` | Capture the current screen |
+| `toggle_rotation_lock` | Lock/unlock screen rotation |
+| `open_settings_page` | Open any Android settings page |
+
+### Phases 2–3 (Planned)
+
+- **Phase 2 — App Navigation (+8):** launch apps, open URLs, share text, web search, phone calls, SMS, file open, set wallpaper
+- **Phase 3 — UI Automation (+10):** tap, scroll, type, read screen, find elements, gestures via Android Accessibility Service
 
 ## Model Details
 
 | Parameter | Value |
 |-----------|-------|
 | **Base model** | [LiquidAI/LFM2.5-1.2B-Instruct](https://huggingface.co/LiquidAI/LFM2.5-1.2B-Instruct) |
-| **Fine-tune** | [kshitijthakkar/LFM2.5-1.2B-Instruct-mobile-actions](https://huggingface.co/kshitijthakkar/LFM2.5-1.2B-Instruct-mobile-actions) |
-| **Dataset** | [google/mobile-actions](https://huggingface.co/datasets/google/mobile-actions) (8,693 train / 961 eval) |
-| **Method** | SFT with LoRA (r=16, alpha=16) via Unsloth |
+| **Fine-tuned model** | [kshitijthakkar/LFM2.5-1.2B-Instruct-mobile-actions](https://huggingface.co/kshitijthakkar/LFM2.5-1.2B-Instruct-mobile-actions) |
+| **Training dataset** | [kshitijthakkar/liquidchat-lora-dataset](https://huggingface.co/datasets/kshitijthakkar/liquidchat-lora-dataset) (31,550 train / 643 eval) |
+| **Method** | SFT with LoRA (r=16, alpha=16) via Unsloth on HF Jobs |
 | **Eval accuracy** | 100% on 20 held-out examples |
-| **Training details** | [GitHub](https://github.com/Mandark-droid/LFM2.5-1.2B-Instruct-mobile-actions) |
+| **Training scripts** | [GitHub](https://github.com/Mandark-droid/LFM2.5-1.2B-Instruct-mobile-actions) |
+
+## Features
+
+- **On-device inference** — All model execution happens locally on the device via Cactus framework
+- **Token streaming** — Real-time token-by-token generation display
+- **Tool call parsing** — Supports both JSON (`google/mobile-actions` format) and native LFM2.5 `<|tool_call_start|>` format
+- **Auto tool execution** — Parsed function calls are automatically executed as native device actions
+- **Multi-model support** — Browse and download Liquid AI models (LFM2 350M to 2.6B, vision, audio) with tier-based lifecycle management
+- **Custom model loading** — Load Cactus weight folders or GGUF files from device storage
+- **Configurable system prompt** — Edit the system prompt with tool definitions from Settings
+- **Chat history** — Persistent chat storage with multiple conversations
+- **HuggingFace Hub export** — Push chat history as JSONL datasets for LoRA retraining
+- **Inference metrics** — Live tokens/second, time-to-first-token display
+- **Text-to-speech** — Optional auto-speak for assistant responses
+- **Haptic feedback** — Vibration on send and tool execution
+- **Agent dashboard** — Loaded model states, RAM usage, action history (Phase 5)
 
 ## Project Structure
 
 ```
 LiquidChat/
 ├── src/
-│   ├── App.tsx                         # Entry point, tab navigation
+│   ├── App.tsx                             # Entry point, tab navigation
 │   ├── screens/
-│   │   ├── ChatScreen.tsx              # Main chat with streaming + tool calling
-│   │   ├── ChatListScreen.tsx          # Chat history list
-│   │   ├── ModelSelectionScreen.tsx     # Model browser + downloads
-│   │   └── SettingsScreen.tsx          # Configuration + HF Hub export
+│   │   ├── ChatScreen.tsx                  # Main chat with streaming + tool calling
+│   │   ├── ChatListScreen.tsx              # Chat history list
+│   │   ├── ModelSelectionScreen.tsx        # Model browser + downloads + tier badges
+│   │   ├── SettingsScreen.tsx              # Configuration + HF Hub export
+│   │   └── AgentDashboardScreen.tsx        # Model states, RAM, action log (Phase 5)
 │   ├── components/
-│   │   ├── MessageBubble.tsx           # Chat message rendering
-│   │   ├── ToolCallCard.tsx            # Tool call display + execution status
-│   │   ├── ModelCard.tsx               # Model info card
-│   │   └── MetricsBar.tsx              # Live token/s display
+│   │   ├── MessageBubble.tsx               # Chat message rendering
+│   │   ├── ToolCallCard.tsx                # Tool call display + execution status
+│   │   ├── ModelCard.tsx                   # Model info card + tier badge
+│   │   ├── MetricsBar.tsx                  # Live token/s display
+│   │   ├── ActionChainProgress.tsx         # Multi-step action progress (Phase 5)
+│   │   ├── VoiceInputButton.tsx            # Voice recording button (Phase 2)
+│   │   ├── ScreenshotPreview.tsx           # Screenshot preview (Phase 4)
+│   │   └── MemoryChips.tsx                 # Recalled memory context (Phase 3)
 │   ├── tools/
-│   │   ├── registry.ts                 # Tool definitions (google/mobile-actions format)
-│   │   ├── flashlight.ts              # Flashlight on/off
-│   │   ├── wifiSettings.ts            # Open WiFi settings
-│   │   ├── calendarEvent.ts           # Create calendar events
-│   │   ├── email.ts                   # Send emails
-│   │   ├── maps.ts                    # Show maps
-│   │   └── contacts.ts               # Create contacts
+│   │   ├── registry.ts                     # Tool definitions (7 → 30+ tools)
+│   │   ├── flashlight.ts                   # Flashlight on/off
+│   │   ├── wifiSettings.ts                 # Open WiFi settings
+│   │   ├── calendarEvent.ts                # Create calendar events
+│   │   ├── email.ts                        # Send emails
+│   │   ├── maps.ts                         # Show maps
+│   │   ├── contacts.ts                     # Create contacts
+│   │   └── [Phase 1-3 tools]               # brightness, volume, bluetooth, alarm, ...
 │   ├── services/
-│   │   ├── huggingfaceApi.ts          # HF Hub push-to-hub API
-│   │   └── chatExport.ts             # Chat history JSONL export
+│   │   ├── huggingfaceApi.ts               # HF Hub push-to-hub API
+│   │   ├── chatExport.ts                   # Chat history JSONL export
+│   │   ├── ModelLifecycleManager.ts        # Hot/warm/cold tier loading + LRU eviction
+│   │   ├── IntentRouter.ts                 # Route intents to action/query/reason/chat
+│   │   ├── MemoryService.ts                # CactusIndex + embedding for recall (Phase 3)
+│   │   ├── VisionAgent.ts                  # See-then-act with LFM2-VL-450M (Phase 4)
+│   │   └── ActionChainExecutor.ts          # Multi-step action planning + execution
+│   ├── hooks/
+│   │   ├── useVoiceAgent.ts                # VAD + STT pipeline (Phase 2)
+│   │   ├── useModelManager.ts              # Model lifecycle hook
+│   │   └── useMemory.ts                    # Memory recall hook (Phase 3)
 │   ├── utils/
-│   │   ├── storage.ts                 # AsyncStorage persistence
-│   │   ├── toolParser.ts              # Parse model tool call output
-│   │   ├── chatHelpers.ts             # ID generation, timestamps
-│   │   ├── deviceMetrics.ts           # Battery, memory info
-│   │   ├── haptics.ts                 # Haptic feedback
-│   │   └── ttsManager.ts             # Text-to-speech
+│   │   ├── storage.ts                      # AsyncStorage persistence
+│   │   ├── toolParser.ts                   # Parse tool calls (dual format + chains)
+│   │   ├── chatHelpers.ts                  # ID generation, timestamps
+│   │   ├── deviceMetrics.ts                # Battery, memory, RAM tier detection
+│   │   ├── haptics.ts                      # Haptic feedback
+│   │   └── ttsManager.ts                   # Text-to-speech
 │   ├── config/
-│   │   ├── models.ts                  # Liquid AI model registry
-│   │   └── theme.ts                   # Desert/cactus themed design
-│   ├── types/
-│   │   └── index.ts                   # TypeScript types
-│   └── assets/
-│       ├── liquidchat_logo.png        # App logo
-│       └── liquidchat_icon.png        # App icon
-├── android/                            # Android native project
+│   │   ├── models.ts                       # Liquid AI model registry + tier assignments
+│   │   ├── modelTiers.ts                   # Hot/warm/cold tier configuration
+│   │   └── theme.ts                        # Desert/cactus themed design
+│   └── types/
+│       └── index.ts                        # TypeScript types
+├── android/
+│   └── app/src/main/java/.../
+│       ├── SystemControlsModule.java       # Native bridge for Phase 1 tools
+│       └── LiquidChatAccessibilityService.java  # UI automation (Phase 3)
+├── .claude/
+│   └── skills/
+│       ├── unsloth-jobs-training/          # /unsloth-jobs-training — submit LoRA training to HF Jobs
+│       ├── lora-to-cactus-hub/             # /lora-to-cactus-hub — convert to Cactus format + push Hub
+│       └── build-apk-liquidchat/           # /build-apk-liquidchat — build debug/release APK
 ├── release/
-│   └── LiquidChat.apk                 # Pre-built release APK
+│   └── LiquidChat.apk                     # Pre-built release APK
 ├── package.json
 ├── metro.config.js
 └── react-native.config.js
 ```
 
+## Multi-Model Architecture
+
+LiquidChat v1.0 orchestrates up to 9 specialized models, loaded on demand based on available device RAM:
+
+| Tier | Model | Size (INT8) | Purpose |
+|------|-------|-------------|---------|
+| **Hot** | LFM2.5-1.2B-Instruct + LoRA | ~750MB | Core brain — every interaction |
+| **Hot** | LFM2-350M | 272MB | Fast chat fallback |
+| **Hot** | silero-vad | ~5MB | Always-on voice detection |
+| **Warm** | whisper-small | 210MB | Speech-to-text |
+| **Warm** | Qwen3-Embedding-0.6B | 394MB | Memory embeddings + RAG |
+| **Warm** | LFM2-VL-450M | 420MB | Vision — screenshot understanding |
+| **Warm** | LFM2-1.2B-Tool | 722MB | Structured API / tool-heavy tasks |
+| **Cold** | LFM2.5-1.2B-Thinking | ~750MB | Multi-step planning |
+| **Cold** | LFM2.5-VL-1.6B | 1440MB | Detailed image analysis |
+
+The `ModelLifecycleManager` handles LRU eviction of warm/cold models to stay within the device RAM budget. Hot tier models are never evicted.
+
+## Roadmap
+
+### Phase 0 — Foundation (Done)
+LoRA trained, 7 tools working, token streaming, HF Hub export, APK shipping.
+
+### Phase 1 — System Controls (In Progress)
++10 system control tools, `SystemControlsModule.java` native bridge, LoRA retrain on expanded dataset, compound action support.
+
+### Phase 2 — Voice Input
+Integrate `useCactusVAD` + `useCactusSTT` hooks, `VoiceInputButton` component, full voice loop via existing `ttsManager.ts`.
+
+### Phase 3 — Memory & RAG
+`MemoryService.ts` with CactusIndex + Qwen3-Embedding-0.6B, RAG corpus manager in Settings, `LFM2-1.2B-RAG` for document Q&A.
+
+### Phase 4 — Vision + UI Automation
+LFM2-VL-450M see-then-act pattern, `LiquidChatAccessibilityService.java` + React Native bridge, 10 UI automation tools.
+
+### Phase 5 — Model Orchestration
+`ModelLifecycleManager` + `IntentRouter` + `AgentDashboard`, `LFM2.5-1.2B-Thinking` for multi-step planning, device-adaptive model configs.
+
+### Phase 6 — iOS Parity
+iOS native modules, Shortcuts/Intents integration, XCUITest-style automation.
+
+> **LoRA Improvement Loop:** The HF Hub export feature (`chatExport.ts` + `huggingfaceApi.ts`) creates a continuous flywheel: real user interactions are exported as JSONL, curated, and fed back into LoRA training after each phase. Target dataset grows from 31,550 → ~41,000+ samples.
+
+## Training Pipeline
+
+LoRA training uses [Unsloth](https://github.com/unslothai/unsloth) on Hugging Face Jobs cloud GPUs. Three Claude Code skills automate the full model-to-APK pipeline:
+
+| Skill | Command | Purpose |
+|-------|---------|---------|
+| Unsloth Jobs Training | `/unsloth-jobs-training` | Submit LoRA fine-tuning job to HF Jobs (A10G/A100) |
+| LoRA to Cactus Hub | `/lora-to-cactus-hub` | Merge adapter + convert to Cactus binary format + push Hub |
+| Build APK | `/build-apk-liquidchat` | Build debug or release Android APK |
+
+Training defaults: LFM2.5-1.2B-Instruct base, LoRA r=16/alpha=16, batch size 8 (effective 32), 3 epochs, 2e-4 LR, A100 80GB. Monitoring via [Trackio](https://huggingface.co/spaces/kshitijthakkar/trackio).
+
 ## Installation
 
 ### Pre-built APK
 
-Download and install `release/LiquidChat.apk` on your Android device.
+Download and install `release/LiquidChat.apk` on your Android device (Android 7+).
 
 ### Build from Source
 
 **Prerequisites:**
 - Node.js >= 20
-- React Native CLI
-- Android SDK
-- [Cactus React Native SDK](https://github.com/cactus-compute/cactus) at `../cactus_framework/cactus-react-native`
+- JDK 17+
+- Android SDK with NDK 27.1.12297006
+- `ANDROID_HOME` environment variable set
 
 ```bash
 # Install dependencies
 npm install
 
-# Build release APK
+# Debug build (run on connected device)
+npm run android
+
+# Release APK
 cd android && ./gradlew assembleRelease
 ```
 
-The APK will be at `android/app/build/outputs/apk/release/app-release.apk`.
+APK output: `android/app/build/outputs/apk/release/app-release.apk`
 
 ### Model Setup
 
-The fine-tuned model weights must be pushed to the device in Cactus v1.x format:
+Models are downloaded in-app via the Model Selection screen. For manual sideloading:
 
-1. Convert LoRA weights to Cactus format using the Cactus CLI or conversion script
-2. Push the weight folder to the device:
-   ```bash
-   adb push weights/lfm25-mobile-actions/ /data/local/tmp/lfm25-mobile-actions/
-   adb shell run-as com.liquidchat cp -r /data/local/tmp/lfm25-mobile-actions /data/user/0/com.liquidchat/files/models/
-   ```
-3. Launch the app — the model loads automatically from `files/models/lfm25-mobile-actions/`
+```bash
+adb push weights/lfm25-mobile-actions/ /data/local/tmp/lfm25-mobile-actions/
+adb shell run-as com.liquidchat cp -r /data/local/tmp/lfm25-mobile-actions /data/user/0/com.liquidchat/files/models/
+```
 
 ## Tech Stack
 
 | Component | Technology |
 |-----------|-----------|
 | **Framework** | React Native 0.81.1 |
-| **LLM Runtime** | Cactus React Native (on-device inference) |
-| **Model Format** | Cactus v1.x weight folders |
+| **LLM Runtime** | Cactus React Native 1.7.0 (on-device inference) |
+| **Model Format** | Cactus binary format (CACT header + quantized tensors) |
 | **State** | React hooks + AsyncStorage |
 | **Navigation** | Custom state-based (no react-navigation dependency) |
 | **Flashlight** | react-native-torch |
@@ -165,6 +267,8 @@ The fine-tuned model weights must be pushed to the device in Cactus v1.x format:
 | **File System** | @dr.pogodin/react-native-fs |
 | **TTS** | react-native-tts |
 | **Haptics** | react-native-haptic-feedback |
+| **Training** | Unsloth + TRL on Hugging Face Jobs |
+| **Model Hub** | Hugging Face Hub (datasets + model weights) |
 
 ## License
 
@@ -173,3 +277,5 @@ This project is for research and testing purposes. The base model ([LiquidAI/LFM
 ## Author
 
 Developed by **Kshitij Thakkar**
+
+*github.com/Mandark-droid · huggingface.co/kshitijthakkar*
