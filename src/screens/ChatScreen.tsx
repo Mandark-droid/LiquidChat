@@ -39,6 +39,8 @@ import { getModelBySlug } from '../config/models';
 import MessageBubble from '../components/MessageBubble';
 import MetricsBar from '../components/MetricsBar';
 import VoiceInputButton from '../components/VoiceInputButton';
+import MemoryChips from '../components/MemoryChips';
+import { useMemory } from '../hooks/useMemory';
 import { theme } from '../config/theme';
 import type {
   Chat,
@@ -85,10 +87,22 @@ export default function ChatScreen({
   const abortRef = useRef(false);
   const chatRef = useRef<Chat | null>(null);
 
+  // Memory hook
+  const {
+    relevantMemories,
+    recallForMessage,
+    rememberInteraction,
+    clearRecalled,
+  } = useMemory(
+    settings?.memoryEnabled ?? false,
+    settings?.embeddingModel,
+  );
+
   // Use the system prompt from settings (pre-populated with training format + tool definitions)
   const buildSystemPrompt = useCallback(
-    (settingsPrompt?: string): string => {
-      return settingsPrompt || getDefaultSystemPrompt();
+    (settingsPrompt?: string, memoryContext?: string): string => {
+      const base = settingsPrompt || getDefaultSystemPrompt();
+      return memoryContext ? base + memoryContext : base;
     },
     [],
   );
@@ -428,7 +442,17 @@ export default function ChatScreen({
     scrollToBottom();
 
     try {
-      const { text: responseText, functionCalls } = await generateResponse(updatedMessages);
+      // Recall relevant memories before generating
+      let memoryContext = '';
+      if (settings?.memoryEnabled) {
+        const memories = await recallForMessage(text);
+        if (memories.length > 0) {
+          memoryContext = '\n\nRelevant context from previous interactions:\n' +
+            memories.map(m => `- ${m.text}`).join('\n');
+        }
+      }
+
+      const { text: responseText, functionCalls } = await generateResponse(updatedMessages, memoryContext);
       if (abortRef.current) return;
 
       // Parse tool calls from response text or from CactusLM functionCalls
@@ -460,6 +484,11 @@ export default function ChatScreen({
         });
       }
 
+      // Auto-remember interaction if enabled
+      if (settings?.memoryEnabled && settings?.autoRemember && responseText) {
+        rememberInteraction(text, responseText);
+      }
+
       // Execute tool calls if found and auto-execute is enabled
       if (
         toolCalls.length > 0 &&
@@ -488,8 +517,9 @@ export default function ChatScreen({
 
   const generateResponse = async (
     allMessages: ChatMessage[],
+    memoryContext?: string,
   ): Promise<{ text: string; functionCalls?: Array<{ name: string; arguments: string }> }> => {
-    const systemPrompt = buildSystemPrompt(settings?.systemPrompt);
+    const systemPrompt = buildSystemPrompt(settings?.systemPrompt, memoryContext);
 
     const formattedMessages: Message[] = [
       { role: 'system', content: systemPrompt },
@@ -856,6 +886,7 @@ export default function ChatScreen({
 
   const renderInputArea = () => (
     <View style={styles.inputArea}>
+      <MemoryChips memories={relevantMemories} onDismiss={clearRecalled} />
       {renderQuickActions()}
       {renderImagePreview()}
       <View style={styles.inputRow}>

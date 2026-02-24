@@ -56,9 +56,25 @@ export interface ChatSettings {
   sttModel: string;
   autoSendVoice: boolean;
   voiceInputEnabled: boolean;
+  memoryEnabled: boolean;
+  autoRemember: boolean;
+  embeddingModel: string;
 }
 
-export type ModelCategory = 'text' | 'vision' | 'audio' | 'specialized' | 'custom';
+export interface MemoryResult {
+  id: string;
+  text: string;
+  score: number;
+  metadata?: Record<string, any>;
+  createdAt: number;
+}
+
+export interface DocumentResult extends MemoryResult {
+  sourceFile: string;
+  chunkIndex: number;
+}
+
+export type ModelCategory = 'text' | 'vision' | 'audio' | 'specialized' | 'custom' | 'embedding';
 
 export interface LiquidModel {
   name: string;
@@ -91,4 +107,7 @@ export const DEFAULT_SETTINGS: ChatSettings = {
   sttModel: 'whisper-small',
   autoSendVoice: false,
   voiceInputEnabled: true,
+  memoryEnabled: false,
+  autoRemember: true,
+  embeddingModel: 'qwen3-embedding-0.6b',
 };

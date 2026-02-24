@@ -93,6 +93,18 @@ export const LIQUID_MODELS: LiquidModel[] = [
     supportsVision: false,
     supportsAudio: true,
   },
+  // === Embedding Models ===
+  {
+    name: 'Qwen3-Embedding-0.6B',
+    slug: 'qwen3-embedding-0.6b',
+    category: 'embedding',
+    sizeMb: 394,
+    description: 'Text embedding model for semantic memory and RAG.',
+    supportsCompletion: false,
+    supportsToolCalling: false,
+    supportsVision: false,
+    supportsAudio: false,
+  },
   // === Custom Fine-tuned Model ===
   {
     name: 'LFM2.5 Mobile Actions',

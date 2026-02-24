@@ -15,6 +15,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { storage } from '../utils/storage';
 import { validateHFToken, pushDatasetToHub } from '../services/huggingfaceApi';
 import { exportForFineTuning } from '../services/chatExport';
+import { memoryService } from '../services/MemoryService';
 import { getDefaultSystemPrompt } from '../tools/registry';
 import { theme } from '../config/theme';
 import type { ChatSettings } from '../types';
@@ -34,9 +35,13 @@ export default function SettingsScreen({
   const [hfUsername, setHfUsername] = useState<string | null>(null);
   const [hfValidating, setHfValidating] = useState(false);
   const [hfPushing, setHfPushing] = useState(false);
+  const [memoryStats, setMemoryStats] = useState({ memoryCount: 0, documentCount: 0, documentFiles: [] as string[] });
+  const [docPath, setDocPath] = useState('');
+  const [isImporting, setIsImporting] = useState(false);
 
   useEffect(() => {
     loadSettings();
+    refreshMemoryStats();
   }, []);
 
   const loadSettings = async () => {
@@ -153,6 +158,73 @@ export default function SettingsScreen({
         },
       ],
     );
+  };
+
+  const refreshMemoryStats = () => {
+    try {
+      const stats = memoryService.getStats();
+      setMemoryStats(stats);
+    } catch {
+      // Service may not be initialized yet
+    }
+  };
+
+  const handleClearMemory = () => {
+    Alert.alert(
+      'Clear Memory',
+      'Delete all stored memories? This cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Clear',
+          style: 'destructive',
+          onPress: async () => {
+            await memoryService.clearMemory();
+            refreshMemoryStats();
+            Alert.alert('Done', 'All memories cleared.');
+          },
+        },
+      ],
+    );
+  };
+
+  const handleClearDocuments = () => {
+    Alert.alert(
+      'Clear Documents',
+      'Delete all imported documents? This cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Clear',
+          style: 'destructive',
+          onPress: async () => {
+            await memoryService.clearDocuments();
+            refreshMemoryStats();
+            Alert.alert('Done', 'All documents cleared.');
+          },
+        },
+      ],
+    );
+  };
+
+  const handleImportDocument = async () => {
+    const path = docPath.trim();
+    if (!path) {
+      Alert.alert('Error', 'Please enter a file path.');
+      return;
+    }
+
+    setIsImporting(true);
+    try {
+      const chunkCount = await memoryService.addDocument(path);
+      refreshMemoryStats();
+      setDocPath('');
+      Alert.alert('Import Successful', `Added ${chunkCount} chunks from document.`);
+    } catch (e) {
+      Alert.alert('Import Failed', e instanceof Error ? e.message : 'Could not import document.');
+    } finally {
+      setIsImporting(false);
+    }
   };
 
   const handleResetSettings = () => {
@@ -399,6 +471,73 @@ export default function SettingsScreen({
                   'autoSendVoice',
                   'Send message immediately after voice transcription',
                 )}
+              </>
+            )}
+          </>
+        ))}
+
+        {renderSection('Memory', (
+          <>
+            {renderToggle(
+              'Enable Memory',
+              settings.memoryEnabled,
+              'memoryEnabled',
+              'Semantic memory across chat sessions',
+            )}
+            {settings.memoryEnabled && (
+              <>
+                {renderToggle(
+                  'Auto-Remember',
+                  settings.autoRemember,
+                  'autoRemember',
+                  'Automatically store interactions',
+                )}
+                <View style={styles.settingRow}>
+                  <Text style={styles.settingLabel}>Memory Stats</Text>
+                  <Text style={styles.memoryStatsText}>
+                    {memoryStats.memoryCount} memories, {memoryStats.documentCount} doc chunks
+                    {memoryStats.documentFiles.length > 0 && (
+                      ` (${memoryStats.documentFiles.join(', ')})`
+                    )}
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  style={styles.memoryActionButton}
+                  onPress={handleClearMemory}
+                >
+                  <Text style={styles.memoryActionText}>Clear Memory</Text>
+                </TouchableOpacity>
+                <View style={styles.settingRow}>
+                  <Text style={styles.settingLabel}>Import Document (.txt)</Text>
+                  <TextInput
+                    style={styles.inlineInput}
+                    value={docPath}
+                    onChangeText={setDocPath}
+                    placeholder="/path/to/document.txt"
+                    placeholderTextColor={theme.colors.textMuted}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                  />
+                </View>
+                <View style={styles.memoryButtonRow}>
+                  <TouchableOpacity
+                    style={[styles.memoryActionButton, isImporting && styles.pushButtonDisabled]}
+                    onPress={handleImportDocument}
+                    disabled={isImporting}
+                  >
+                    {isImporting ? (
+                      <ActivityIndicator size="small" color={theme.colors.text} />
+                    ) : (
+                      <Text style={styles.memoryActionText}>Import</Text>
+                    )}
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.memoryActionButton}
+                    onPress={handleClearDocuments}
+                  >
+                    <Text style={styles.memoryActionText}>Clear Documents</Text>
+                  </TouchableOpacity>
+                </View>
               </>
             )}
           </>
@@ -670,6 +809,28 @@ const styles = StyleSheet.create({
   },
   sttModelOptionTextActive: {
     color: theme.colors.textLight,
+  },
+  memoryStatsText: {
+    fontSize: theme.fontSize.sm,
+    color: theme.colors.textSecondary,
+    marginTop: theme.spacing.sm,
+  },
+  memoryActionButton: {
+    backgroundColor: theme.colors.surfaceLight,
+    borderRadius: theme.borderRadius.sm,
+    paddingHorizontal: theme.spacing.lg,
+    paddingVertical: theme.spacing.sm,
+    marginBottom: theme.spacing.sm,
+    alignSelf: 'flex-start',
+  },
+  memoryActionText: {
+    color: theme.colors.accent,
+    fontSize: theme.fontSize.md,
+    fontWeight: '600',
+  },
+  memoryButtonRow: {
+    flexDirection: 'row',
+    gap: theme.spacing.sm,
   },
   tokenInput: {
     backgroundColor: theme.colors.inputBg,
