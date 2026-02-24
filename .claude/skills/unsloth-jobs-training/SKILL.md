@@ -118,3 +118,13 @@ Job ID: `699d9b0f52d1c53b7df7d678` — GPU: A10G — Started: 2026-02-24
 ## Next step after training
 
 Run `/lora-to-cactus-hub` to merge adapters and convert to Cactus format for mobile deployment.
+
+## Supporting files
+
+This skill includes reference material and alternative scripts:
+
+- [`TRAINING_GUIDE.md`](TRAINING_GUIDE.md) — Full training guide: hardware selection, cost estimates, step-by-step workflow, and post-training checklist
+- [`TRAINING_TEST_RESULTS.md`](TRAINING_TEST_RESULTS.md) — Validated dataset stats, configuration table, and performance expectations
+- [`scripts/train_liquidchat_lora.py`](scripts/train_liquidchat_lora.py) — Self-contained training script (alternative to the plugin script, useful for local GPU runs)
+- [`scripts/run_hf_jobs_training.py`](scripts/run_hf_jobs_training.py) — HF Jobs-compatible PEP 723 script with inline dependencies
+- [`scripts/submit_training_job.py`](scripts/submit_training_job.py) — Python API submission helper (reference for programmatic job submission)
