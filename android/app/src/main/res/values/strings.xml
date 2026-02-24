@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">LiquidChat</string>
+    <string name="accessibility_service_description">LiquidChat uses accessibility to read screen content and perform UI actions like tapping, scrolling, and typing on your behalf.</string>
 </resources>

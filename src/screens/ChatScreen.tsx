@@ -40,6 +40,7 @@ import MessageBubble from '../components/MessageBubble';
 import MetricsBar from '../components/MetricsBar';
 import VoiceInputButton from '../components/VoiceInputButton';
 import MemoryChips from '../components/MemoryChips';
+import ScreenshotPreview from '../components/ScreenshotPreview';
 import { useMemory } from '../hooks/useMemory';
 import { theme } from '../config/theme';
 import type {
@@ -424,11 +425,8 @@ export default function ChatScreen({
       role: 'user' as const,
       content: text,
       timestamp: Date.now(),
+      images: selectedImage ? [selectedImage] : undefined,
     };
-
-    if (selectedImage) {
-      (userMessage as any).image = selectedImage;
-    }
 
     const updatedMessages = [...messages, userMessage];
     setMessages(updatedMessages);
@@ -527,10 +525,14 @@ export default function ChatScreen({
 
     for (const msg of allMessages) {
       if (msg.role === 'system') continue;
-      formattedMessages.push({
+      const formatted: Message = {
         role: msg.role as 'user' | 'assistant',
         content: msg.content,
-      });
+      };
+      if (msg.images && msg.images.length > 0) {
+        formatted.images = msg.images;
+      }
+      formattedMessages.push(formatted);
     }
 
     let fullResponse = '';
@@ -835,10 +837,7 @@ export default function ChatScreen({
     if (!selectedImage) return null;
     return (
       <View style={styles.imagePreview}>
-        <Text style={styles.imagePreviewText}>Image attached</Text>
-        <TouchableOpacity onPress={clearSelectedImage}>
-          <Text style={styles.imageRemoveText}>Remove</Text>
-        </TouchableOpacity>
+        <ScreenshotPreview uri={selectedImage} onRemove={clearSelectedImage} />
       </View>
     );
   };

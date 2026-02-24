@@ -14,6 +14,18 @@ import { setTimer } from './timer';
 import { toggleAirplaneMode } from './airplaneMode';
 import { openSettingsPage } from './settingsPage';
 import { takeScreenshot } from './screenshot';
+import {
+  tapElement,
+  longPressElement,
+  scrollScreen,
+  typeTextInField,
+  readScreen,
+  findElement,
+  goBack,
+  goHome,
+  openRecents,
+  swipe,
+} from './uiAutomation';
 import type { ToolResult } from '../types';
 
 /**
@@ -38,6 +50,17 @@ export const MOBILE_ACTION_TOOLS = [
   { function: { name: 'toggle_airplane_mode', description: 'Opens airplane mode settings to toggle it.', parameters: { type: 'OBJECT', properties: {}, required: [] } } },
   { function: { name: 'open_settings_page', description: 'Opens a specific settings page.', parameters: { type: 'OBJECT', properties: { page: { type: 'STRING', description: 'Settings page name: wifi, bluetooth, location, display, sound, battery, storage, security, accounts, accessibility, date, language, developer, about, apps, notifications, nfc, data_usage, vpn, hotspot, airplane, privacy, biometric' } }, required: ['page'] } } },
   { function: { name: 'take_screenshot', description: 'Takes a screenshot of the current screen.', parameters: { type: 'OBJECT', properties: {}, required: [] } } },
+  // --- UI Automation Tools (Phase 4) ---
+  { function: { name: 'tap_element', description: 'Taps on a UI element matching the given text or description.', parameters: { type: 'OBJECT', properties: { target: { type: 'STRING', description: 'Text or content description of the element to tap' } }, required: ['target'] } } },
+  { function: { name: 'long_press_element', description: 'Long presses on a UI element matching the given text or description.', parameters: { type: 'OBJECT', properties: { target: { type: 'STRING', description: 'Text or content description of the element to long press' } }, required: ['target'] } } },
+  { function: { name: 'scroll_screen', description: 'Scrolls the screen in a given direction.', parameters: { type: 'OBJECT', properties: { direction: { type: 'STRING', description: 'Scroll direction: up, down, left, or right' } }, required: ['direction'] } } },
+  { function: { name: 'type_text', description: 'Types text into an input field.', parameters: { type: 'OBJECT', properties: { text: { type: 'STRING', description: 'The text to type' }, target: { type: 'STRING', description: 'Optional: text label of the target input field' } }, required: ['text'] } } },
+  { function: { name: 'read_screen', description: 'Reads all UI elements currently visible on screen. Returns text, descriptions, bounds, and interaction states.', parameters: { type: 'OBJECT', properties: {}, required: [] } } },
+  { function: { name: 'find_element', description: 'Searches for UI elements matching a text query on the current screen.', parameters: { type: 'OBJECT', properties: { query: { type: 'STRING', description: 'Text to search for in UI elements' } }, required: ['query'] } } },
+  { function: { name: 'go_back', description: 'Presses the system back button.', parameters: { type: 'OBJECT', properties: {}, required: [] } } },
+  { function: { name: 'go_home', description: 'Presses the system home button.', parameters: { type: 'OBJECT', properties: {}, required: [] } } },
+  { function: { name: 'open_recents', description: 'Opens the recent apps overview.', parameters: { type: 'OBJECT', properties: {}, required: [] } } },
+  { function: { name: 'swipe_screen', description: 'Performs a swipe gesture between two screen coordinates.', parameters: { type: 'OBJECT', properties: { startX: { type: 'NUMBER', description: 'Starting X coordinate' }, startY: { type: 'NUMBER', description: 'Starting Y coordinate' }, endX: { type: 'NUMBER', description: 'Ending X coordinate' }, endY: { type: 'NUMBER', description: 'Ending Y coordinate' }, duration: { type: 'NUMBER', description: 'Swipe duration in milliseconds (default 300)' } }, required: ['startX', 'startY', 'endX', 'endY'] } } },
 ];
 
 export async function executeTool(
@@ -80,6 +103,27 @@ export async function executeTool(
         return await openSettingsPage(args.page);
       case 'take_screenshot':
         return await takeScreenshot();
+      // UI Automation tools (Phase 4)
+      case 'tap_element':
+        return await tapElement(args.target);
+      case 'long_press_element':
+        return await longPressElement(args.target);
+      case 'scroll_screen':
+        return await scrollScreen(args.direction);
+      case 'type_text':
+        return await typeTextInField(args.text, args.target);
+      case 'read_screen':
+        return await readScreen();
+      case 'find_element':
+        return await findElement(args.query);
+      case 'go_back':
+        return await goBack();
+      case 'go_home':
+        return await goHome();
+      case 'open_recents':
+        return await openRecents();
+      case 'swipe_screen':
+        return await swipe(args.startX, args.startY, args.endX, args.endY, args.duration);
       default:
         return { success: false, message: `Unknown tool: ${name}` };
     }

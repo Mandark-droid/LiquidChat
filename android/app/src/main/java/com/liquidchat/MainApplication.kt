@@ -18,6 +18,7 @@ class MainApplication : Application(), ReactApplication {
             PackageList(this).packages.apply {
               add(CactusPackage())
               add(SystemControlsPackage())
+              add(AccessibilityBridgePackage())
             }
 
         override fun getJSMainModuleName(): String = "index"
