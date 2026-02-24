@@ -16,6 +16,7 @@ import { storage } from '../utils/storage';
 import { validateHFToken, pushDatasetToHub } from '../services/huggingfaceApi';
 import { exportForFineTuning } from '../services/chatExport';
 import { memoryService } from '../services/MemoryService';
+import { modelLifecycle } from '../services/ModelLifecycleManager';
 import { getDefaultSystemPrompt } from '../tools/registry';
 import { theme } from '../config/theme';
 import type { ChatSettings } from '../types';
@@ -38,10 +39,21 @@ export default function SettingsScreen({
   const [memoryStats, setMemoryStats] = useState({ memoryCount: 0, documentCount: 0, documentFiles: [] as string[] });
   const [docPath, setDocPath] = useState('');
   const [isImporting, setIsImporting] = useState(false);
+  const [deviceProfileName, setDeviceProfileName] = useState<string>('Not detected');
 
   useEffect(() => {
     loadSettings();
     refreshMemoryStats();
+    // Detect device profile
+    if (modelLifecycle.initialized) {
+      const profile = modelLifecycle.getDeviceProfile();
+      if (profile) setDeviceProfileName(`${profile.name} (${profile.ramBudgetMb}MB budget)`);
+    } else {
+      modelLifecycle.init().then(() => {
+        const profile = modelLifecycle.getDeviceProfile();
+        if (profile) setDeviceProfileName(`${profile.name} (${profile.ramBudgetMb}MB budget)`);
+      }).catch(() => {});
+    }
   }, []);
 
   const loadSettings = async () => {
@@ -537,6 +549,31 @@ export default function SettingsScreen({
                   >
                     <Text style={styles.memoryActionText}>Clear Documents</Text>
                   </TouchableOpacity>
+                </View>
+              </>
+            )}
+          </>
+        ))}
+
+        {renderSection('Model Orchestration', (
+          <>
+            {renderToggle(
+              'Enable Orchestration',
+              settings.orchestrationEnabled,
+              'orchestrationEnabled',
+              'Centralized model lifecycle management with RAM budgeting',
+            )}
+            {settings.orchestrationEnabled && (
+              <>
+                {renderToggle(
+                  'Intent Routing',
+                  settings.intentRoutingEnabled,
+                  'intentRoutingEnabled',
+                  'Auto-route messages to the best model by intent',
+                )}
+                <View style={styles.settingRow}>
+                  <Text style={styles.settingLabel}>Device Profile</Text>
+                  <Text style={styles.memoryStatsText}>{deviceProfileName}</Text>
                 </View>
               </>
             )}

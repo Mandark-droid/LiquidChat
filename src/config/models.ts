@@ -1,4 +1,5 @@
-import type { LiquidModel } from '../types';
+import type { LiquidModel, ModelTier } from '../types';
+import { getModelTier as _getModelTier } from './modelTiers';
 
 export const LIQUID_MODELS: LiquidModel[] = [
   // === Liquid AI Models (in CactusLM registry) ===
@@ -105,6 +106,19 @@ export const LIQUID_MODELS: LiquidModel[] = [
     supportsVision: false,
     supportsAudio: false,
   },
+  // === Thinking Model ===
+  {
+    name: 'LFM2.5-1.2B-Thinking',
+    slug: 'lfm25-1.2b-thinking',
+    category: 'specialized',
+    sizeMb: 750,
+    description: 'Optimized for step-by-step reasoning and planning.',
+    supportsCompletion: true,
+    supportsToolCalling: false,
+    supportsVision: false,
+    supportsAudio: false,
+    supportsThinking: true,
+  },
   // === Custom Fine-tuned Model ===
   {
     name: 'LFM2.5 Mobile Actions',
@@ -128,3 +142,9 @@ export function getModelsByCategory(category: string): LiquidModel[] {
 export function getModelBySlug(slug: string): LiquidModel | undefined {
   return LIQUID_MODELS.find(m => m.slug === slug);
 }
+
+export function getModelsByTier(tier: ModelTier): LiquidModel[] {
+  return LIQUID_MODELS.filter(m => _getModelTier(m.slug) === tier);
+}
+
+export { _getModelTier as getModelTier };

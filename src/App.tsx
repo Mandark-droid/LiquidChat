@@ -14,12 +14,13 @@ import ChatListScreen from './screens/ChatListScreen';
 import ChatScreen from './screens/ChatScreen';
 import ModelSelectionScreen from './screens/ModelSelectionScreen';
 import SettingsScreen from './screens/SettingsScreen';
+import AgentDashboardScreen from './screens/AgentDashboardScreen';
 import { generateChatId } from './utils/chatHelpers';
 import { storage } from './utils/storage';
 import { DEFAULT_SETTINGS } from './types';
 import { theme } from './config/theme';
 
-type Tab = 'chats' | 'models' | 'settings';
+type Tab = 'chats' | 'models' | 'agent' | 'settings';
 type Screen =
   | { type: 'tabs' }
   | { type: 'chat'; chatId: string }
@@ -32,6 +33,7 @@ type Screen =
 const TAB_CONFIG: { key: Tab; label: string; icon: string }[] = [
   { key: 'chats', label: 'Chats', icon: '💬' },
   { key: 'models', label: 'Models', icon: '🤖' },
+  { key: 'agent', label: 'Agent', icon: '🧠' },
   { key: 'settings', label: 'Settings', icon: '⚙️' },
 ];
 
@@ -150,6 +152,8 @@ function AppContent() {
             onBack={() => setActiveTab('chats')}
           />
         );
+      case 'agent':
+        return <AgentDashboardScreen />;
       case 'settings':
         return (
           <SettingsScreen

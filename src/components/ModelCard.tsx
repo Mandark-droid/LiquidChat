@@ -1,7 +1,8 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { theme } from '../config/theme';
-import type { LiquidModel } from '../types';
+import TierBadge from './TierBadge';
+import type { LiquidModel, ModelTier } from '../types';
 
 interface ModelCardProps {
   model: LiquidModel;
@@ -11,6 +12,8 @@ interface ModelCardProps {
   onSelect: () => void;
   onDownload?: () => void;
   onDelete?: () => void;
+  tier?: ModelTier;
+  isLoaded?: boolean;
 }
 
 const ModelCard: React.FC<ModelCardProps> = ({
@@ -21,6 +24,8 @@ const ModelCard: React.FC<ModelCardProps> = ({
   onSelect,
   onDownload,
   onDelete,
+  tier,
+  isLoaded,
 }) => {
   const getCategoryIcon = () => {
     switch (model.category) {
@@ -63,6 +68,12 @@ const ModelCard: React.FC<ModelCardProps> = ({
         {model.supportsAudio && (
           <View style={[styles.capBadge, { backgroundColor: 'rgba(255, 215, 64, 0.2)' }]}>
             <Text style={[styles.capText, { color: theme.colors.warning }]}>Audio</Text>
+          </View>
+        )}
+        {tier && <TierBadge tier={tier} />}
+        {isLoaded && (
+          <View style={[styles.capBadge, { backgroundColor: 'rgba(0, 230, 118, 0.2)' }]}>
+            <Text style={[styles.capText, { color: theme.colors.success }]}>Loaded</Text>
           </View>
         )}
         {isDownloaded && (

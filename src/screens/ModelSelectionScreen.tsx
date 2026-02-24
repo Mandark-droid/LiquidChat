@@ -16,12 +16,15 @@ import {
   LIQUID_MODELS,
   getModelsByCategory,
   getModelBySlug,
+  getModelTier,
 } from '../config/models';
 import ModelCard from '../components/ModelCard';
+import { useModelManager } from '../hooks/useModelManager';
 import { theme } from '../config/theme';
-import type { LiquidModel, ModelCategory } from '../types';
+import type { LiquidModel, ModelCategory, ModelTier } from '../types';
 
 type Tab = 'local' | 'hub';
+type TierFilter = 'all' | ModelTier;
 
 const CATEGORIES: { key: ModelCategory; label: string }[] = [
   { key: 'text', label: 'Text' },
@@ -29,6 +32,13 @@ const CATEGORIES: { key: ModelCategory; label: string }[] = [
   { key: 'audio', label: 'Audio' },
   { key: 'specialized', label: 'Specialized' },
   { key: 'custom', label: 'Custom' },
+];
+
+const TIER_FILTERS: { key: TierFilter; label: string }[] = [
+  { key: 'all', label: 'All' },
+  { key: 'hot', label: 'Hot' },
+  { key: 'warm', label: 'Warm' },
+  { key: 'cold', label: 'Cold' },
 ];
 
 interface ModelSelectionScreenProps {
@@ -42,8 +52,10 @@ export default function ModelSelectionScreen({
   onSelectModel,
   onBack,
 }: ModelSelectionScreenProps) {
+  const { loadedModels } = useModelManager();
   const [activeTab, setActiveTab] = useState<Tab>('local');
   const [activeCategory, setActiveCategory] = useState<ModelCategory>('text');
+  const [activeTier, setActiveTier] = useState<TierFilter>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [downloadProgress, setDownloadProgress] = useState<
     Record<string, number>
@@ -84,8 +96,13 @@ export default function ModelSelectionScreen({
     }
   };
 
+  const loadedSlugs = new Set(loadedModels.map(m => m.slug));
+
   const getFilteredModels = useCallback((): LiquidModel[] => {
     let models = getModelsByCategory(activeCategory);
+    if (activeTier !== 'all') {
+      models = models.filter(m => getModelTier(m.slug) === activeTier);
+    }
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase();
       models = models.filter(
@@ -96,7 +113,7 @@ export default function ModelSelectionScreen({
       );
     }
     return models;
-  }, [activeCategory, searchQuery]);
+  }, [activeCategory, activeTier, searchQuery]);
 
   const handleSelectModel = (model: LiquidModel) => {
     onSelectModel(model.slug);
@@ -434,6 +451,32 @@ export default function ModelSelectionScreen({
           placeholderTextColor={theme.colors.textMuted}
         />
         {renderCategories()}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.categoryScroll}
+          contentContainerStyle={styles.categoryContent}
+        >
+          {TIER_FILTERS.map(tf => (
+            <TouchableOpacity
+              key={tf.key}
+              style={[
+                styles.categoryChip,
+                activeTier === tf.key && styles.activeCategoryChip,
+              ]}
+              onPress={() => setActiveTier(tf.key)}
+            >
+              <Text
+                style={[
+                  styles.categoryText,
+                  activeTier === tf.key && styles.activeCategoryText,
+                ]}
+              >
+                {tf.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
         {models.length === 0 ? (
           <View style={styles.emptyState}>
             <Text style={styles.emptyText}>No models found</Text>
@@ -449,6 +492,8 @@ export default function ModelSelectionScreen({
               onSelect={() => handleSelectModel(model)}
               onDownload={() => handleDownloadModel(model)}
               onDelete={() => handleDeleteModel(model)}
+              tier={getModelTier(model.slug)}
+              isLoaded={loadedSlugs.has(model.slug)}
             />
           ))
         )}
