@@ -111,12 +111,13 @@ export const LIQUID_MODELS: LiquidModel[] = [
     slug: 'lfm25-mobile-actions',
     category: 'custom',
     sizeMb: 600,
-    description: 'Fine-tuned for mobile action tool calling. Requires weight conversion (LoRA to GGUF) before use.',
+    description: 'Fine-tuned for mobile action tool calling. Downloads cactus-format weights from HuggingFace.',
     supportsCompletion: true,
     supportsToolCalling: true,
     supportsVision: false,
     supportsAudio: false,
     isCustom: true,
+    hfRepo: 'kshitijthakkar/lfm25-mobile-actions-cactus',
   },
 ];
 

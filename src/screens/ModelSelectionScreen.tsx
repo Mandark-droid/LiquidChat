@@ -144,7 +144,7 @@ export default function ModelSelectionScreen({
           },
         });
       } else if (model.hfRepo) {
-        // Custom GGUF model - download from HuggingFace
+        // Custom model - download from HuggingFace
         const modelsDir = `${RNFS.DocumentDirectoryPath}/models`;
         try {
           const exists = await RNFS.exists(modelsDir);
@@ -155,25 +155,104 @@ export default function ModelSelectionScreen({
           // ignore
         }
 
-        // Fetch the repo file list to find the GGUF file
-        const destPath = `${modelsDir}/${model.slug}.gguf`;
-        const downloadUrl = `https://huggingface.co/${model.hfRepo}/resolve/main/${model.slug}.gguf`;
-        const result = RNFS.downloadFile({
-          fromUrl: downloadUrl,
-          toFile: destPath,
-          progress: res => {
-            const progress = res.bytesWritten / res.contentLength;
+        // Fetch the repo file list from HuggingFace API
+        const apiUrl = `https://huggingface.co/api/models/${model.hfRepo}`;
+        const apiResponse = await fetch(apiUrl);
+        if (!apiResponse.ok) {
+          throw new Error(`Failed to fetch model info from HuggingFace (HTTP ${apiResponse.status})`);
+        }
+        const repoInfo = await apiResponse.json();
+        const siblings: Array<{ rfilename: string }> = repoInfo.siblings || [];
+        const filesToDownload = siblings
+          .map((s: { rfilename: string }) => s.rfilename)
+          .filter((name: string) => !name.startsWith('.'));
+
+        if (filesToDownload.length === 0) {
+          throw new Error('No files found in HuggingFace repo');
+        }
+
+        // Check if this is a cactus-format repo (has config.txt) or a single GGUF
+        const isCactusFormat = filesToDownload.some((f: string) => f === 'config.txt');
+
+        if (isCactusFormat) {
+          // Download all files into a named directory (cactus weight folder)
+          const modelDir = `${modelsDir}/${model.slug}`;
+          try {
+            if (!(await RNFS.exists(modelDir))) {
+              await RNFS.mkdir(modelDir);
+            }
+          } catch {
+            // ignore
+          }
+
+          let downloadedCount = 0;
+          for (const fileName of filesToDownload) {
+            // Create subdirectories if needed
+            const parts = fileName.split('/');
+            if (parts.length > 1) {
+              const subDir = `${modelDir}/${parts.slice(0, -1).join('/')}`;
+              try {
+                if (!(await RNFS.exists(subDir))) {
+                  await RNFS.mkdir(subDir);
+                }
+              } catch {
+                // ignore
+              }
+            }
+
+            const fileUrl = `https://huggingface.co/${model.hfRepo}/resolve/main/${fileName}`;
+            const destPath = `${modelDir}/${fileName}`;
+            const result = RNFS.downloadFile({
+              fromUrl: fileUrl,
+              toFile: destPath,
+              progress: res => {
+                const fileProgress = res.contentLength > 0
+                  ? res.bytesWritten / res.contentLength
+                  : 0;
+                const overall = (downloadedCount + fileProgress) / filesToDownload.length;
+                setDownloadProgress(prev => ({
+                  ...prev,
+                  [model.slug]: Math.round(overall * 100),
+                }));
+              },
+              progressInterval: 500,
+            });
+
+            const response = await result.promise;
+            if (response.statusCode !== 200) {
+              throw new Error(`Failed to download ${fileName} (HTTP ${response.statusCode})`);
+            }
+            downloadedCount++;
             setDownloadProgress(prev => ({
               ...prev,
-              [model.slug]: Math.round(progress * 100),
+              [model.slug]: Math.round((downloadedCount / filesToDownload.length) * 100),
             }));
-          },
-          progressInterval: 500,
-        });
+          }
+        } else {
+          // Single GGUF file download
+          const ggufFile = filesToDownload.find((f: string) => f.endsWith('.gguf'));
+          if (!ggufFile) {
+            throw new Error('No GGUF file found in repo');
+          }
+          const destPath = `${modelsDir}/${model.slug}.gguf`;
+          const downloadUrl = `https://huggingface.co/${model.hfRepo}/resolve/main/${ggufFile}`;
+          const result = RNFS.downloadFile({
+            fromUrl: downloadUrl,
+            toFile: destPath,
+            progress: res => {
+              const progress = res.bytesWritten / res.contentLength;
+              setDownloadProgress(prev => ({
+                ...prev,
+                [model.slug]: Math.round(progress * 100),
+              }));
+            },
+            progressInterval: 500,
+          });
 
-        const response = await result.promise;
-        if (response.statusCode !== 200) {
-          throw new Error(`HTTP ${response.statusCode} - GGUF file not found in repo`);
+          const response = await result.promise;
+          if (response.statusCode !== 200) {
+            throw new Error(`HTTP ${response.statusCode} - GGUF file not found in repo`);
+          }
         }
       } else {
         setDownloadProgress(prev => {
