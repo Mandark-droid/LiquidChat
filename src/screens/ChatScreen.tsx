@@ -812,6 +812,13 @@ export default function ChatScreen({
     { label: '✉️ Email', text: 'Send an email to ' },
     { label: '🗺️ Maps', text: 'Show me a map of ' },
     { label: '👤 Contact', text: 'Create a new contact for ' },
+    { label: '🔆 Bright', text: 'Set the brightness to ' },
+    { label: '🔊 Volume', text: 'Set the volume to ' },
+    { label: '📡 BT', text: 'Turn on Bluetooth' },
+    { label: '🔕 DND', text: 'Enable Do Not Disturb' },
+    { label: '⏰ Alarm', text: 'Set an alarm for ' },
+    { label: '⏱️ Timer', text: 'Set a timer for ' },
+    { label: '⚙️ Settings', text: 'Open settings for ' },
   ];
 
   const handleQuickAction = (action: typeof QUICK_ACTIONS[0]) => {

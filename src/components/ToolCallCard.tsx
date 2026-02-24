@@ -20,6 +20,16 @@ const TOOL_ICONS: Record<string, string> = {
   send_email: '✉️',
   show_map: '🗺️',
   create_contact: '👤',
+  set_brightness: '🔆',
+  set_volume: '🔊',
+  toggle_bluetooth: '📡',
+  toggle_dnd: '🔕',
+  toggle_rotation_lock: '🔄',
+  set_alarm: '⏰',
+  set_timer: '⏱️',
+  toggle_airplane_mode: '✈️',
+  open_settings_page: '⚙️',
+  take_screenshot: '📱',
 };
 
 const ToolCallCard: React.FC<ToolCallCardProps> = ({
