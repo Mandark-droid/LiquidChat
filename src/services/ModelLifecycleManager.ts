@@ -1,7 +1,7 @@
-import { NativeModules, Platform } from 'react-native';
 import { CactusLM } from 'cactus-react-native';
 import { Cactus } from 'cactus-react-native/src/native';
 import * as RNFS from '@dr.pogodin/react-native-fs';
+import DeviceInfo from 'react-native-device-info';
 import { LIQUID_MODELS, getModelBySlug } from '../config/models';
 import { getDeviceProfile, getModelTier, type DeviceProfile } from '../config/modelTiers';
 import type { ModelTier, ModelState } from '../types';
@@ -36,11 +36,9 @@ class ModelLifecycleManager {
     if (this._initialized) return;
 
     // Get total RAM from device
-    let totalRamBytes = 4 * 1024 * 1024 * 1024; // 4GB default
+    let totalRamBytes = 6 * 1024 * 1024 * 1024; // 6GB safe default
     try {
-      if (Platform.OS === 'android' && NativeModules.DeviceInfoModule) {
-        totalRamBytes = await NativeModules.DeviceInfoModule.getTotalMemory();
-      }
+      totalRamBytes = await DeviceInfo.getTotalMemory();
     } catch {
       // Use default
     }
@@ -91,9 +89,52 @@ class ModelLifecycleManager {
     }
   }
 
+  private async downloadFromHF(slug: string, hfRepo: string, destDir: string): Promise<void> {
+    const apiUrl = `https://huggingface.co/api/models/${hfRepo}`;
+    const apiResponse = await fetch(apiUrl);
+    if (!apiResponse.ok) {
+      throw new Error(`Failed to fetch model info from HuggingFace (HTTP ${apiResponse.status})`);
+    }
+    const repoInfo = await apiResponse.json();
+    const filesToDownload: string[] = (repoInfo.siblings || [])
+      .map((s: { rfilename: string }) => s.rfilename)
+      .filter((name: string) => !name.startsWith('.'));
+
+    if (filesToDownload.length === 0) {
+      throw new Error(`No files found in HuggingFace repo: ${hfRepo}`);
+    }
+
+    if (!(await RNFS.exists(destDir))) {
+      await RNFS.mkdir(destDir);
+    }
+
+    for (const fileName of filesToDownload) {
+      const parts = fileName.split('/');
+      if (parts.length > 1) {
+        const subDir = `${destDir}/${parts.slice(0, -1).join('/')}`;
+        if (!(await RNFS.exists(subDir))) {
+          await RNFS.mkdir(subDir);
+        }
+      }
+      const fileUrl = `https://huggingface.co/${hfRepo}/resolve/main/${fileName}`;
+      const destPath = `${destDir}/${fileName}`;
+      const result = RNFS.downloadFile({ fromUrl: fileUrl, toFile: destPath });
+      const response = await result.promise;
+      if (response.statusCode !== 200) {
+        throw new Error(`Failed to download ${fileName} (HTTP ${response.statusCode})`);
+      }
+    }
+    console.log(`[ModelLifecycle] Downloaded "${slug}" from HuggingFace (${hfRepo})`);
+  }
+
   private async loadModel(slug: string): Promise<ManagedModel> {
     const modelDef = getModelBySlug(slug);
     const estimatedRam = modelDef ? Math.round(modelDef.sizeMb * RAM_MULTIPLIER) : 500;
+
+    // STT models (Whisper) are managed by CactusSTT, not here
+    if (modelDef?.isSTT) {
+      throw new Error(`"${slug}" is an STT model and cannot be loaded as a chat model.`);
+    }
 
     // Evict if needed
     await this.evictIfNeeded(estimatedRam);
@@ -206,6 +247,14 @@ class ModelLifecycleManager {
           }
         }
 
+        if (!modelPath && modelDef?.hfRepo) {
+          // Auto-download from HuggingFace if not found locally
+          const modelDir = `${RNFS.DocumentDirectoryPath}/models/${slug}`;
+          console.log(`[ModelLifecycle] Auto-downloading "${slug}" from HuggingFace...`);
+          await this.downloadFromHF(slug, modelDef.hfRepo, modelDir);
+          modelPath = modelDir;
+        }
+
         if (!modelPath) {
           throw new Error(`No model files found for "${slug}"`);
         }
@@ -251,6 +300,12 @@ class ModelLifecycleManager {
       console.log(`[ModelLifecycle] Evicting "${model.slug}" (~${model.ramMb}MB)`);
       await this.releaseOne(model);
       freeSpace += model.ramMb;
+    }
+
+    if (freeSpace < neededMb) {
+      console.warn(
+        `[ModelLifecycle] RAM budget tight: need ~${neededMb}MB but only ~${freeSpace}MB available after eviction. Attempting load anyway.`,
+      );
     }
   }
 
