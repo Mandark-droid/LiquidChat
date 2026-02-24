@@ -70,6 +70,29 @@ export const LIQUID_MODELS: LiquidModel[] = [
     supportsVision: true,
     supportsAudio: false,
   },
+  // === Audio Models (Whisper STT) ===
+  {
+    name: 'Whisper Small',
+    slug: 'whisper-small',
+    category: 'audio',
+    sizeMb: 244,
+    description: 'Fast on-device speech-to-text transcription.',
+    supportsCompletion: false,
+    supportsToolCalling: false,
+    supportsVision: false,
+    supportsAudio: true,
+  },
+  {
+    name: 'Whisper Medium',
+    slug: 'whisper-medium',
+    category: 'audio',
+    sizeMb: 769,
+    description: 'Higher accuracy speech-to-text transcription.',
+    supportsCompletion: false,
+    supportsToolCalling: false,
+    supportsVision: false,
+    supportsAudio: true,
+  },
   // === Custom Fine-tuned Model ===
   {
     name: 'LFM2.5 Mobile Actions',

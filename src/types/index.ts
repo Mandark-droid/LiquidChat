@@ -53,6 +53,9 @@ export interface ChatSettings {
   autoExecuteTools: boolean;
   hfToken: string;
   hfPrivateDataset: boolean;
+  sttModel: string;
+  autoSendVoice: boolean;
+  voiceInputEnabled: boolean;
 }
 
 export type ModelCategory = 'text' | 'vision' | 'audio' | 'specialized' | 'custom';
@@ -85,4 +88,7 @@ export const DEFAULT_SETTINGS: ChatSettings = {
   autoExecuteTools: true,
   hfToken: '',
   hfPrivateDataset: false,
+  sttModel: 'whisper-small',
+  autoSendVoice: false,
+  voiceInputEnabled: true,
 };

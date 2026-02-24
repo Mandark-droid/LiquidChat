@@ -38,6 +38,7 @@ import {
 import { getModelBySlug } from '../config/models';
 import MessageBubble from '../components/MessageBubble';
 import MetricsBar from '../components/MetricsBar';
+import VoiceInputButton from '../components/VoiceInputButton';
 import { theme } from '../config/theme';
 import type {
   Chat,
@@ -389,8 +390,16 @@ export default function ChatScreen({
     setSelectedImage(null);
   };
 
-  const handleSend = async () => {
-    const text = inputText.trim();
+  const handleVoiceTranscription = useCallback((text: string) => {
+    if (settings?.autoSendVoice) {
+      handleSend(text);
+    } else {
+      setInputText(text);
+    }
+  }, [settings?.autoSendVoice]);
+
+  const handleSend = async (overrideText?: string) => {
+    const text = (overrideText ?? inputText).trim();
     if (!text && !selectedImage) return;
     if (!modelLoaded || isGenerating) return;
 
@@ -866,12 +875,14 @@ export default function ChatScreen({
           <Text style={styles.iconButtonEmoji}>🖼️</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity
-          style={styles.iconButton}
-          disabled={true}
-        >
-          <Text style={[styles.iconButtonEmoji, styles.disabledText]}>🎙️</Text>
-        </TouchableOpacity>
+        {settings?.voiceInputEnabled !== false && (
+          <VoiceInputButton
+            sttModel={settings?.sttModel || 'whisper-small'}
+            disabled={isGenerating || !modelLoaded}
+            onTranscription={handleVoiceTranscription}
+            onError={(err) => Alert.alert('Voice Input Error', err)}
+          />
+        )}
 
         <TextInput
           style={styles.textInput}

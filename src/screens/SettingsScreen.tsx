@@ -346,6 +346,64 @@ export default function SettingsScreen({
           </>
         ))}
 
+        {renderSection('Voice Input', (
+          <>
+            {renderToggle(
+              'Enable Voice Input',
+              settings.voiceInputEnabled,
+              'voiceInputEnabled',
+              'Show microphone button in chat',
+            )}
+            {settings.voiceInputEnabled && (
+              <>
+                <View style={styles.settingRow}>
+                  <Text style={styles.settingLabel}>STT Model</Text>
+                  <View style={styles.sttModelRow}>
+                    <TouchableOpacity
+                      style={[
+                        styles.sttModelOption,
+                        settings.sttModel === 'whisper-small' && styles.sttModelOptionActive,
+                      ]}
+                      onPress={() => updateSetting('sttModel', 'whisper-small')}
+                    >
+                      <Text
+                        style={[
+                          styles.sttModelOptionText,
+                          settings.sttModel === 'whisper-small' && styles.sttModelOptionTextActive,
+                        ]}
+                      >
+                        Small (244 MB)
+                      </Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[
+                        styles.sttModelOption,
+                        settings.sttModel === 'whisper-medium' && styles.sttModelOptionActive,
+                      ]}
+                      onPress={() => updateSetting('sttModel', 'whisper-medium')}
+                    >
+                      <Text
+                        style={[
+                          styles.sttModelOptionText,
+                          settings.sttModel === 'whisper-medium' && styles.sttModelOptionTextActive,
+                        ]}
+                      >
+                        Medium (769 MB)
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+                {renderToggle(
+                  'Auto-Send After Transcription',
+                  settings.autoSendVoice,
+                  'autoSendVoice',
+                  'Send message immediately after voice transcription',
+                )}
+              </>
+            )}
+          </>
+        ))}
+
         {renderSection('HuggingFace Hub', (
           <>
             <View style={styles.settingRow}>
@@ -586,6 +644,32 @@ const styles = StyleSheet.create({
     marginTop: theme.spacing.sm,
     borderWidth: 1,
     borderColor: theme.colors.border,
+  },
+  sttModelRow: {
+    flexDirection: 'row',
+    gap: theme.spacing.sm,
+    marginTop: theme.spacing.sm,
+  },
+  sttModelOption: {
+    flex: 1,
+    backgroundColor: theme.colors.surfaceLight,
+    borderRadius: theme.borderRadius.sm,
+    paddingVertical: theme.spacing.md,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  sttModelOptionActive: {
+    backgroundColor: theme.colors.secondary,
+    borderColor: theme.colors.secondary,
+  },
+  sttModelOptionText: {
+    fontSize: theme.fontSize.sm,
+    fontWeight: '600',
+    color: theme.colors.text,
+  },
+  sttModelOptionTextActive: {
+    color: theme.colors.textLight,
   },
   tokenInput: {
     backgroundColor: theme.colors.inputBg,
