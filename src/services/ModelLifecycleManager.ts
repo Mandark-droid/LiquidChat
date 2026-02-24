@@ -27,6 +27,8 @@ class ModelLifecycleManager {
   private listeners: Set<Listener> = new Set();
   private loadingLocks = new Map<string, Promise<ManagedModel>>();
   private _initialized = false;
+  // Global mutex: native Cactus cannot handle concurrent init() calls
+  private _globalLoadQueue: Promise<any> = Promise.resolve();
 
   get initialized(): boolean {
     return this._initialized;
@@ -74,11 +76,17 @@ class ModelLifecycleManager {
       return existing;
     }
 
-    // Per-slug loading lock to prevent races
+    // Per-slug dedup: if already loading this exact slug, wait for it
     const activeLock = this.loadingLocks.get(slug);
     if (activeLock) return activeLock;
 
-    const loadPromise = this.loadModel(slug);
+    // Serialize ALL model loads through global queue —
+    // native Cactus crashes when two init() calls run concurrently
+    const loadPromise = this._globalLoadQueue.then(
+      () => this.loadModel(slug),
+      () => this.loadModel(slug), // proceed even if previous load failed
+    );
+    this._globalLoadQueue = loadPromise.catch(() => {}); // keep queue moving
     this.loadingLocks.set(slug, loadPromise);
 
     try {
@@ -158,42 +166,64 @@ class ModelLifecycleManager {
     this.notify();
 
     try {
-      // 3-stage fallback: registry -> local files -> native Cactus
-      // (mirrors ChatScreen's initializeModel logic)
+      // Loading strategy: custom/HF models go straight to local/HF path;
+      // registry models try CactusLM first, then fall through to local/HF.
+      let loaded = false;
 
-      // Step 1: Check CactusLM registry
-      let modelInfo: any = null;
-      try {
-        const tempCactusLM = new CactusLM();
-        const registryModels = await tempCactusLM.getModels();
-        modelInfo = registryModels.find((m: any) => m.slug === slug) || null;
-        await tempCactusLM.destroy();
-      } catch {
-        // Registry unavailable
-      }
-
-      if (modelInfo) {
-        // Registry model
-        const cactusLM = new CactusLM({ model: slug });
-        await cactusLM.download({ onProgress: () => {} });
-
+      // Step 1: Try CactusLM registry (skip for custom models)
+      if (!modelDef?.isCustom) {
+        let modelInfo: any = null;
         try {
-          await cactusLM.init();
-          managed.instance = cactusLM;
-          managed.nativeInstance = null;
-          managed.isCustomModel = false;
-        } catch {
-          // CactusLM init failed, fall back to native
-          const { CactusFileSystem } = require('cactus-react-native/src/native');
-          const modelPath = await CactusFileSystem.getModelPath(slug);
-          const nativeCactus = new Cactus();
-          await nativeCactus.init(modelPath, 2048);
-          managed.instance = null;
-          managed.nativeInstance = nativeCactus;
-          managed.isCustomModel = true;
+          console.log(`[ModelLifecycle] Step 1: Checking registry for "${slug}"...`);
+          const tempCactusLM = new CactusLM();
+          const registryModels = await tempCactusLM.getModels();
+          modelInfo = registryModels.find((m: any) => m.slug === slug) || null;
+          console.log(`[ModelLifecycle] Registry lookup: "${slug}" ${modelInfo ? 'FOUND' : 'NOT FOUND'} (${registryModels.length} models available)`);
+          await tempCactusLM.destroy();
+        } catch (regErr) {
+          console.log(`[ModelLifecycle] Registry unavailable: ${regErr}`);
+        }
+
+        if (modelInfo) {
+          try {
+            console.log(`[ModelLifecycle] Step 1a: Loading registry model "${slug}"...`);
+            const cactusLM = new CactusLM({ model: slug });
+            await cactusLM.download({ onProgress: () => {} });
+            console.log(`[ModelLifecycle] Download complete for "${slug}", calling init()...`);
+
+            try {
+              await cactusLM.init();
+              managed.instance = cactusLM;
+              managed.nativeInstance = null;
+              managed.isCustomModel = false;
+              loaded = true;
+              console.log(`[ModelLifecycle] CactusLM init succeeded for "${slug}"`);
+            } catch (initErr) {
+              console.log(`[ModelLifecycle] CactusLM init failed for "${slug}": ${initErr}`);
+              console.log(`[ModelLifecycle] Falling back to native Cactus...`);
+              const { CactusFileSystem } = require('cactus-react-native/src/native');
+              const modelPath = await CactusFileSystem.getModelPath(slug);
+              console.log(`[ModelLifecycle] Native model path: ${modelPath}`);
+              const nativeCactus = new Cactus();
+              await nativeCactus.init(modelPath, 2048);
+              managed.instance = null;
+              managed.nativeInstance = nativeCactus;
+              managed.isCustomModel = true;
+              loaded = true;
+              console.log(`[ModelLifecycle] Native Cactus fallback succeeded for "${slug}"`);
+            }
+          } catch (registryErr) {
+            console.log(`[ModelLifecycle] Registry path failed for "${slug}": ${registryErr}`);
+            console.log(`[ModelLifecycle] Falling through to local/HF path...`);
+          }
         }
       } else {
-        // Step 2: Local files
+        console.log(`[ModelLifecycle] Skipping registry for custom model "${slug}"`);
+      }
+
+      // Step 2: Local files + HF download (used for custom models and as fallback)
+      if (!loaded) {
+        console.log(`[ModelLifecycle] Step 2: Checking local files for "${slug}"...`);
         const userModelsDir = `${RNFS.DocumentDirectoryPath}/models`;
         const cactusModelsDir = `${RNFS.DocumentDirectoryPath}/cactus/models`;
 
@@ -208,6 +238,7 @@ class ModelLifecycleManager {
             files = [...files, ...(await RNFS.readDir(cactusModelsDir))];
           }
         } catch {}
+        console.log(`[ModelLifecycle] Local entries found: ${files.map((f: any) => f.name).join(', ') || '(none)'}`);
 
         // Cactus weight folders
         const cactusWeightDirs: any[] = [];
@@ -248,9 +279,9 @@ class ModelLifecycleManager {
         }
 
         if (!modelPath && modelDef?.hfRepo) {
-          // Auto-download from HuggingFace if not found locally
+          // Auto-download from HuggingFace
           const modelDir = `${RNFS.DocumentDirectoryPath}/models/${slug}`;
-          console.log(`[ModelLifecycle] Auto-downloading "${slug}" from HuggingFace...`);
+          console.log(`[ModelLifecycle] Downloading "${slug}" from HuggingFace (${modelDef.hfRepo})...`);
           await this.downloadFromHF(slug, modelDef.hfRepo, modelDir);
           modelPath = modelDir;
         }
@@ -259,6 +290,7 @@ class ModelLifecycleManager {
           throw new Error(`No model files found for "${slug}"`);
         }
 
+        console.log(`[ModelLifecycle] Loading native model from: ${modelPath}`);
         const nativeCactus = new Cactus();
         await nativeCactus.init(modelPath, 2048);
         managed.instance = null;
@@ -273,6 +305,8 @@ class ModelLifecycleManager {
       console.log(`[ModelLifecycle] Loaded "${slug}" (~${estimatedRam}MB)`);
       return managed;
     } catch (error) {
+      const errMsg = error instanceof Error ? error.message : String(error);
+      console.error(`[ModelLifecycle] FAILED to load "${slug}": ${errMsg}`);
       managed.state = 'error';
       managed.instance = null;
       managed.nativeInstance = null;
