@@ -2,7 +2,7 @@
 name: unsloth-jobs-training
 description: Submit a LoRA fine-tuning job to Hugging Face Jobs using Unsloth optimizations on LFM2.5-1.2B-Instruct. Use when the user wants to train or fine-tune a model on HF Jobs cloud GPUs.
 argument-hint: [dataset-id] [output-repo-id]
-disable-model-invocation: true
+disable-model-invocation: false
 allowed-tools: Bash
 ---
 

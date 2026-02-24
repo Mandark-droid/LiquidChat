@@ -2,7 +2,7 @@
 name: build-apk-liquidchat
 description: Build debug or release APKs for the LiquidChat Android app. Use when the user wants to compile, build, or install the LiquidChat APK on a device.
 argument-hint: [debug|release]
-disable-model-invocation: true
+disable-model-invocation: false
 allowed-tools: Bash
 ---
 

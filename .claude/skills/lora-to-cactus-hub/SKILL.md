@@ -2,7 +2,7 @@
 name: lora-to-cactus-hub
 description: Merge a trained LoRA adapter into the base model, convert to Cactus binary format for mobile deployment, and push to Hugging Face Hub. Use after training completes with /unsloth-jobs-training.
 argument-hint: [lora-repo-id]
-disable-model-invocation: true
+disable-model-invocation: false
 allowed-tools: Bash
 ---
 
