@@ -1,13 +1,18 @@
 import Tts from 'react-native-tts';
+import { Platform } from 'react-native';
 
 let isInitialized = false;
+
+function scaleRate(rate: number): number {
+  return Platform.OS === 'android' ? rate * 0.5 : rate;
+}
 
 export async function initTTS(rate: number = 1.0): Promise<void> {
   if (isInitialized) return;
 
   try {
     await Tts.setDefaultLanguage('en-US');
-    await Tts.setDefaultRate(rate);
+    await Tts.setDefaultRate(scaleRate(rate));
     await Tts.setDefaultPitch(1.0);
     isInitialized = true;
   } catch (error) {
@@ -15,13 +20,16 @@ export async function initTTS(rate: number = 1.0): Promise<void> {
   }
 }
 
-export async function speak(text: string, rate?: number): Promise<void> {
+export async function speak(
+  text: string,
+  options?: { rate?: number; voice?: string },
+): Promise<void> {
   try {
     if (!isInitialized) {
-      await initTTS(rate);
+      await initTTS(options?.rate);
     }
-    if (rate !== undefined) {
-      await Tts.setDefaultRate(rate);
+    if (options?.rate !== undefined) {
+      await Tts.setDefaultRate(scaleRate(options.rate));
     }
     await Tts.stop();
     Tts.speak(text);

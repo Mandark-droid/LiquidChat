@@ -139,6 +139,10 @@ export function getToolDefinitionsJSON(): string {
   return JSON.stringify(MOBILE_ACTION_TOOLS, null, 2);
 }
 
+export function getMinimalSystemPrompt(): string {
+  return 'You are a helpful mobile assistant. When the user asks you to perform an action on their device, use the available tools. Always respond concisely.';
+}
+
 export function getDefaultSystemPrompt(): string {
   return (
     'You are a helpful assistant with access to the following functions. Use them if required.\n\n' +

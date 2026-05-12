@@ -18,6 +18,10 @@ export interface ChatMessage extends CactusLMMessage {
   tokensPerSecond?: number;
   toolCalls?: ToolCall[];
   toolResult?: ToolResult;
+  // Populated when a user message had an attached image and the VLM rewrote
+  // the utterance against the scene (see VisionAgent.rewriteWithScene).
+  // The rewritten text is what the LLM and IntentRouter actually saw.
+  sceneRewrittenContent?: string;
 }
 
 export interface ChatMetrics {
@@ -61,6 +65,7 @@ export interface ChatSettings {
   embeddingModel: string;
   orchestrationEnabled: boolean;
   intentRoutingEnabled: boolean;
+  sceneGroundedRewriteEnabled: boolean;
 }
 
 export interface MemoryResult {
@@ -78,7 +83,7 @@ export interface DocumentResult extends MemoryResult {
 
 export type ModelCategory = 'text' | 'vision' | 'audio' | 'specialized' | 'custom' | 'embedding';
 export type ModelTier = 'hot' | 'warm' | 'cold';
-export type ModelState = 'unloaded' | 'loading' | 'ready' | 'error';
+export type ModelState = 'unloaded' | 'downloading' | 'initializing' | 'ready' | 'error';
 export type IntentType = 'ACTION' | 'QUERY' | 'REASON' | 'CHAT';
 
 export interface LiquidModel {
@@ -103,6 +108,8 @@ export type AgentState =
   | { kind: 'thinking' }
   | { kind: 'acting'; toolName: string }
   | { kind: 'vision' }
+  | { kind: 'downloading'; modelName: string; progress: number }
+  | { kind: 'initializing'; modelName: string }
   | { kind: 'error'; message: string };
 
 export type ActionChainStepStatus = 'pending' | 'running' | 'success' | 'error';
@@ -122,7 +129,7 @@ export const DEFAULT_SETTINGS: ChatSettings = {
   systemPrompt: '',
   enableHaptics: true,
   autoTTS: false,
-  ttsRate: 1.0,
+  ttsRate: 0.5,
   ttsVoice: 'en-US-language',
   autoExecuteTools: true,
   hfToken: '',
@@ -135,4 +142,5 @@ export const DEFAULT_SETTINGS: ChatSettings = {
   embeddingModel: 'qwen3-embedding-0.6b',
   orchestrationEnabled: true,
   intentRoutingEnabled: false,
+  sceneGroundedRewriteEnabled: true,
 };

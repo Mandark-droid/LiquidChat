@@ -31,6 +31,16 @@ const STATE_CONFIG: Record<
     emoji: '\uD83D\uDC41\uFE0F',
     label: 'Vision active',
   },
+  downloading: {
+    color: theme.colors.accent,
+    emoji: '\u2B07\uFE0F',
+    label: '',
+  },
+  initializing: {
+    color: theme.colors.agentThinking,
+    emoji: '\u2699\uFE0F',
+    label: '',
+  },
   error: {
     color: theme.colors.agentError,
     emoji: '\u26A0\uFE0F',
@@ -67,6 +77,10 @@ export default function AgentStateBar({ agentState }: AgentStateBarProps) {
   let label = config.label;
   if (agentState.kind === 'acting') {
     label = agentState.toolName;
+  } else if (agentState.kind === 'downloading') {
+    label = `Downloading ${agentState.modelName} ${agentState.progress}%`;
+  } else if (agentState.kind === 'initializing') {
+    label = `Loading ${agentState.modelName}...`;
   } else if (agentState.kind === 'error') {
     label = agentState.message;
   }

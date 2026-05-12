@@ -98,6 +98,17 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({
         onLongPress={handleLongPress}
         style={[styles.bubble, isUser ? styles.userBubble : styles.assistantBubble]}
       >
+        {isUser &&
+          message.sceneRewrittenContent &&
+          message.sceneRewrittenContent.trim() !== message.content.trim() && (
+          <View style={styles.sceneRewriteContainer}>
+            <Text style={styles.sceneRewriteLabel}>↻ Resolved against image:</Text>
+            <Text style={styles.sceneRewriteText} numberOfLines={3}>
+              {message.sceneRewrittenContent}
+            </Text>
+          </View>
+        )}
+
         {parseThinkingContent(message.content).map((part, idx) => {
           if (part.type === 'thinking') {
             return (
@@ -134,7 +145,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({
           <Text style={styles.streamingIndicator}>●</Text>
         )}
 
-        {message.tokens && !isStreaming && (
+        {!!message.tokens && !isStreaming && (
           <Text style={styles.tokenInfo}>
             {message.tokens} tokens
             {message.timeToFirstTokenMs ? ` · TTFT: ${message.timeToFirstTokenMs}ms` : ''}
@@ -179,6 +190,26 @@ const styles = StyleSheet.create({
   },
   thinkingHeader: { flexDirection: 'row', alignItems: 'center' },
   thinkingLabel: { fontSize: 12, fontWeight: '600', color: theme.colors.secondary },
+  sceneRewriteContainer: {
+    backgroundColor: 'rgba(255, 255, 255, 0.12)',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    marginBottom: 8,
+    borderLeftWidth: 2,
+    borderLeftColor: theme.colors.accent,
+  },
+  sceneRewriteLabel: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: theme.colors.accent,
+    marginBottom: 2,
+  },
+  sceneRewriteText: {
+    fontSize: 12,
+    color: theme.colors.textSecondary,
+    fontStyle: 'italic',
+  },
   thinkingText: { fontSize: 12, color: theme.colors.textSecondary, marginTop: 6, fontStyle: 'italic' },
   tokenInfo: { fontSize: 10, color: theme.colors.textMuted, marginTop: 6 },
   streamingIndicator: { color: theme.colors.accent, fontSize: 16, marginTop: 4 },

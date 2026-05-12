@@ -69,7 +69,10 @@ class MemoryService {
     this.initializing = true;
 
     try {
-      if (model) this.modelSlug = model;
+      if (model) {
+        // Migrate old slug to new registry key
+        this.modelSlug = model === 'qwen3-0.6-embed' ? 'qwen3-embedding-0.6b' : model;
+      }
 
       // Load persisted vector stores
       await Promise.all([

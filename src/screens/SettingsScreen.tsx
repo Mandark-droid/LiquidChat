@@ -571,6 +571,12 @@ export default function SettingsScreen({
                   'intentRoutingEnabled',
                   'Auto-route messages to the best model by intent',
                 )}
+                {renderToggle(
+                  'Scene-Grounded Rewrite',
+                  settings.sceneGroundedRewriteEnabled,
+                  'sceneGroundedRewriteEnabled',
+                  'When you attach an image, VLM resolves "this/that/it" against the scene before sending',
+                )}
                 <View style={styles.settingRow}>
                   <Text style={styles.settingLabel}>Device Profile</Text>
                   <Text style={styles.memoryStatsText}>{deviceProfileName}</Text>

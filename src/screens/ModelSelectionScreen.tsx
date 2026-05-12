@@ -12,6 +12,8 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as RNFS from '@dr.pogodin/react-native-fs';
 import { CactusLM } from 'cactus-react-native';
+import { CactusFileSystem } from 'cactus-react-native/src/native';
+import { getRegistry } from 'cactus-react-native/src/modelRegistry';
 import {
   LIQUID_MODELS,
   getModelsByCategory,
@@ -124,16 +126,30 @@ export default function ModelSelectionScreen({
     setDownloadProgress(prev => ({ ...prev, [model.slug]: 0 }));
 
     try {
-      if (!model.isCustom) {
-        // Check if model exists in CactusLM registry first
+      if (model.isSTT && model.hfRepo) {
+        // STT model (Whisper) — download cactus-format zip from HuggingFace
+        // via CactusFileSystem so CactusSTT can find it by slug
+        const zipUrl = `https://huggingface.co/${model.hfRepo}/resolve/main/weights/${model.slug}-int8.zip`;
+        await CactusFileSystem.downloadModel(
+          model.slug,
+          zipUrl,
+          (progress: number) => {
+            setDownloadProgress(prev => ({
+              ...prev,
+              [model.slug]: Math.round(progress * 100),
+            }));
+          },
+        );
+      } else if (!model.isCustom) {
+        // Check if model exists in CactusLM registry by key lookup.
+        // NOTE: getModels() returns CactusModel values (no slug field),
+        // so we must check registry keys directly via getRegistry().
         let inRegistry = false;
         try {
-          const tempCactus = new CactusLM();
-          const models = await tempCactus.getModels();
-          inRegistry = models.some((m: any) => m.slug === model.slug);
-          await tempCactus.destroy();
+          const registry = await getRegistry();
+          inRegistry = model.slug in registry;
         } catch {
-          // Registry check failed, try anyway
+          // Registry fetch failed (e.g. offline), try download anyway
           inRegistry = true;
         }
 

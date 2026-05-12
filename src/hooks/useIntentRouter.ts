@@ -20,6 +20,7 @@ export function useIntentRouter() {
       const routing = intentRouter.route(message, {
         currentModelSlug,
         hasDocumentCorpus,
+        loadedSlugs: modelLifecycle.getLoadedModels().map(m => m.slug),
       });
 
       console.log(

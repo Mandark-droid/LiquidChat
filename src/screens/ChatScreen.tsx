@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef, useCallback } from 'react';
+import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -30,13 +30,15 @@ import {
 } from '../utils/toolParser';
 import {
   executeTool,
-  getToolDefinitionsJSON,
   getDefaultSystemPrompt,
+  getMinimalSystemPrompt,
+  MOBILE_ACTION_TOOLS,
 } from '../tools/registry';
 import { getModelBySlug } from '../config/models';
 import { modelLifecycle } from '../services/ModelLifecycleManager';
 import { actionLogger } from '../services/ActionLogger';
 import { memoryService } from '../services/MemoryService';
+import { visionAgent } from '../services/VisionAgent';
 import { useIntentRouter } from '../hooks/useIntentRouter';
 import MessageBubble from '../components/MessageBubble';
 import MetricsBar from '../components/MetricsBar';
@@ -68,6 +70,18 @@ interface ChatScreenProps {
     currentModel: string,
     onSelect: (model: string) => void,
   ) => void;
+}
+
+// Migrate old model slugs to current Cactus-Compute registry keys
+const SLUG_MIGRATIONS: Record<string, string> = {
+  'lfm25-mobile-actions': 'lfm2-1.2b',
+  'qwen3-0.6-embed': 'qwen3-embedding-0.6b',
+  'lfm2-vl-1.6b': 'lfm2.5-vl-1.6b',
+  'lfm25-1.2b-thinking': 'lfm2.5-1.2b-thinking',
+  'lfm2-1.2b-rag': 'lfm2-1.2b',
+};
+function migrateSlug(slug: string): string {
+  return SLUG_MIGRATIONS[slug] ?? slug;
 }
 
 export default function ChatScreen({
@@ -111,13 +125,48 @@ export default function ChatScreen({
     settings?.embeddingModel,
   );
 
-  // Use the system prompt from settings (pre-populated with training format + tool definitions)
+  // Convert registry tools to CactusLM SDK format for structured function calling
+  const cactusTools = useMemo(() => MOBILE_ACTION_TOOLS.map(t => ({
+    name: t.function.name,
+    description: t.function.description,
+    parameters: {
+      type: 'object' as const,
+      properties: Object.fromEntries(
+        Object.entries(t.function.parameters.properties).map(([k, v]: [string, any]) => [
+          k,
+          { type: v.type.toLowerCase(), description: v.description },
+        ]),
+      ),
+      required: t.function.parameters.required || [],
+    },
+  })), []);
+
+  // Build system prompt — use minimal prompt when native tool calling is active
+  // to avoid duplicating tool definitions (SDK passes them via `tools` param)
   const buildSystemPrompt = useCallback(
     (settingsPrompt?: string, memoryContext?: string): string => {
-      const base = settingsPrompt || getDefaultSystemPrompt();
+      const useNativeTools = settings?.autoExecuteTools !== false;
+      let base: string;
+
+      if (useNativeTools) {
+        // When native tools are active, avoid the heavy JSON tool definitions.
+        // If the user's custom prompt IS the old default (starts with tool JSON),
+        // replace it with the minimal prompt.
+        if (
+          !settingsPrompt ||
+          settingsPrompt.startsWith('You are a helpful assistant with access to the following functions')
+        ) {
+          base = getMinimalSystemPrompt();
+        } else {
+          base = settingsPrompt;
+        }
+      } else {
+        base = settingsPrompt || getDefaultSystemPrompt();
+      }
+
       return memoryContext ? base + memoryContext : base;
     },
-    [],
+    [settings?.autoExecuteTools],
   );
 
   // Load chat data
@@ -131,6 +180,9 @@ export default function ChatScreen({
   const loadChat = async () => {
     const chat = await storage.getChat(chatId);
     if (chat) {
+      // Migrate old slugs in persisted settings
+      chat.settings.model = migrateSlug(chat.settings.model);
+      chat.settings.embeddingModel = migrateSlug(chat.settings.embeddingModel);
       chatRef.current = chat;
       setMessages(chat.messages);
       setSettings(chat.settings);
@@ -178,24 +230,43 @@ export default function ChatScreen({
   const initializeModel = async (modelSlug: string, activeSettings?: ChatSettings | null) => {
     // Use passed-in settings to avoid stale React state closure on first call
     const currentSettings = activeSettings !== undefined ? activeSettings : settings;
+    const displayName = getModelBySlug(modelSlug)?.name || modelSlug;
     // A. Orchestration path: delegate to ModelLifecycleManager
     if (currentSettings?.orchestrationEnabled) {
       setIsModelLoading(true);
       setLoadProgress(0);
       setModelLoaded(false);
+
+      // Subscribe to lifecycle to reflect download/init phases in UI
+      let unsubscribe: (() => void) | null = null;
       try {
         if (!modelLifecycle.initialized) await modelLifecycle.init();
+
+        unsubscribe = modelLifecycle.subscribe(() => {
+          const m = modelLifecycle.getModel(modelSlug);
+          if (!m) return;
+          if (m.state === 'downloading') {
+            setLoadProgress(m.downloadProgress);
+            setAgentState({ kind: 'downloading', modelName: displayName, progress: m.downloadProgress });
+          } else if (m.state === 'initializing') {
+            setLoadProgress(100);
+            setAgentState({ kind: 'initializing', modelName: displayName });
+          }
+        });
+
         const managed = await modelLifecycle.ensure(modelSlug);
         cactusLMRef.current = managed.instance;
         setModelLoaded(true);
-        setModelDisplayName(getModelBySlug(modelSlug)?.name || modelSlug);
+        setModelDisplayName(displayName);
         console.log(`[LiquidChat] Orchestration: loaded "${modelSlug}" via lifecycle manager`);
       } catch (error) {
         const errMsg = error instanceof Error ? error.message : String(error);
         Alert.alert('Model Error', `Failed to load model "${modelSlug}":\n\n${errMsg}`);
         cactusLMRef.current = null;
       } finally {
+        unsubscribe?.();
         setIsModelLoading(false);
+        setAgentState({ kind: 'idle' });
       }
       return;
     }
@@ -318,6 +389,7 @@ export default function ChatScreen({
       images: selectedImage ? [selectedImage] : undefined,
     };
 
+    const imageForRewrite = selectedImage;
     const updatedMessages = [...messages, userMessage];
     setMessages(updatedMessages);
     setInputText('');
@@ -331,11 +403,97 @@ export default function ChatScreen({
     scrollToBottom();
 
     try {
+      // B. Vision branch: when an image is attached, route the full response to
+      // the VLM (lfm2-vl-450m). The text brain (lfm2-1.2b) is text-only and
+      // cannot reason about pixels, so attaching an image must switch models.
+      // Trigger regardless of whether text is present — use a sensible default
+      // prompt if the user only attached an image.
+      if (imageForRewrite) {
+        const vlmQuestion = text || 'Describe this image in detail. What do you see?';
+
+        // Evict text brain to free RAM before VLM loads (~270MB for lfm2-vl-450m,
+        // ~780MB for lfm2-1.2b — both don't fit comfortably on mid-tier devices).
+        const textBrainSlug = settings?.model || 'lfm2-1.2b';
+        if (modelLifecycle.initialized) {
+          try {
+            console.log(`[VisionBranch] Evicting text brain "${textBrainSlug}" before VLM use`);
+            await modelLifecycle.release(textBrainSlug);
+            cactusLMRef.current = null;
+            setModelLoaded(false);
+          } catch (evErr) {
+            console.warn('[VisionBranch] Eviction failed (continuing):', evErr);
+          }
+        }
+
+        setAgentState({ kind: 'vision' });
+        try {
+          const startMs = Date.now();
+          let firstTokenMs: number | null = null;
+          let liveTokens = 0;
+          const onVlmToken = (token: string) => {
+            if (abortRef.current) return;
+            liveTokens++;
+            if (!firstTokenMs) firstTokenMs = Date.now();
+            setStreamingText(prev => prev + token);
+            setLiveTokenCount(liveTokens);
+            const elapsed = Date.now() - startMs;
+            if (elapsed > 0) setLiveTokensPerSecond((liveTokens / elapsed) * 1000);
+          };
+          const { response, tokens, ttftMs, totalMs } =
+            await visionAgent.answerWithImage(imageForRewrite, vlmQuestion, onVlmToken);
+          if (abortRef.current) return;
+
+          const assistantMessage: ChatMessage = {
+            role: 'assistant' as const,
+            content: response,
+            timestamp: Date.now(),
+            tokens,
+            timeToFirstTokenMs: ttftMs,
+            tokensPerSecond: totalMs > 0 ? (tokens / totalMs) * 1000 : 0,
+          };
+          const withAssistant = [...updatedMessages, assistantMessage];
+          setMessages(withAssistant);
+          await saveMessages(withAssistant);
+          if (settings?.autoTTS && response) {
+            speak(response, { rate: settings.ttsRate, voice: settings.ttsVoice });
+          }
+          setAgentState({ kind: 'idle' });
+          return;
+        } catch (e) {
+          const errMsg = e instanceof Error ? e.message : String(e);
+          console.warn('[VisionBranch] failed, falling through to text brain:', errMsg);
+          setAgentState({ kind: 'thinking' });
+          // Strip image so the text-only brain doesn't choke. We don't have
+          // a meaningful rewrite, so just send the raw utterance through.
+          userMessage.sceneRewrittenContent = text;
+          const fallbackMessages = [...messages, userMessage];
+          setMessages(fallbackMessages);
+        }
+      }
+
+      let routedText = text;
+      let messagesForGeneration = updatedMessages;
+
+      // C.0 Reload text brain if it was evicted (e.g. by a prior vision turn)
+      if (!cactusLMRef.current && settings?.orchestrationEnabled) {
+        try {
+          const textBrainSlug = settings?.model || 'lfm2-1.2b';
+          console.log(`[ChatScreen] Re-initialising text brain "${textBrainSlug}" after eviction`);
+          setAgentState({ kind: 'initializing', modelName: getModelBySlug(textBrainSlug)?.name || textBrainSlug });
+          const managed = await modelLifecycle.ensure(textBrainSlug);
+          cactusLMRef.current = managed.instance;
+          setModelLoaded(true);
+          setAgentState({ kind: 'thinking' });
+        } catch (reErr) {
+          console.warn('[ChatScreen] Text brain re-init failed:', reErr);
+        }
+      }
+
       // C. Intent routing: when enabled, route message to best model
-      if (settings?.orchestrationEnabled && settings?.intentRoutingEnabled && text) {
+      if (settings?.orchestrationEnabled && settings?.intentRoutingEnabled && routedText) {
         const hasCorpus = memoryService.getStats().documentCount > 0;
         const { modelSlug: targetSlug, swapped } = await routeAndLoad(
-          text,
+          routedText,
           settings.model,
           hasCorpus,
         );
@@ -349,17 +507,18 @@ export default function ChatScreen({
         }
       }
 
-      // Recall relevant memories before generating
+      // Recall relevant memories before generating — but only if the embedding
+      // model is already loaded. Don't block first inference waiting for it.
       let memoryContext = '';
-      if (settings?.memoryEnabled) {
-        const memories = await recallForMessage(text);
+      if (settings?.memoryEnabled && memoryService.isInitialized) {
+        const memories = await recallForMessage(routedText);
         if (memories.length > 0) {
           memoryContext = '\n\nRelevant context from previous interactions:\n' +
             memories.map(m => `- ${m.text}`).join('\n');
         }
       }
 
-      const { text: responseText, functionCalls } = await generateResponse(updatedMessages, memoryContext);
+      const { text: responseText, functionCalls } = await generateResponse(messagesForGeneration, memoryContext);
       if (abortRef.current) return;
 
       // Parse tool calls from response text or from CactusLM functionCalls
@@ -391,9 +550,14 @@ export default function ChatScreen({
         });
       }
 
-      // Auto-remember interaction if enabled
+      // Background-init embedding model after first inference completes
+      if (settings?.memoryEnabled && !memoryService.isInitialized) {
+        memoryService.init(settings.embeddingModel).catch(() => {});
+      }
+
+      // Auto-remember interaction if enabled (fire-and-forget)
       if (settings?.memoryEnabled && settings?.autoRemember && responseText) {
-        rememberInteraction(text, responseText);
+        rememberInteraction(text, responseText).catch(() => {});
       }
 
       // Execute tool calls if found and auto-execute is enabled
@@ -427,7 +591,7 @@ export default function ChatScreen({
   const generateResponse = async (
     allMessages: ChatMessage[],
     memoryContext?: string,
-  ): Promise<{ text: string; functionCalls?: Array<{ name: string; arguments: string }> }> => {
+  ): Promise<{ text: string; functionCalls?: Array<{ name: string; arguments: any }> }> => {
     const systemPrompt = buildSystemPrompt(settings?.systemPrompt, memoryContext);
 
     const formattedMessages: CactusLMMessage[] = [
@@ -436,11 +600,17 @@ export default function ChatScreen({
 
     for (const msg of allMessages) {
       if (msg.role === 'system') continue;
+      const hasRewrite = !!msg.sceneRewrittenContent;
       const formatted: CactusLMMessage = {
         role: msg.role as 'user' | 'assistant',
-        content: msg.content,
+        // When the VLM produced a scene-grounded rewrite, the LLM sees the
+        // resolved utterance instead of the original "what is this?".
+        content: hasRewrite ? msg.sceneRewrittenContent! : msg.content,
       };
-      if (msg.images && msg.images.length > 0) {
+      // Forward images only when no rewrite happened — once the VLM has
+      // resolved the scene into text, the downstream brain is text-only and
+      // would error on image payloads (e.g. lfm2-1.2b).
+      if (!hasRewrite && msg.images && msg.images.length > 0) {
         formatted.images = msg.images;
       }
       formattedMessages.push(formatted);
@@ -473,12 +643,21 @@ export default function ChatScreen({
       }
     };
 
-    let functionCalls: Array<{ name: string; arguments: string }> | undefined;
+    let functionCalls: Array<{ name: string; arguments: any }> | undefined;
 
     if (!cactusLMRef.current) {
       throw new Error('No model loaded');
     }
 
+    // Wait only for the chat model's own load to finish (not background embedding loads).
+    // Native Cactus deadlocks if init() and complete() run concurrently, but
+    // waitForModelReady() is safe: the chat model is already initialized by this point,
+    // so it returns immediately. If it's still loading, its lock covers both download+init.
+    if (settings?.model) {
+      await modelLifecycle.waitForModelReady(settings.model);
+    }
+
+    console.log(`[LiquidChat] Calling complete() with ${formattedMessages.length} messages, tools=${settings?.autoExecuteTools !== false ? 'yes' : 'no'}`);
     const result = await cactusLMRef.current.complete({
       messages: formattedMessages,
       options: {
@@ -487,8 +666,10 @@ export default function ChatScreen({
         topK: settings?.topK ?? 40,
         maxTokens: settings?.maxTokens ?? 512,
       },
+      tools: settings?.autoExecuteTools !== false ? cactusTools : undefined,
       onToken,
     });
+    console.log(`[LiquidChat] complete() returned: response="${(result.response || '').slice(0, 100)}", functionCalls=${result.functionCalls?.length ?? 0}, tokens=${result.totalTokens}`);
     fullResponse = result.response || fullResponse;
     functionCalls = result.functionCalls;
 
@@ -718,7 +899,9 @@ export default function ChatScreen({
           {modelDisplayName}
         </Text>
         {isModelLoading && (
-          <Text style={styles.loadingLabel}>{loadProgress}%</Text>
+          <Text style={styles.loadingLabel}>
+            {loadProgress < 100 ? `Downloading ${loadProgress}%` : 'Loading...'}
+          </Text>
         )}
       </TouchableOpacity>
       <View style={styles.headerRight}>
@@ -750,7 +933,9 @@ export default function ChatScreen({
               {modelLoaded
                 ? 'Model loaded. Start chatting!'
                 : isModelLoading
-                  ? 'Loading model...'
+                  ? loadProgress < 100
+                    ? `Downloading model... ${loadProgress}%`
+                    : 'Loading model into memory...'
                   : 'Select a model to begin'}
             </Text>
           </View>
@@ -890,19 +1075,15 @@ export default function ChatScreen({
           </TouchableOpacity>
         ) : (
           <TouchableOpacity
-            onPress={() => handleSend()}
-            style={[
-              styles.sendButton,
-              (!inputText.trim() && !selectedImage) ||
-              !modelLoaded
-                ? styles.sendButtonDisabled
-                : null,
-            ]}
-            disabled={
-              (!inputText.trim() && !selectedImage) || !modelLoaded
-            }
+            onPress={() => {
+              console.log(`[SendDiag] modelLoaded=${modelLoaded} selectedImage=${selectedImage ? 'SET' : 'null'} inputText="${inputText}" isGenerating=${isGenerating} isModelLoading=${isModelLoading}`);
+              handleSend();
+            }}
+            style={[styles.sendButton]}
           >
-            <Text style={styles.sendButtonEmoji}>💧</Text>
+            <Text style={styles.sendButtonEmoji}>
+              {modelLoaded ? '💧' : isModelLoading ? '⏳' : '⚠️'}
+            </Text>
           </TouchableOpacity>
         )}
       </View>

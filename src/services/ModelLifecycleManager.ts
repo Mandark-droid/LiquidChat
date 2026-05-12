@@ -15,6 +15,7 @@ export interface ManagedModel {
   isCustomModel: boolean;
   lastUsed: number;
   ramMb: number;
+  downloadProgress: number;
 }
 
 type Listener = () => void;
@@ -57,6 +58,7 @@ class ModelLifecycleManager {
         isCustomModel: model.isCustom ?? false,
         lastUsed: 0,
         ramMb: 0,
+        downloadProgress: 0,
       });
     }
 
@@ -118,29 +120,40 @@ class ModelLifecycleManager {
         isCustomModel: modelDef?.isCustom ?? false,
         lastUsed: 0,
         ramMb: 0,
+        downloadProgress: 0,
       };
       this.models.set(slug, managed);
     }
 
-    managed.state = 'loading';
+    managed.state = 'downloading';
+    managed.downloadProgress = 0;
     this.notify();
 
     try {
-      // Use CactusLM high-level SDK: handles registry lookup, download, and init.
-      // The model key (slug like "lfm2-1.2b") maps directly to the registry key
-      // derived from weight filenames on Cactus-Compute HuggingFace repos.
       console.log(`[ModelLifecycle] Loading "${slug}" via CactusLM SDK...`);
       const cactusLM = new CactusLM({ model: slug });
 
-      // Download if not already cached
+      // Download phase — throttle notifications to every 2%
+      let lastNotifiedPct = -2;
       await cactusLM.download({
         onProgress: (progress: number) => {
-          if (progress % 0.25 < 0.01) {
-            console.log(`[ModelLifecycle] Download "${slug}": ${Math.round(progress * 100)}%`);
+          const pct = Math.round(progress * 100);
+          managed!.downloadProgress = pct;
+          if (pct - lastNotifiedPct >= 2) {
+            lastNotifiedPct = pct;
+            this.notify();
+          }
+          if (pct % 25 === 0) {
+            console.log(`[ModelLifecycle] Download "${slug}": ${pct}%`);
           }
         },
       });
       console.log(`[ModelLifecycle] Download complete for "${slug}", initializing...`);
+
+      // Init phase
+      managed.state = 'initializing';
+      managed.downloadProgress = 100;
+      this.notify();
 
       await cactusLM.init();
       managed.instance = cactusLM;
@@ -249,11 +262,32 @@ class ModelLifecycleManager {
     return this.models.get(slug)?.state ?? 'unloaded';
   }
 
+  getModel(slug: string): ManagedModel | undefined {
+    return this.models.get(slug);
+  }
+
+  async waitForModelReady(slug: string): Promise<void> {
+    const managed = this.models.get(slug);
+    if (managed?.state === 'ready') return;
+    const lock = this.loadingLocks.get(slug);
+    if (lock) { await lock; return; }
+    await this._globalLoadQueue;
+  }
+
   subscribe(listener: Listener): () => void {
     this.listeners.add(listener);
     return () => {
       this.listeners.delete(listener);
     };
+  }
+
+  /**
+   * Wait for all pending model loads to finish.
+   * Call this before using a loaded model's complete() to avoid native-level
+   * conflicts between concurrent init() and complete() calls.
+   */
+  async waitForPendingLoads(): Promise<void> {
+    await this._globalLoadQueue;
   }
 
   private notify(): void {

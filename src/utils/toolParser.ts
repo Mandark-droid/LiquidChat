@@ -170,16 +170,20 @@ function extractSingleToolCall(item: any): ToolCall | null {
  * Parse CactusLM functionCalls from completion result
  */
 export function parseCactusFunctionCalls(
-  functionCalls?: Array<{ name: string; arguments: string }>
+  functionCalls?: Array<{ name: string; arguments: any }>
 ): ToolCall[] {
   if (!functionCalls || functionCalls.length === 0) return [];
 
   return functionCalls.map(fc => {
     let args: Record<string, any> = {};
-    try {
-      args = JSON.parse(fc.arguments);
-    } catch {
-      args = {};
+    if (typeof fc.arguments === 'string') {
+      try {
+        args = JSON.parse(fc.arguments);
+      } catch {
+        args = {};
+      }
+    } else if (fc.arguments && typeof fc.arguments === 'object') {
+      args = fc.arguments;
     }
     return { name: fc.name, arguments: args };
   });
