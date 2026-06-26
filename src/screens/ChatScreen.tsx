@@ -36,6 +36,7 @@ import {
 } from '../tools/registry';
 import { getModelBySlug } from '../config/models';
 import { modelLifecycle } from '../services/ModelLifecycleManager';
+import { ensureRegistryModel } from '../utils/cactusModelFetch';
 import { actionLogger } from '../services/ActionLogger';
 import { memoryService } from '../services/MemoryService';
 import { visionAgent } from '../services/VisionAgent';
@@ -283,11 +284,11 @@ export default function ChatScreen({
       const cactusLM = new CactusLM({ model: modelSlug });
       cactusLMRef.current = cactusLM;
 
-      await cactusLM.download({
-        onProgress: (progress: number) => {
-          setLoadProgress(Math.round(progress * 100));
-        },
-      });
+      const onLoadProgress = (progress: number) =>
+        setLoadProgress(Math.round(progress * 100));
+      // Work around Cactus SDK pinning download URLs to a missing v1.7 tag.
+      await ensureRegistryModel(modelSlug, onLoadProgress);
+      await cactusLM.download({ onProgress: onLoadProgress });
       console.log(`[LiquidChat] Download complete for "${modelSlug}", initializing...`);
 
       await cactusLM.init();
@@ -674,11 +675,18 @@ export default function ChatScreen({
     functionCalls = result.functionCalls;
 
     const totalTime = Date.now() - startTime;
+    const ttftMs = firstTokenTime ? firstTokenTime - startTime : 0;
+    const tps = result.decodeTps || (tokenCount / totalTime) * 1000;
+    console.log(
+      `[LiquidChat][BENCH] model=${settings?.model ?? 'unknown'} ttft=${ttftMs}ms tps=${tps.toFixed(2)} ` +
+        `totalTokens=${result.totalTokens || tokenCount} prefillTokens=${result.prefillTokens || 0} ` +
+        `decodeTokens=${result.decodeTokens || tokenCount} totalTimeMs=${result.totalTimeMs || totalTime}`,
+    );
     setMetrics({
       totalTokens: result.totalTokens || tokenCount,
-      timeToFirstTokenMs: firstTokenTime ? firstTokenTime - startTime : 0,
+      timeToFirstTokenMs: ttftMs,
       totalTimeMs: result.totalTimeMs || totalTime,
-      tokensPerSecond: result.decodeTps || (tokenCount / totalTime) * 1000,
+      tokensPerSecond: tps,
       prefillTokens: result.prefillTokens || 0,
       decodeTokens: result.decodeTokens || tokenCount,
     });

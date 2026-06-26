@@ -14,6 +14,7 @@ import * as RNFS from '@dr.pogodin/react-native-fs';
 import { CactusLM } from 'cactus-react-native';
 import { CactusFileSystem } from 'cactus-react-native/src/native';
 import { getRegistry } from 'cactus-react-native/src/modelRegistry';
+import { ensureRegistryModel } from '../utils/cactusModelFetch';
 import {
   LIQUID_MODELS,
   getModelsByCategory,
@@ -168,14 +169,16 @@ export default function ModelSelectionScreen({
 
         // CactusLM registry model - use built-in download
         const cactus = new CactusLM({ model: model.slug });
-        await cactus.download({
-          onProgress: (progress: number) => {
-            setDownloadProgress(prev => ({
-              ...prev,
-              [model.slug]: Math.round(progress * 100),
-            }));
-          },
-        });
+        const onRegistryProgress = (progress: number) => {
+          setDownloadProgress(prev => ({
+            ...prev,
+            [model.slug]: Math.round(progress * 100),
+          }));
+        };
+        // Work around Cactus SDK pinning download URLs to a missing v1.7 tag
+        // for newer registry repos (e.g. lfm2.5-350m); pre-fetch from main.
+        await ensureRegistryModel(model.slug, onRegistryProgress);
+        await cactus.download({ onProgress: onRegistryProgress });
       } else if (model.hfRepo) {
         // Custom model - download from HuggingFace
         const modelsDir = `${RNFS.DocumentDirectoryPath}/models`;

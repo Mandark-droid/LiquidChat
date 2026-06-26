@@ -2,6 +2,7 @@ import { CactusLM } from 'cactus-react-native';
 import DeviceInfo from 'react-native-device-info';
 import { LIQUID_MODELS, getModelBySlug } from '../config/models';
 import { getDeviceProfile, getModelTier, type DeviceProfile } from '../config/modelTiers';
+import { ensureRegistryModel } from '../utils/cactusModelFetch';
 import type { ModelTier, ModelState } from '../types';
 
 const RAM_MULTIPLIER = 1.3;
@@ -135,19 +136,21 @@ class ModelLifecycleManager {
 
       // Download phase — throttle notifications to every 2%
       let lastNotifiedPct = -2;
-      await cactusLM.download({
-        onProgress: (progress: number) => {
-          const pct = Math.round(progress * 100);
-          managed!.downloadProgress = pct;
-          if (pct - lastNotifiedPct >= 2) {
-            lastNotifiedPct = pct;
-            this.notify();
-          }
-          if (pct % 25 === 0) {
-            console.log(`[ModelLifecycle] Download "${slug}": ${pct}%`);
-          }
-        },
-      });
+      const onDownloadProgress = (progress: number) => {
+        const pct = Math.round(progress * 100);
+        managed!.downloadProgress = pct;
+        if (pct - lastNotifiedPct >= 2) {
+          lastNotifiedPct = pct;
+          this.notify();
+        }
+        if (pct % 25 === 0) {
+          console.log(`[ModelLifecycle] Download "${slug}": ${pct}%`);
+        }
+      };
+      // Work around Cactus SDK pinning download URLs to a missing v1.7 tag
+      // for newer registry repos; pre-fetches from main when needed.
+      await ensureRegistryModel(slug, onDownloadProgress);
+      await cactusLM.download({ onProgress: onDownloadProgress });
       console.log(`[ModelLifecycle] Download complete for "${slug}", initializing...`);
 
       // Init phase

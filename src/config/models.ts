@@ -15,6 +15,17 @@ export const LIQUID_MODELS: LiquidModel[] = [
     supportsAudio: false,
   },
   {
+    name: 'LFM2.5-350M',
+    slug: 'lfm2.5-350m',
+    category: 'text',
+    sizeMb: 200,
+    description: 'Latest-gen LFM2.5 compact model — improved quality at 350M size.',
+    supportsCompletion: true,
+    supportsToolCalling: false,
+    supportsVision: false,
+    supportsAudio: false,
+  },
+  {
     name: 'LFM2-700M',
     slug: 'lfm2-700m',
     category: 'text',

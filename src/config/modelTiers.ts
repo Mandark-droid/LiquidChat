@@ -12,6 +12,7 @@ const MODEL_TIER_CONFIG: Record<string, ModelTier> = {
   // Hot: always prioritized, never auto-evicted
   'lfm2-1.2b': 'hot',
   'lfm2-350m': 'hot',
+  'lfm2.5-350m': 'hot',
   // Warm: kept loaded when budget allows
   'whisper-small': 'warm',
   'qwen3-embedding-0.6b': 'warm',
