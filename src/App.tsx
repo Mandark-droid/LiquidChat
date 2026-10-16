@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import {
   View,
   Text,
@@ -15,15 +15,29 @@ import ChatScreen from './screens/ChatScreen';
 import ModelSelectionScreen from './screens/ModelSelectionScreen';
 import SettingsScreen from './screens/SettingsScreen';
 import AgentDashboardScreen from './screens/AgentDashboardScreen';
+import MeetingsScreen from './screens/MeetingsScreen';
+import MeetingRecorderScreen from './screens/MeetingRecorderScreen';
+import MeetingDetailScreen from './screens/MeetingDetailScreen';
+import MeetingSettingsScreen from './screens/MeetingSettingsScreen';
+import TasksScreen from './screens/TasksScreen';
+import EmailDraftScreen from './screens/EmailDraftScreen';
+import { meetingStore } from './meetings/MeetingStore';
+import { buildMinutesMarkdown } from './meetings/documents';
+import { transcriptPlain } from './meetings/MinutesGenerator';
+import { checkEngineMigration } from './utils/engineMigration';
 import { generateChatId } from './utils/chatHelpers';
 import { storage } from './utils/storage';
-import { DEFAULT_SETTINGS } from './types';
+import { DEFAULT_SETTINGS, type Chat } from './types';
 import { theme } from './config/theme';
 
-type Tab = 'chats' | 'models' | 'agent' | 'settings';
+type Tab = 'chats' | 'meetings' | 'tasks' | 'models' | 'agent' | 'settings';
 type Screen =
   | { type: 'tabs' }
   | { type: 'chat'; chatId: string }
+  | { type: 'meetingRecorder' }
+  | { type: 'meetingDetail'; meetingId: string }
+  | { type: 'meetingSettings' }
+  | { type: 'emailDraft'; meetingId?: string; back: Screen }
   | {
       type: 'modelSelection';
       currentModel: string;
@@ -32,6 +46,8 @@ type Screen =
 
 const TAB_CONFIG: { key: Tab; label: string; icon: string }[] = [
   { key: 'chats', label: 'Chats', icon: '💬' },
+  { key: 'meetings', label: 'Meetings', icon: '🎙️' },
+  { key: 'tasks', label: 'Tasks', icon: '✅' },
   { key: 'models', label: 'Models', icon: '🤖' },
   { key: 'agent', label: 'Agent', icon: '🧠' },
   { key: 'settings', label: 'Settings', icon: '⚙️' },
@@ -41,7 +57,36 @@ function AppContent() {
   const insets = useSafeAreaInsets();
   const [activeTab, setActiveTab] = useState<Tab>('chats');
   const [screen, setScreen] = useState<Screen>({ type: 'tabs' });
-  const [currentModel, setCurrentModel] = useState('lfm2-1.2b');
+  const [currentModel, setCurrentModel] = useState('lfm2.5-1.2b-instruct');
+
+  useEffect(() => {
+    checkEngineMigration();
+  }, []);
+
+  /** Opens a chat pre-loaded with a meeting's minutes and transcript as context. */
+  const handleAskInChat = useCallback(async (meetingId: string) => {
+    const m = await meetingStore.get(meetingId);
+    if (!m) return;
+    const saved = await storage.getSettings();
+    const base = saved ?? DEFAULT_SETTINGS;
+    const transcript = transcriptPlain(m);
+    const context =
+      'You answer questions about the meeting below. Use only this material; say so when something was not discussed.\n\n' +
+      buildMinutesMarkdown(m) +
+      (transcript ? `\n\n## Transcript (may be truncated)\n${transcript.slice(0, 6000)}` : '');
+    const chatId = generateChatId();
+    const chat: Chat = {
+      id: chatId,
+      title: `About: ${m.title}`.slice(0, 50),
+      messages: [],
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      model: base.model,
+      settings: { ...base, systemPrompt: context, autoExecuteTools: false, intentRoutingEnabled: false },
+    };
+    await storage.saveChat(chat);
+    setScreen({ type: 'chat', chatId });
+  }, []);
 
   const handleOpenChat = useCallback((chatId: string) => {
     setScreen({ type: 'chat', chatId });
@@ -99,6 +144,51 @@ function AppContent() {
   );
 
   // Render current screen
+  if (screen.type === 'meetingRecorder') {
+    return (
+      <>
+        <StatusBar barStyle="light-content" backgroundColor={theme.colors.primary} />
+        <MeetingRecorderScreen
+          onBack={() => { setActiveTab('meetings'); setScreen({ type: 'tabs' }); }}
+          onFinished={meetingId => setScreen({ type: 'meetingDetail', meetingId })}
+        />
+      </>
+    );
+  }
+
+  if (screen.type === 'meetingDetail') {
+    return (
+      <>
+        <StatusBar barStyle="light-content" backgroundColor={theme.colors.primary} />
+        <MeetingDetailScreen
+          meetingId={screen.meetingId}
+          onBack={() => setScreen({ type: 'tabs' })}
+          onOpenRecorder={() => setScreen({ type: 'meetingRecorder' })}
+          onDraftEmail={meetingId => setScreen({ type: 'emailDraft', meetingId, back: screen })}
+          onAskInChat={handleAskInChat}
+        />
+      </>
+    );
+  }
+
+  if (screen.type === 'meetingSettings') {
+    return (
+      <>
+        <StatusBar barStyle="light-content" backgroundColor={theme.colors.primary} />
+        <MeetingSettingsScreen onBack={() => setScreen({ type: 'tabs' })} />
+      </>
+    );
+  }
+
+  if (screen.type === 'emailDraft') {
+    return (
+      <>
+        <StatusBar barStyle="light-content" backgroundColor={theme.colors.primary} />
+        <EmailDraftScreen meetingId={screen.meetingId} onBack={() => setScreen(screen.back)} />
+      </>
+    );
+  }
+
   if (screen.type === 'chat') {
     return (
       <>
@@ -142,6 +232,21 @@ function AppContent() {
           <ChatListScreen
             onOpenChat={handleOpenChat}
             onNewChat={handleNewChat}
+          />
+        );
+      case 'meetings':
+        return (
+          <MeetingsScreen
+            onOpenMeeting={meetingId => setScreen({ type: 'meetingDetail', meetingId })}
+            onOpenRecorder={() => setScreen({ type: 'meetingRecorder' })}
+            onOpenSettings={() => setScreen({ type: 'meetingSettings' })}
+          />
+        );
+      case 'tasks':
+        return (
+          <TasksScreen
+            onOpenMeeting={meetingId => setScreen({ type: 'meetingDetail', meetingId })}
+            onDraftEmail={() => setScreen({ type: 'emailDraft', back: { type: 'tabs' } })}
           />
         );
       case 'models':
@@ -236,11 +341,11 @@ const styles = StyleSheet.create({
     borderTopColor: theme.colors.accent,
   },
   tabIcon: {
-    fontSize: 20,
+    fontSize: 19,
     marginBottom: 2,
   },
   tabLabel: {
-    fontSize: theme.fontSize.sm,
+    fontSize: theme.fontSize.xs + 1,
     fontWeight: '600',
     color: 'rgba(255,255,255,0.6)',
   },
