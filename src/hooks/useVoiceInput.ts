@@ -55,6 +55,8 @@ export function useVoiceInput({
   const subsRef = useRef<Array<{ remove: () => void }>>([]);
   const durationRef = useRef(0);
   const stoppingRef = useRef(false);
+  const stateRef = useRef<VoiceInputState>('idle');
+  stateRef.current = state;
 
   const quantization = quantizationFor(sttModel);
   const cactusSTT = useCactusSTT({
@@ -67,7 +69,7 @@ export function useVoiceInput({
     return () => {
       mountedRef.current = false;
       detach();
-      if (state === 'recording') Recorder.stop().catch(() => {});
+      if (stateRef.current === 'recording') Recorder.stop().catch(() => {});
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

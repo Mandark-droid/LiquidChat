@@ -322,6 +322,9 @@ class MeetingSessionImpl {
   }
 
   private async transcribePending(id: string): Promise<void> {
+    // Segments queued during recording are still 'pending' in the store until the
+    // queue reaches them; let it finish first so nothing is transcribed twice.
+    await transcriber.drain();
     const m = await meetingStore.get(id);
     if (!m) return;
     const settings = await getMeetingSettings();
