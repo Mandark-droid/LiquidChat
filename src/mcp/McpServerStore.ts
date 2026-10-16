@@ -30,14 +30,15 @@ function rowToRecord(r: Row): McpServerRecord {
 }
 
 export function validateServerUrl(url: string): void {
-  let u: URL;
-  try {
-    u = new URL(url);
-  } catch {
-    throw new Error(`Invalid MCP server URL: ${url}`);
-  }
-  const local = /^(localhost|127\.|10\.|192\.168\.)/.test(u.hostname);
-  if (u.protocol !== 'https:' && !(u.protocol === 'http:' && local))
+  // Regex rather than `new URL()`: React Native's URL polyfill lacks hostname/protocol.
+  const m = /^(https?):\/\/(?:[^@/?#\s]*@)?(\[[^\]]+\]|[^:/?#\s]+)(?::\d+)?(?:[/?#]\S*)?$/i.exec(
+    url.trim(),
+  );
+  if (!m) throw new Error(`Invalid MCP server URL: ${url}`);
+  const protocol = m[1].toLowerCase();
+  const host = m[2].toLowerCase();
+  const local = /^(localhost|127\.|10\.|192\.168\.|\[::1\])/.test(host);
+  if (protocol !== 'https' && !(protocol === 'http' && local))
     throw new Error('MCP servers must use https (http is only allowed for local addresses)');
 }
 
