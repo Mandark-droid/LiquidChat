@@ -15,3 +15,4 @@ ios/build/
 *.log
 .metro-health-check*
 coverage/
+.claude/worktrees/

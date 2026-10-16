@@ -106,7 +106,8 @@ function walk(s: JsonSchema, v: unknown, path: string, issues: SchemaIssue[]): u
         }
       }
       for (const [k, sub] of Object.entries(props)) {
-        const val = walk(sub, obj[k], `${path}.${k}`, issues);
+        if ((obj[k] === undefined || obj[k] === null) && sub.default === undefined) continue;
+        const val = walk(sub, obj[k] ?? undefined, `${path}.${k}`, issues);
         if (val !== undefined) out[k] = val;
       }
       for (const k of Object.keys(obj)) {
