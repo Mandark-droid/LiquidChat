@@ -83,6 +83,18 @@ The working prototype (v0.x) demonstrates the core loop: a LoRA fine-tuned LFM2.
 | **Eval accuracy** | 100% on 20 held-out examples |
 | **Training scripts** | [GitHub](https://github.com/Mandark-droid/LFM2.5-1.2B-Instruct-mobile-actions) |
 
+## Meetings, Tasks & Email (new)
+
+Everything below runs on the phone; audio, transcripts and drafts never leave it.
+
+- **Meeting recorder** — tap record, lock the phone. A foreground service captures 16 kHz mono audio, cuts it into ~20–30 s segments at pauses, and transcribes each one while the meeting is still going (Whisper, Parakeet TDT v3 or Moonshine). Client and attendee names are fed to Whisper as context; Hindi and translate-to-English are supported. Pause/resume/stop from the notification; mark important moments with ★.
+- **Minutes of meeting** — when you stop, an on-device LLM writes a summary, key points, decisions, open questions, next steps and action items (owner + due date, "by Friday" resolved to a real date). Long meetings are summarised in windows and merged. Everything is editable before it goes to a client.
+- **Import transcripts** — paste from Zoom, Google Meet, Teams, Otter or a `.vtt` file and get the same minutes.
+- **Client-ready documents** — export the MoM as **PDF**, **Word (.docx)**, Markdown or text, branded *LiquidChat* (optional organisation letterhead in Meeting settings). Share to any app, save to `Downloads/LiquidChat`, or email it to attendees with the file attached.
+- **Tasks** — one list for your own to-dos and every meeting's action items. Natural-language quick add (`send Acme proposal by Friday !high @Acme`), voice add, Today / Upcoming / Done views, "Mine" and per-client filters, add to calendar.
+- **Email drafter** — follow-up after a meeting, a new email from one line of intent, or a reply to a pasted email. Pick a tone, refine with instructions ("shorter", "more formal"), then open it in your mail app or send it with the MoM PDF attached.
+- **Ask about a meeting** — opens a chat grounded in that meeting's minutes and transcript.
+
 ## Features
 
 - **On-device inference** — All model execution happens locally on the device via Cactus framework
@@ -254,7 +266,7 @@ APK output: `android/app/build/outputs/apk/release/app-release.apk`
 
 ### Model Setup
 
-Models are downloaded in-app via the Model Selection screen. For manual sideloading:
+Models are downloaded in-app via the Model Selection screen. Cactus stores weights in `files/cactus/models/<slug>-<int4|int8>`; after upgrading from the 1.7 engine the app offers a one-time re-download. For manual sideloading:
 
 ```bash
 adb push weights/lfm25-mobile-actions/ /data/local/tmp/lfm25-mobile-actions/
@@ -266,7 +278,7 @@ adb shell run-as com.liquidchat cp -r /data/local/tmp/lfm25-mobile-actions /data
 | Component | Technology |
 |-----------|-----------|
 | **Framework** | React Native 0.81.1 |
-| **LLM Runtime** | Cactus React Native 1.7.0 (on-device inference) |
+| **LLM Runtime** | Cactus React Native 1.13.1 (on-device inference) |
 | **Model Format** | Cactus binary format (CACT header + quantized tensors) |
 | **State** | React hooks + AsyncStorage |
 | **Navigation** | Custom state-based (no react-navigation dependency) |
