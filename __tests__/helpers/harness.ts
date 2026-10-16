@@ -19,9 +19,15 @@ import {
   ApprovalManager,
   type ApprovalRequest,
 } from '../../src/security/ApprovalManager';
+import { SkillRegistry } from '../../src/skills/SkillRegistry';
 import { resetDatabaseForTests } from '../../src/storage/db';
 import { ExecutionRepository } from '../../src/storage/ExecutionRepository';
-import { createAppTools, type MeetingsPort, type TasksPort } from '../../src/tools/builtin/app';
+import {
+  createAppTools,
+  type MeetingsPort,
+  type NotificationsPort,
+  type TasksPort,
+} from '../../src/tools/builtin/app';
 import { createDeviceTools, setLegacyExecutor } from '../../src/tools/builtin/device';
 import { PermissionGateway } from '../../src/tools/PermissionGateway';
 import { ToolRegistry } from '../../src/tools/ToolRegistry';
@@ -97,6 +103,7 @@ export interface Harness {
   planner: AgentPlanner;
   controller: AgentControllerImpl;
   memory: MemoryManager;
+  skills: SkillRegistry;
   legacyCalls: LegacyCall[];
   tasksAdded: { title: string; dueDate?: string }[];
   setApproval(fn: (r: ApprovalRequest) => ApprovalDecision): void;
@@ -110,6 +117,7 @@ export function makeHarness(
     responder?: Responder;
     distribution?: Distribution;
     meetings?: Partial<MeetingsPort>;
+    notifications?: NotificationsPort;
   } = {},
 ): Harness {
   resetDatabaseForTests();
@@ -143,6 +151,7 @@ export function makeHarness(
     meetings,
     tasks,
     memory,
+    notifications: opts.notifications,
     now: () => new Date(2026, 9, 17, 9, 0),
   }))
     registry.register(t);
@@ -169,9 +178,11 @@ export function makeHarness(
     distribution,
     sleep: async () => {},
   });
+  const skills = new SkillRegistry(registry, distribution);
   const planner = new AgentPlanner({
     registry,
     inference,
+    skills,
     distribution,
     now: () => new Date(2026, 9, 17, 9, 0),
   });
@@ -189,6 +200,7 @@ export function makeHarness(
     planner,
     controller,
     memory,
+    skills,
     legacyCalls,
     tasksAdded,
     setApproval: fn => {
