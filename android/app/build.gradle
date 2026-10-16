@@ -4,6 +4,9 @@ apply plugin: "com.facebook.react"
 
 react {
     autolinkLibrariesWithApp()
+    // With product flavors the variant names are e.g. "fullDebug"/"playDebug"; list them so
+    // debug variants load JS from Metro instead of bundling (default is just ["debug"]).
+    debuggableVariants = ["fullDebug", "playDebug"]
 }
 
 def enableProguardInReleaseBuilds = false
@@ -22,6 +25,23 @@ android {
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1
         versionName "1.0.0"
+    }
+    buildFeatures {
+        buildConfig true
+    }
+    // "play": Google Play policy-safe build (no AccessibilityService).
+    // "full": sideload build with Accessibility UI automation (src/full/AndroidManifest.xml).
+    // Exposed to JS as NativeModules.DeviceContext.distribution.
+    flavorDimensions "distribution"
+    productFlavors {
+        play {
+            dimension "distribution"
+            buildConfigField "String", "DISTRIBUTION", "\"play\""
+        }
+        full {
+            dimension "distribution"
+            buildConfigField "String", "DISTRIBUTION", "\"full\""
+        }
     }
     signingConfigs {
         debug {
