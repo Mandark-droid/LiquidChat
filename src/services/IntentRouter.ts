@@ -63,7 +63,7 @@ class IntentRouterService {
     if (ACTION_VERBS.includes(firstWord)) {
       return {
         intent: 'ACTION',
-        targetModelSlug: 'lfm2-1.2b',
+        targetModelSlug: 'lfm2.5-1.2b-instruct',
         confidence: 0.9,
         reason: `Imperative verb "${firstWord}" detected`,
       };
@@ -90,7 +90,7 @@ class IntentRouterService {
         if (pattern.test(trimmed)) {
           return {
             intent: 'QUERY',
-            targetModelSlug: 'lfm2-1.2b',
+            targetModelSlug: 'lfm2.5-1.2b-instruct',
             confidence: 0.85,
             reason: `Query pattern matched`,
           };
@@ -103,7 +103,7 @@ class IntentRouterService {
       if (pattern.test(trimmed)) {
         return {
           intent: 'CHAT',
-          targetModelSlug: 'lfm2-350m',
+          targetModelSlug: 'lfm2.5-350m',
           confidence: 0.9,
           reason: `Chat/greeting pattern matched`,
         };
@@ -114,7 +114,7 @@ class IntentRouterService {
     if (trimmed.split(/\s+/).length <= 3) {
       return {
         intent: 'CHAT',
-        targetModelSlug: 'lfm2-350m',
+        targetModelSlug: 'lfm2.5-350m',
         confidence: 0.6,
         reason: 'Short message defaulted to chat',
       };

@@ -95,6 +95,12 @@ export interface LiquidModel {
   isSTT?: boolean;
   hfRepo?: string;
   supportsThinking?: boolean;
+  /** Cactus weight quantization to request (SDK default is int8). */
+  quantization?: 'int4' | 'int8';
+  /** Minimum device RAM (GB) we recommend for this model. */
+  minRamGb?: number;
+  /** Superseded by a newer catalog entry; kept so saved settings keep working. */
+  legacy?: boolean;
 }
 
 export type AgentState =
@@ -114,7 +120,7 @@ export interface ActionChainStep {
 }
 
 export const DEFAULT_SETTINGS: ChatSettings = {
-  model: 'lfm2-1.2b',
+  model: 'lfm2.5-1.2b-instruct',
   temperature: 0.7,
   topP: 0.9,
   topK: 40,

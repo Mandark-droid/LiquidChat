@@ -10,17 +10,23 @@ export interface DeviceProfile {
 
 const MODEL_TIER_CONFIG: Record<string, ModelTier> = {
   // Hot: always prioritized, never auto-evicted
-  'lfm2-1.2b': 'hot',
-  'lfm2-350m': 'hot',
+  'lfm2.5-1.2b-instruct': 'hot',
+  'lfm2.5-350m': 'hot',
   // Warm: kept loaded when budget allows
   'whisper-small': 'warm',
   'qwen3-embedding-0.6b': 'warm',
   'lfm2-vl-450m': 'warm',
   // Cold: loaded on demand, first to evict
+  'lfm2-1.2b': 'cold',
+  'lfm2-350m': 'cold',
   'lfm2-700m': 'cold',
+  'lfm2-2.6b': 'cold',
+  'lfm2-8b-a1b': 'cold',
+  'qwen3.5-2b': 'cold',
   'lfm2.5-vl-1.6b': 'cold',
   'whisper-medium': 'cold',
   'lfm2.5-1.2b-thinking': 'cold',
+  'lfm2-1.2b-rag': 'cold',
 };
 
 const DEVICE_PROFILES: DeviceProfile[] = [
@@ -28,28 +34,28 @@ const DEVICE_PROFILES: DeviceProfile[] = [
     name: 'low',
     totalRamGb: 4,
     ramBudgetMb: 800,
-    hotModels: ['lfm2-350m'],
+    hotModels: ['lfm2.5-350m'],
     maxConcurrentModels: 2,
   },
   {
     name: 'mid',
     totalRamGb: 6,
     ramBudgetMb: 1500,
-    hotModels: ['lfm2-1.2b', 'lfm2-350m'],
+    hotModels: ['lfm2.5-1.2b-instruct', 'lfm2.5-350m'],
     maxConcurrentModels: 3,
   },
   {
     name: 'high',
     totalRamGb: 8,
     ramBudgetMb: 2500,
-    hotModels: ['lfm2-1.2b', 'lfm2-350m'],
+    hotModels: ['lfm2.5-1.2b-instruct', 'lfm2.5-350m'],
     maxConcurrentModels: 4,
   },
   {
     name: 'flagship',
     totalRamGb: 12,
     ramBudgetMb: 4000,
-    hotModels: ['lfm2-1.2b', 'lfm2-350m'],
+    hotModels: ['lfm2.5-1.2b-instruct', 'lfm2.5-350m'],
     maxConcurrentModels: 5,
   },
 ];

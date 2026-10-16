@@ -1,6 +1,6 @@
 import { CactusLM } from 'cactus-react-native';
 import DeviceInfo from 'react-native-device-info';
-import { LIQUID_MODELS, getModelBySlug } from '../config/models';
+import { LIQUID_MODELS, getModelBySlug, quantizationFor } from '../config/models';
 import { getDeviceProfile, getModelTier, type DeviceProfile } from '../config/modelTiers';
 import type { ModelTier, ModelState } from '../types';
 
@@ -130,7 +130,8 @@ class ModelLifecycleManager {
       // The model key (slug like "lfm2-1.2b") maps directly to the registry key
       // derived from weight filenames on Cactus-Compute HuggingFace repos.
       console.log(`[ModelLifecycle] Loading "${slug}" via CactusLM SDK...`);
-      const cactusLM = new CactusLM({ model: slug });
+      const quantization = quantizationFor(slug);
+      const cactusLM = new CactusLM({ model: slug, options: quantization ? { quantization } : undefined });
 
       // Download if not already cached
       await cactusLM.download({

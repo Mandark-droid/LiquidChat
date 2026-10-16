@@ -20,6 +20,7 @@ import {
 } from '../config/models';
 import ModelCard from '../components/ModelCard';
 import { useModelManager } from '../hooks/useModelManager';
+import { listDownloadedCactusModels } from '../utils/engineMigration';
 import { theme } from '../config/theme';
 import type { LiquidModel, ModelCategory, ModelTier } from '../types';
 
@@ -72,34 +73,29 @@ export default function ModelSelectionScreen({
   }, []);
 
   const checkDownloadedModels = async () => {
-    const modelsDir = `${RNFS.DocumentDirectoryPath}/models`;
+    // Cactus SDK weights: <filesDir>/cactus/models/<slug>-<quant>; custom GGUF: <filesDir>/models
+    const downloaded = new Set<string>();
+    for (const m of await listDownloadedCactusModels()) downloaded.add(m.slug);
     try {
-      const exists = await RNFS.exists(modelsDir);
-      if (!exists) return;
-      const files = await RNFS.readDir(modelsDir);
-      const downloaded = new Set<string>();
-      for (const file of files) {
-        if (file.name.endsWith('.gguf')) {
-          downloaded.add(file.name.replace('.gguf', ''));
-        }
-        // Also detect Cactus v1.x weight folders (directories with config.txt)
-        if (file.isDirectory()) {
-          const hasConfig = await RNFS.exists(`${file.path}/config.txt`);
-          if (hasConfig) {
-            downloaded.add(file.name);
-          }
+      const modelsDir = `${RNFS.DocumentDirectoryPath}/models`;
+      if (await RNFS.exists(modelsDir)) {
+        for (const file of await RNFS.readDir(modelsDir)) {
+          if (file.name.endsWith('.gguf')) downloaded.add(file.name.replace('.gguf', ''));
+          else if (file.isDirectory() && (await RNFS.exists(`${file.path}/config.txt`))) downloaded.add(file.name);
         }
       }
-      setDownloadedModels(downloaded);
     } catch {
       // Models directory may not exist yet
     }
+    setDownloadedModels(downloaded);
   };
 
   const loadedSlugs = new Set(loadedModels.map(m => m.slug));
 
   const getFilteredModels = useCallback((): LiquidModel[] => {
-    let models = getModelsByCategory(activeCategory);
+    let models = getModelsByCategory(activeCategory).filter(
+      m => !m.legacy || m.slug === currentModel || downloadedModels.has(m.slug),
+    );
     if (activeTier !== 'all') {
       models = models.filter(m => getModelTier(m.slug) === activeTier);
     }
@@ -113,7 +109,7 @@ export default function ModelSelectionScreen({
       );
     }
     return models;
-  }, [activeCategory, activeTier, searchQuery]);
+  }, [activeCategory, activeTier, searchQuery, currentModel, downloadedModels]);
 
   const handleSelectModel = (model: LiquidModel) => {
     onSelectModel(model.slug);
@@ -151,7 +147,10 @@ export default function ModelSelectionScreen({
         }
 
         // CactusLM registry model - use built-in download
-        const cactus = new CactusLM({ model: model.slug });
+        const cactus = new CactusLM({
+          model: model.slug,
+          options: model.quantization ? { quantization: model.quantization } : undefined,
+        });
         await cactus.download({
           onProgress: (progress: number) => {
             setDownloadProgress(prev => ({
