@@ -1,8 +1,20 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { PermissionsAndroid, Platform } from 'react-native';
-import AudioRecorderPlayer from 'react-native-audio-recorder-player';
 import * as RNFS from '@dr.pogodin/react-native-fs';
 import { useCactusSTT } from 'cactus-react-native';
+import { quantizationFor } from '../config/models';
+import { Recorder, RecorderEvents, ensureRecordingPermissions, isRecorderAvailable } from '../meetings/native';
+import { meetingSession } from '../meetings/MeetingSession';
+import { cleanTranscript } from '../meetings/Transcriber';
+import type { RecorderSegmentEvent } from '../meetings/types';
+
+/**
+ * Push-to-talk voice input.
+ *
+ * Captures through the native MeetingRecorder (16 kHz mono PCM16 WAV), which
+ * is what Cactus STT expects. The previous implementation recorded AAC via
+ * MediaRecorder into a ".wav"-named file and called transcribe() with a
+ * non-existent `audioFilePath` option, so Whisper never received audio.
+ */
 
 export type VoiceInputState = 'idle' | 'recording' | 'transcribing';
 
@@ -24,6 +36,9 @@ interface UseVoiceInputParams {
   onError?: (message: string) => void;
 }
 
+const MAX_UTTERANCE_SEC = 120;
+const VOICE_DIR = `${RNFS.CachesDirectoryPath}/voice_input`;
+
 export function useVoiceInput({
   sttModel,
   onTranscription,
@@ -35,194 +50,149 @@ export function useVoiceInput({
   const [sttInitializing, setSttInitializing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const recorderRef = useRef<AudioRecorderPlayer | null>(null);
-  const tempFileRef = useRef<string | null>(null);
   const mountedRef = useRef(true);
+  const segmentRef = useRef<RecorderSegmentEvent | null>(null);
+  const subsRef = useRef<Array<{ remove: () => void }>>([]);
+  const durationRef = useRef(0);
+  const stoppingRef = useRef(false);
 
-  const cactusSTT = useCactusSTT({ model: sttModel });
+  const quantization = quantizationFor(sttModel);
+  const cactusSTT = useCactusSTT({
+    model: sttModel,
+    options: quantization ? { quantization } : undefined,
+  });
 
   useEffect(() => {
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
-      cleanup();
+      detach();
+      if (state === 'recording') Recorder.stop().catch(() => {});
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const cleanup = async () => {
-    try {
-      if (recorderRef.current) {
-        await recorderRef.current.stopRecorder();
-        recorderRef.current.removeRecordBackListener();
-      }
-    } catch {}
-    try {
-      if (tempFileRef.current && (await RNFS.exists(tempFileRef.current))) {
-        await RNFS.unlink(tempFileRef.current);
-      }
-    } catch {}
-    tempFileRef.current = null;
+  const fail = (msg: string) => {
+    if (!mountedRef.current) return;
+    setError(msg);
+    onError?.(msg);
   };
 
-  const requestMicPermission = async (): Promise<boolean> => {
-    if (Platform.OS !== 'android') return true;
-    try {
-      const granted = await PermissionsAndroid.request(
-        PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
-        {
-          title: 'Microphone Permission',
-          message: 'LiquidChat needs microphone access for voice input.',
-          buttonPositive: 'Allow',
-          buttonNegative: 'Deny',
-        },
-      );
-      return granted === PermissionsAndroid.RESULTS.GRANTED;
-    } catch {
-      return false;
-    }
+  const detach = () => {
+    subsRef.current.forEach(s => s.remove());
+    subsRef.current = [];
   };
 
   const ensureSttReady = async (): Promise<boolean> => {
     if (sttReady) return true;
-
     try {
       if (!cactusSTT.isDownloaded && !cactusSTT.isDownloading) {
         await cactusSTT.download();
       }
-
-      if (!sttReady) {
-        setSttInitializing(true);
-        await cactusSTT.init();
-        if (mountedRef.current) {
-          setSttReady(true);
-          setSttInitializing(false);
-        }
+      setSttInitializing(true);
+      await cactusSTT.init();
+      if (mountedRef.current) {
+        setSttReady(true);
+        setSttInitializing(false);
       }
       return true;
     } catch (e) {
-      if (mountedRef.current) {
-        setSttInitializing(false);
-        const msg = e instanceof Error ? e.message : 'Failed to initialize STT';
-        setError(msg);
-        onError?.(msg);
-      }
+      if (mountedRef.current) setSttInitializing(false);
+      fail(e instanceof Error ? e.message : 'Failed to initialize STT');
       return false;
     }
   };
 
   const prepareStt = useCallback(async () => {
     await ensureSttReady();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sttReady, cactusSTT.isDownloaded]);
 
   const startRecording = async () => {
-    const hasPermission = await requestMicPermission();
-    if (!hasPermission) {
-      const msg = 'Microphone permission denied. Enable it in Settings.';
-      setError(msg);
-      onError?.(msg);
+    if (!isRecorderAvailable()) {
+      fail('Recorder native module missing — rebuild the app.');
       return;
     }
-
+    if (meetingSession.isBusy()) {
+      fail('A meeting is being recorded. Stop it to use voice input.');
+      return;
+    }
+    if (!(await ensureRecordingPermissions())) {
+      fail('Microphone permission denied. Enable it in Settings.');
+      return;
+    }
     setError(null);
     setRecordingDurationMs(0);
+    durationRef.current = 0;
+    segmentRef.current = null;
+    stoppingRef.current = false;
 
-    // Lazy init STT on first recording
     const ready = await ensureSttReady();
     if (!ready || !mountedRef.current) return;
 
-    const timestamp = Date.now();
-    const filePath = `${RNFS.CachesDirectoryPath}/voice_input_${timestamp}.wav`;
-    tempFileRef.current = filePath;
-
-    const recorder = new AudioRecorderPlayer();
-    recorderRef.current = recorder;
-
-    recorder.addRecordBackListener((e) => {
-      if (mountedRef.current) {
-        setRecordingDurationMs(Math.floor(e.currentPosition));
-      }
-    });
-
+    await RNFS.mkdir(VOICE_DIR);
+    detach();
+    subsRef.current = [
+      RecorderEvents.onSegment(seg => { segmentRef.current = seg; }),
+      RecorderEvents.onLevel(l => {
+        durationRef.current = l.elapsedMs;
+        if (mountedRef.current) setRecordingDurationMs(l.elapsedMs);
+        if (l.elapsedMs > MAX_UTTERANCE_SEC * 1000) stopRecordingAndTranscribe();
+      }),
+    ];
     try {
-      await recorder.startRecorder(filePath, {
-        SampleRate: 16000,
-        Channels: 1,
-        AudioEncodingBitRate: 256000,
+      await Recorder.start({
+        dir: VOICE_DIR,
+        // One segment for the whole utterance; no silence cuts.
+        minSegmentSec: MAX_UTTERANCE_SEC + 10,
+        maxSegmentSec: MAX_UTTERANCE_SEC + 10,
+        foreground: false,
+        source: 'voice_recognition',
       });
-      if (mountedRef.current) {
-        setState('recording');
-      }
+      if (mountedRef.current) setState('recording');
     } catch (e) {
-      const msg = e instanceof Error ? e.message : 'Failed to start recording';
-      setError(msg);
-      onError?.(msg);
-      tempFileRef.current = null;
+      detach();
+      fail(e instanceof Error ? e.message : 'Failed to start recording');
     }
   };
 
   const stopRecordingAndTranscribe = async () => {
-    if (!recorderRef.current || !tempFileRef.current) {
-      setState('idle');
-      return;
-    }
-
-    const filePath = tempFileRef.current;
-
+    if (stoppingRef.current) return;
+    stoppingRef.current = true;
     try {
-      await recorderRef.current.stopRecorder();
-      recorderRef.current.removeRecordBackListener();
+      await Recorder.stop();
     } catch {}
-
+    // The final segment event is posted right before stop() resolves.
+    await new Promise(r => setTimeout(r, 250));
+    detach();
+    const seg = segmentRef.current;
     if (!mountedRef.current) return;
 
-    // Check for very short recordings
-    if (recordingDurationMs < 500) {
-      setError(null);
+    if (!seg || durationRef.current < 500) {
       setState('idle');
-      await cleanupTempFile(filePath);
+      if (seg) await RNFS.unlink(seg.path).catch(() => {});
       return;
     }
 
     setState('transcribing');
-
     try {
-      const result = await cactusSTT.transcribe({
-        audioFilePath: filePath,
-      });
-
+      const result = await cactusSTT.transcribe({ audio: seg.path });
       if (!mountedRef.current) return;
-
-      const text = result.response?.trim();
+      const text = cleanTranscript(result.response ?? '');
       if (text) {
         onTranscription(text);
         setError(null);
       } else {
-        setError('No speech detected. Try speaking louder or longer.');
-        onError?.('No speech detected. Try speaking louder or longer.');
+        fail('No speech detected. Try speaking louder or longer.');
       }
     } catch (e) {
-      if (mountedRef.current) {
-        const msg = e instanceof Error ? e.message : 'Transcription failed';
-        setError(msg);
-        onError?.(msg);
-      }
+      fail(e instanceof Error ? e.message : 'Transcription failed');
     } finally {
-      await cleanupTempFile(filePath);
+      await RNFS.unlink(seg.path).catch(() => {});
       if (mountedRef.current) {
         setState('idle');
         setRecordingDurationMs(0);
       }
-    }
-  };
-
-  const cleanupTempFile = async (filePath: string) => {
-    try {
-      if (await RNFS.exists(filePath)) {
-        await RNFS.unlink(filePath);
-      }
-    } catch {}
-    if (tempFileRef.current === filePath) {
-      tempFileRef.current = null;
     }
   };
 
@@ -232,8 +202,8 @@ export function useVoiceInput({
     } else if (state === 'idle') {
       await startRecording();
     }
-    // Ignore taps during 'transcribing'
-  }, [state, sttReady, recordingDurationMs]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state, sttReady]);
 
   return {
     state,

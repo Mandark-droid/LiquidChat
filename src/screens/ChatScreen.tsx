@@ -33,7 +33,7 @@ import {
   getToolDefinitionsJSON,
   getDefaultSystemPrompt,
 } from '../tools/registry';
-import { getModelBySlug } from '../config/models';
+import { getModelBySlug, quantizationFor } from '../config/models';
 import { modelLifecycle } from '../services/ModelLifecycleManager';
 import { actionLogger } from '../services/ActionLogger';
 import { memoryService } from '../services/MemoryService';
@@ -209,7 +209,8 @@ export default function ChatScreen({
       await releaseModel();
 
       console.log(`[LiquidChat] Loading "${modelSlug}" via CactusLM SDK...`);
-      const cactusLM = new CactusLM({ model: modelSlug });
+      const quantization = quantizationFor(modelSlug);
+      const cactusLM = new CactusLM({ model: modelSlug, options: quantization ? { quantization } : undefined });
       cactusLMRef.current = cactusLM;
 
       await cactusLM.download({
@@ -385,10 +386,7 @@ export default function ChatScreen({
 
       // Auto-speak if enabled
       if (settings?.autoTTS && responseText) {
-        speak(responseText, {
-          rate: settings.ttsRate,
-          voice: settings.ttsVoice,
-        });
+        speak(responseText, settings.ttsRate);
       }
 
       // Auto-remember interaction if enabled
@@ -427,7 +425,7 @@ export default function ChatScreen({
   const generateResponse = async (
     allMessages: ChatMessage[],
     memoryContext?: string,
-  ): Promise<{ text: string; functionCalls?: Array<{ name: string; arguments: string }> }> => {
+  ): Promise<{ text: string; functionCalls?: Array<{ name: string; arguments: string | Record<string, any> }> }> => {
     const systemPrompt = buildSystemPrompt(settings?.systemPrompt, memoryContext);
 
     const formattedMessages: CactusLMMessage[] = [
@@ -473,7 +471,7 @@ export default function ChatScreen({
       }
     };
 
-    let functionCalls: Array<{ name: string; arguments: string }> | undefined;
+    let functionCalls: Array<{ name: string; arguments: string | Record<string, any> }> | undefined;
 
     if (!cactusLMRef.current) {
       throw new Error('No model loaded');
@@ -655,10 +653,7 @@ export default function ChatScreen({
         scrollToBottom();
 
         if (settings?.autoTTS && followUp) {
-          speak(followUp, {
-            rate: settings.ttsRate,
-            voice: settings.ttsVoice,
-          });
+          speak(followUp, settings.ttsRate);
         }
       }
     } catch {

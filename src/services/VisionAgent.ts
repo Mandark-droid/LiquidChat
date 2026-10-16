@@ -46,7 +46,7 @@ class VisionAgent {
       options: { temperature: 0.3, maxTokens: 512 },
     });
 
-    return result.text || '';
+    return result.response || '';
   }
 
   async seeAndAct(imagePath: string, userIntent: string): Promise<string> {
@@ -67,7 +67,7 @@ class VisionAgent {
       options: { temperature: 0.3, maxTokens: 512 },
     });
 
-    return result.text || '';
+    return result.response || '';
   }
 
   get isInitialized(): boolean {
