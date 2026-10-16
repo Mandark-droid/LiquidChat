@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { meetingStore } from '../meetings/MeetingStore';
+
 import { resolveDue, toIsoDate } from '../meetings/dateResolver';
+import { meetingStore } from '../meetings/MeetingStore';
 import type { ActionItem, ActionPriority } from '../meetings/types';
 
 /**
@@ -62,9 +63,17 @@ class TaskStoreImpl {
 
   subscribe(l: Listener): () => void {
     this.listeners.add(l);
-    return () => { this.listeners.delete(l); };
+    return () => {
+      this.listeners.delete(l);
+    };
   }
-  private notify() { for (const l of this.listeners) { try { l(); } catch {} } }
+  private notify() {
+    for (const l of this.listeners) {
+      try {
+        l();
+      } catch {}
+    }
+  }
 
   private async load(): Promise<PersonalTask[]> {
     if (this.tasks) return this.tasks;
@@ -84,7 +93,9 @@ class TaskStoreImpl {
     return this.chain;
   }
 
-  async addPersonal(t: Omit<PersonalTask, 'id' | 'createdAt' | 'status'> & { status?: 'open' | 'done' }): Promise<PersonalTask> {
+  async addPersonal(
+    t: Omit<PersonalTask, 'id' | 'createdAt' | 'status'> & { status?: 'open' | 'done' },
+  ): Promise<PersonalTask> {
     const list = await this.load();
     const task: PersonalTask = {
       ...t,
@@ -125,7 +136,10 @@ class TaskStoreImpl {
     } else if (task.meetingId) {
       await meetingStore.update(task.meetingId, m => {
         const a = m.actionItems.find(x => x.id === task.id);
-        if (a) { a.status = status; a.completedAt = completedAt; }
+        if (a) {
+          a.status = status;
+          a.completedAt = completedAt;
+        }
       });
     }
   }
@@ -136,7 +150,11 @@ class TaskStoreImpl {
     } else if (task.meetingId) {
       await meetingStore.update(task.meetingId, m => {
         const a = m.actionItems.find(x => x.id === task.id);
-        if (a) { a.dueDate = dueDate; a.dueText = dueText ?? a.dueText; a.manual = true; }
+        if (a) {
+          a.dueDate = dueDate;
+          a.dueText = dueText ?? a.dueText;
+          a.manual = true;
+        }
       });
     }
   }
@@ -167,22 +185,24 @@ class TaskStoreImpl {
       completedAt: t.completedAt,
       notes: t.notes,
     }));
-    const fromMeetings = (await meetingStore.allActionItems()).map<UnifiedTask>(({ meeting, item }) => ({
-      key: `meeting:${meeting.id}:${item.id}`,
-      source: 'meeting',
-      id: item.id,
-      title: item.task,
-      owner: item.owner,
-      client: meeting.client,
-      dueDate: item.dueDate,
-      dueText: item.dueText,
-      priority: item.priority,
-      status: item.status,
-      createdAt: item.createdAt,
-      completedAt: item.completedAt,
-      meetingId: meeting.id,
-      meetingTitle: meeting.title,
-    }));
+    const fromMeetings = (await meetingStore.allActionItems()).map<UnifiedTask>(
+      ({ meeting, item }) => ({
+        key: `meeting:${meeting.id}:${item.id}`,
+        source: 'meeting',
+        id: item.id,
+        title: item.task,
+        owner: item.owner,
+        client: meeting.client,
+        dueDate: item.dueDate,
+        dueText: item.dueText,
+        priority: item.priority,
+        status: item.status,
+        createdAt: item.createdAt,
+        completedAt: item.completedAt,
+        meetingId: meeting.id,
+        meetingTitle: meeting.title,
+      }),
+    );
     return [...personal, ...fromMeetings];
   }
 }
@@ -205,9 +225,11 @@ export function sortTasks(xs: UnifiedTask[]): UnifiedTask[] {
   return [...xs].sort((a, b) => {
     if (a.status !== b.status) return a.status === 'open' ? -1 : 1;
     if (a.status === 'done') return (b.completedAt ?? 0) - (a.completedAt ?? 0);
-    const da = a.dueDate ?? '9999', db = b.dueDate ?? '9999';
+    const da = a.dueDate ?? '9999',
+      db = b.dueDate ?? '9999';
     if (da !== db) return da < db ? -1 : 1;
-    const pa = PRIORITY_RANK[a.priority ?? 'medium'], pb = PRIORITY_RANK[b.priority ?? 'medium'];
+    const pa = PRIORITY_RANK[a.priority ?? 'medium'],
+      pb = PRIORITY_RANK[b.priority ?? 'medium'];
     if (pa !== pb) return pa - pb;
     return b.createdAt - a.createdAt;
   });
@@ -218,7 +240,10 @@ export function isMine(t: UnifiedTask, myNames: string[]): boolean {
   if (t.source === 'personal') return true;
   const o = (t.owner ?? '').toLowerCase().trim();
   if (!o) return false;
-  return ['me', 'i', 'myself', 'us', 'we'].includes(o) || myNames.some(n => n && o.includes(n.toLowerCase()));
+  return (
+    ['me', 'i', 'myself', 'us', 'we'].includes(o) ||
+    myNames.some(n => n && o.includes(n.toLowerCase()))
+  );
 }
 
 export function parseQuickAdd(
@@ -232,17 +257,31 @@ export function parseQuickAdd(
   const pm = t.match(/\s!(high|h|medium|med|m|low|l|!{1,2})\s/i);
   if (pm) {
     const v = pm[1].toLowerCase();
-    priority = v.startsWith('h') || v === '!!' ? 'high' : v.startsWith('l') ? 'low' : v === '!' ? 'high' : 'medium';
+    priority =
+      v.startsWith('h') || v === '!!'
+        ? 'high'
+        : v.startsWith('l')
+          ? 'low'
+          : v === '!'
+            ? 'high'
+            : 'medium';
     t = t.replace(pm[0], ' ');
   }
   const cm = t.match(/\s@([\w&.-]+(?:\s[A-Z][\w&.-]*)?)/);
-  if (cm) { client = cm[1]; t = t.replace(cm[0], ' '); }
+  if (cm) {
+    client = cm[1];
+    t = t.replace(cm[0], ' ');
+  }
 
   // Deadline phrase: "by/on/before/due X" or a trailing date word.
   let dueText: string | undefined;
   const dm =
-    t.match(/\s(?:by|on|before|due|until)\s+((?:the\s)?(?:end of (?:the )?(?:day|week|month|next week)|next \w+|this \w+|coming \w+|tomorrow|today|tonight|day after tomorrow|in \d+ (?:days?|weeks?|months?)|\d{1,2}(?:st|nd|rd|th)?(?: of)? [a-z]{3,9}|[a-z]{3,9} \d{1,2}(?:st|nd|rd|th)?|\d{1,2}[/-]\d{1,2}(?:[/-]\d{2,4})?|monday|tuesday|wednesday|thursday|friday|saturday|sunday|eod|eow))\b/i) ??
-    t.match(/\s((?:tomorrow|today|tonight|next week|(?:next |this )?(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)))\s*$/i);
+    t.match(
+      /\s(?:by|on|before|due|until)\s+((?:the\s)?(?:end of (?:the )?(?:day|week|month|next week)|next \w+|this \w+|coming \w+|tomorrow|today|tonight|day after tomorrow|in \d+ (?:days?|weeks?|months?)|\d{1,2}(?:st|nd|rd|th)?(?: of)? [a-z]{3,9}|[a-z]{3,9} \d{1,2}(?:st|nd|rd|th)?|\d{1,2}[/-]\d{1,2}(?:[/-]\d{2,4})?|monday|tuesday|wednesday|thursday|friday|saturday|sunday|eod|eow))\b/i,
+    ) ??
+    t.match(
+      /\s((?:tomorrow|today|tonight|next week|(?:next |this )?(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)))\s*$/i,
+    );
   if (dm) {
     dueText = dm[1].trim();
     t = t.replace(dm[0], ' ');

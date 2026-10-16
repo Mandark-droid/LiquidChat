@@ -1,4 +1,5 @@
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+
 import { memoryService } from '../services/MemoryService';
 import type { MemoryResult } from '../types';
 
@@ -75,7 +76,8 @@ export function useMemory(enabled: boolean, embeddingModel?: string): UseMemoryR
       try {
         // Create a concise summary for embedding
         const userSnippet = userMsg.length > 100 ? userMsg.slice(0, 100) + '...' : userMsg;
-        const assistantSnippet = assistantMsg.length > 100 ? assistantMsg.slice(0, 100) + '...' : assistantMsg;
+        const assistantSnippet =
+          assistantMsg.length > 100 ? assistantMsg.slice(0, 100) + '...' : assistantMsg;
         const summary = `User asked about ${userSnippet}. Assistant responded: ${assistantSnippet}`;
         await memoryService.remember(summary, {
           type: 'interaction',

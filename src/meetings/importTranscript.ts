@@ -79,9 +79,16 @@ export function parseAttendees(raw: string): Attendee[] {
     .map(p => {
       const email = p.match(/<?([\w.+-]+@[\w-]+\.[\w.-]+)>?/)?.[1];
       const org = p.match(/\(([^)]+)\)/)?.[1]?.trim();
-      let name = p.replace(/<[^>]*>/, '').replace(/\([^)]*\)/, '').replace(email ?? '\u0000', '').trim();
+      let name = p
+        .replace(/<[^>]*>/, '')
+        .replace(/\([^)]*\)/, '')
+        .replace(email ?? '\u0000', '')
+        .trim();
       if (!name && email) {
-        name = email.split('@')[0].replace(/[._-]+/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+        name = email
+          .split('@')[0]
+          .replace(/[._-]+/g, ' ')
+          .replace(/\b\w/g, c => c.toUpperCase());
       }
       return { name, email, org };
     })
@@ -101,5 +108,8 @@ export function detectSpeakers(segments: TranscriptSegment[]): string[] {
     const m = s.text.match(/^([A-Z][\w.'-]*(?: [A-Z][\w.'-]*){0,3}):\s/);
     if (m) counts.set(m[1], (counts.get(m[1]) ?? 0) + 1);
   }
-  return [...counts.entries()].filter(([, n]) => n >= 2).sort((a, b) => b[1] - a[1]).map(([n]) => n);
+  return [...counts.entries()]
+    .filter(([, n]) => n >= 2)
+    .sort((a, b) => b[1] - a[1])
+    .map(([n]) => n);
 }

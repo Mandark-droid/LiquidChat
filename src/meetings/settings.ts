@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+
 import type { MeetingSettings } from './types';
 
 const KEY = '@liquid_meeting_settings';

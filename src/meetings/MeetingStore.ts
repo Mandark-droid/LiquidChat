@@ -1,4 +1,5 @@
 import * as RNFS from '@dr.pogodin/react-native-fs';
+
 import type { ActionItem, Meeting, MeetingIndexEntry } from './types';
 
 /**
@@ -27,9 +28,15 @@ class MeetingStoreImpl {
   private listeners = new Set<Listener>();
   private loaded = false;
 
-  dir(id: string) { return `${ROOT}/${id}`; }
-  audioDir(id: string) { return `${ROOT}/${id}/audio`; }
-  exportsDir(id: string) { return `${ROOT}/${id}/exports`; }
+  dir(id: string) {
+    return `${ROOT}/${id}`;
+  }
+  audioDir(id: string) {
+    return `${ROOT}/${id}/audio`;
+  }
+  exportsDir(id: string) {
+    return `${ROOT}/${id}/exports`;
+  }
 
   newId(): string {
     const d = new Date();
@@ -39,9 +46,17 @@ class MeetingStoreImpl {
 
   subscribe(l: Listener): () => void {
     this.listeners.add(l);
-    return () => { this.listeners.delete(l); };
+    return () => {
+      this.listeners.delete(l);
+    };
   }
-  private notify() { for (const l of this.listeners) { try { l(); } catch {} } }
+  private notify() {
+    for (const l of this.listeners) {
+      try {
+        l();
+      } catch {}
+    }
+  }
 
   async ensureLoaded(): Promise<void> {
     if (this.loaded) return;
@@ -108,14 +123,18 @@ class MeetingStoreImpl {
   async delete(id: string): Promise<void> {
     await this.ensureLoaded();
     this.meetings.delete(id);
-    try { await RNFS.unlink(this.dir(id)); } catch {}
+    try {
+      await RNFS.unlink(this.dir(id));
+    } catch {}
     this.index = (this.index ?? []).filter(e => e.id !== id);
     await this.persistIndex();
     this.notify();
   }
 
   async deleteAudio(id: string): Promise<void> {
-    try { await RNFS.unlink(this.audioDir(id)); } catch {}
+    try {
+      await RNFS.unlink(this.audioDir(id));
+    } catch {}
     await RNFS.mkdir(this.audioDir(id));
     await this.update(id, m => {
       m.audioDeleted = true;
@@ -168,20 +187,23 @@ class MeetingStoreImpl {
     const snapshot = JSON.stringify(m);
     const entry = toIndexEntry(m);
     const prev = this.writeChains.get(m.id) ?? Promise.resolve();
-    const next = prev.then(async () => {
-      const dir = this.dir(m.id);
-      const tmp = `${dir}/meeting.json.tmp`;
-      const dst = `${dir}/meeting.json`;
-      await RNFS.mkdir(dir);
-      await RNFS.writeFile(tmp, snapshot, 'utf8');
-      if (await RNFS.exists(dst)) await RNFS.unlink(dst);
-      await RNFS.moveFile(tmp, dst);
-    }).catch(e => console.warn('[MeetingStore] save failed', e));
+    const next = prev
+      .then(async () => {
+        const dir = this.dir(m.id);
+        const tmp = `${dir}/meeting.json.tmp`;
+        const dst = `${dir}/meeting.json`;
+        await RNFS.mkdir(dir);
+        await RNFS.writeFile(tmp, snapshot, 'utf8');
+        if (await RNFS.exists(dst)) await RNFS.unlink(dst);
+        await RNFS.moveFile(tmp, dst);
+      })
+      .catch(e => console.warn('[MeetingStore] save failed', e));
     this.writeChains.set(m.id, next);
 
     const idx = this.index ?? [];
     const i = idx.findIndex(e => e.id === m.id);
-    if (i >= 0) idx[i] = entry; else idx.unshift(entry);
+    if (i >= 0) idx[i] = entry;
+    else idx.unshift(entry);
     this.index = idx.sort((a, b) => b.startedAt - a.startedAt);
     this.persistIndex();
     this.notify();

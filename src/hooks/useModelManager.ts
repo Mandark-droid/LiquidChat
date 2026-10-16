@@ -1,6 +1,7 @@
-import { useState, useEffect, useCallback } from 'react';
-import { modelLifecycle, type ManagedModel } from '../services/ModelLifecycleManager';
+import { useEffect, useState } from 'react';
+
 import type { DeviceProfile } from '../config/modelTiers';
+import { type ManagedModel, modelLifecycle } from '../services/ModelLifecycleManager';
 
 export interface UseModelManagerReturn {
   loadedModels: ManagedModel[];

@@ -1,8 +1,17 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Alert, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import {
+  Alert,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { theme } from '../config/theme';
+
 import { Button, ProgressBar, ScreenHeader, ui } from '../components/ui';
+import { theme } from '../config/theme';
 import { useLiveSession, useMeeting, useTranscriberStatus } from '../meetings/hooks';
 import { meetingSession } from '../meetings/MeetingSession';
 import { formatClock } from '../meetings/MinutesGenerator';
@@ -45,10 +54,20 @@ export default function MeetingRecorderScreen({ onBack, onFinished }: Props) {
   const pending = segments.filter(s => s.status === 'pending').length;
 
   const stop = () =>
-    Alert.alert('Stop recording?', 'The rest of the audio will be transcribed and minutes written on-device.', [
-      { text: 'Keep recording', style: 'cancel' },
-      { text: 'Stop & process', style: 'destructive', onPress: () => { meetingSession.stop().catch(() => {}); } },
-    ]);
+    Alert.alert(
+      'Stop recording?',
+      'The rest of the audio will be transcribed and minutes written on-device.',
+      [
+        { text: 'Keep recording', style: 'cancel' },
+        {
+          text: 'Stop & process',
+          style: 'destructive',
+          onPress: () => {
+            meetingSession.stop().catch(() => {});
+          },
+        },
+      ],
+    );
 
   const addMarker = async () => {
     await meetingSession.addMarker(markerText || 'Important');
@@ -57,11 +76,17 @@ export default function MeetingRecorderScreen({ onBack, onFinished }: Props) {
   };
 
   const sttLine =
-    stt.phase === 'downloading' ? `Downloading speech model… ${Math.round(stt.downloadProgress * 100)}%`
-    : stt.phase === 'initializing' ? 'Loading speech model…'
-    : stt.phase === 'error' ? `Speech model error: ${stt.error ?? ''}`
-    : pending > 0 ? `Transcribing · ${pending} segment${pending > 1 ? 's' : ''} queued`
-    : doneText.length ? 'Live transcript' : 'Listening — first text appears after ~20 s';
+    stt.phase === 'downloading'
+      ? `Downloading speech model… ${Math.round(stt.downloadProgress * 100)}%`
+      : stt.phase === 'initializing'
+        ? 'Loading speech model…'
+        : stt.phase === 'error'
+          ? `Speech model error: ${stt.error ?? ''}`
+          : pending > 0
+            ? `Transcribing · ${pending} segment${pending > 1 ? 's' : ''} queued`
+            : doneText.length
+              ? 'Live transcript'
+              : 'Listening — first text appears after ~20 s';
 
   return (
     <SafeAreaView style={ui.screen} edges={['top']}>
@@ -74,7 +99,13 @@ export default function MeetingRecorderScreen({ onBack, onFinished }: Props) {
       <View style={styles.top}>
         <Text style={styles.timer}>{formatClock(live.elapsedMs)}</Text>
         <Text style={[styles.state, live.phase === 'paused' && { color: theme.colors.warning }]}>
-          {live.phase === 'paused' ? 'PAUSED' : live.phase === 'starting' ? 'STARTING…' : live.phase === 'stopping' ? 'STOPPING…' : '● REC'}
+          {live.phase === 'paused'
+            ? 'PAUSED'
+            : live.phase === 'starting'
+              ? 'STARTING…'
+              : live.phase === 'stopping'
+                ? 'STOPPING…'
+                : '● REC'}
         </Text>
         <View style={styles.meter}>
           {levels.map((v, i) => (
@@ -112,13 +143,15 @@ export default function MeetingRecorderScreen({ onBack, onFinished }: Props) {
         ) : (
           doneText.map(s => (
             <Text key={s.index} style={styles.line}>
-              <Text style={styles.ts}>{formatClock(s.startMs)}  </Text>
+              <Text style={styles.ts}>{formatClock(s.startMs)} </Text>
               {s.text}
             </Text>
           ))
         )}
         {(meeting?.markers ?? []).map((mk, i) => (
-          <Text key={`mk${i}`} style={styles.marker}>★ {formatClock(mk.atMs)} — {mk.note}</Text>
+          <Text key={`mk${i}`} style={styles.marker}>
+            ★ {formatClock(mk.atMs)} — {mk.note}
+          </Text>
         ))}
       </ScrollView>
 
@@ -144,12 +177,20 @@ export default function MeetingRecorderScreen({ onBack, onFinished }: Props) {
         </TouchableOpacity>
         <TouchableOpacity
           style={[styles.ctrl, styles.ctrlMain]}
-          onPress={() => (live.phase === 'paused' ? meetingSession.resume() : meetingSession.pause())}
+          onPress={() =>
+            live.phase === 'paused' ? meetingSession.resume() : meetingSession.pause()
+          }
           disabled={live.phase !== 'recording' && live.phase !== 'paused'}
         >
-          <Text style={[styles.ctrlIcon, { color: theme.colors.textLight }]}>{live.phase === 'paused' ? '▶' : '❚❚'}</Text>
+          <Text style={[styles.ctrlIcon, { color: theme.colors.textLight }]}>
+            {live.phase === 'paused' ? '▶' : '❚❚'}
+          </Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.ctrl} onPress={stop} disabled={live.phase !== 'recording' && live.phase !== 'paused'}>
+        <TouchableOpacity
+          style={styles.ctrl}
+          onPress={stop}
+          disabled={live.phase !== 'recording' && live.phase !== 'paused'}
+        >
           <Text style={[styles.ctrlIcon, { color: theme.colors.error }]}>■</Text>
           <Text style={styles.ctrlLabel}>Stop</Text>
         </TouchableOpacity>
@@ -160,11 +201,28 @@ export default function MeetingRecorderScreen({ onBack, onFinished }: Props) {
 
 const styles = StyleSheet.create({
   top: { alignItems: 'center', paddingTop: 20, paddingBottom: 12 },
-  timer: { fontSize: 52, fontWeight: '200', color: theme.colors.text, fontVariant: ['tabular-nums'] },
-  state: { fontSize: theme.fontSize.sm, fontWeight: '800', letterSpacing: 2, color: theme.colors.error, marginTop: 2 },
+  timer: {
+    fontSize: 52,
+    fontWeight: '200',
+    color: theme.colors.text,
+    fontVariant: ['tabular-nums'],
+  },
+  state: {
+    fontSize: theme.fontSize.sm,
+    fontWeight: '800',
+    letterSpacing: 2,
+    color: theme.colors.error,
+    marginTop: 2,
+  },
   meter: { flexDirection: 'row', alignItems: 'center', height: 52, gap: 3, marginTop: 14 },
   bar: { width: 5, borderRadius: 3, backgroundColor: theme.colors.accent },
-  warn: { color: theme.colors.error, fontSize: theme.fontSize.sm, marginTop: 8, paddingHorizontal: 24, textAlign: 'center' },
+  warn: {
+    color: theme.colors.error,
+    fontSize: theme.fontSize.sm,
+    marginTop: 8,
+    paddingHorizontal: 24,
+    textAlign: 'center',
+  },
   transcript: {
     flex: 1,
     marginHorizontal: theme.spacing.lg,
@@ -176,7 +234,13 @@ const styles = StyleSheet.create({
   line: { fontSize: theme.fontSize.md, color: theme.colors.text, lineHeight: 22, marginBottom: 8 },
   ts: { color: theme.colors.textMuted, fontSize: theme.fontSize.sm, fontVariant: ['tabular-nums'] },
   marker: { color: theme.colors.warning, fontWeight: '600', marginTop: 4 },
-  markerRow: { flexDirection: 'row', gap: 8, paddingHorizontal: theme.spacing.lg, paddingTop: 10, alignItems: 'center' },
+  markerRow: {
+    flexDirection: 'row',
+    gap: 8,
+    paddingHorizontal: theme.spacing.lg,
+    paddingTop: 10,
+    alignItems: 'center',
+  },
   markerInput: {
     flex: 1,
     backgroundColor: theme.colors.surface,
@@ -187,7 +251,12 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     color: theme.colors.text,
   },
-  controls: { flexDirection: 'row', justifyContent: 'space-around', alignItems: 'center', paddingVertical: 18 },
+  controls: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    alignItems: 'center',
+    paddingVertical: 18,
+  },
   ctrl: { alignItems: 'center', width: 72 },
   ctrlMain: {
     width: 72,

@@ -81,7 +81,8 @@ function parseJsonFormat(text: string): ToolCall[] {
 
   // Strategy 4: Regex fallback for partially-embedded tool calls
   // Pattern: {"name": "...", "arguments": {...}}
-  const jsonRegex = /\{[\s]*"name"[\s]*:[\s]*"([^"]+)"[\s]*,[\s]*"arguments"[\s]*:[\s]*(\{[^}]*\})/g;
+  const jsonRegex =
+    /\{[\s]*"name"[\s]*:[\s]*"([^"]+)"[\s]*,[\s]*"arguments"[\s]*:[\s]*(\{[^}]*\})/g;
   let match;
 
   while ((match = jsonRegex.exec(text)) !== null) {
@@ -96,7 +97,8 @@ function parseJsonFormat(text: string): ToolCall[] {
 
   // Strategy 5: Try {"function": {"name": ..., "arguments": ...}} wrapper format
   if (calls.length === 0) {
-    const wrapperRegex = /\{[\s]*"function"[\s]*:[\s]*\{[\s]*"name"[\s]*:[\s]*"([^"]+)"[\s]*,[\s]*"arguments"[\s]*:[\s]*(\{[^}]*\})/g;
+    const wrapperRegex =
+      /\{[\s]*"function"[\s]*:[\s]*\{[\s]*"name"[\s]*:[\s]*"([^"]+)"[\s]*,[\s]*"arguments"[\s]*:[\s]*(\{[^}]*\})/g;
     let wrapperMatch;
 
     while ((wrapperMatch = wrapperRegex.exec(text)) !== null) {
@@ -170,7 +172,7 @@ function extractSingleToolCall(item: any): ToolCall | null {
  * Parse CactusLM functionCalls from completion result
  */
 export function parseCactusFunctionCalls(
-  functionCalls?: Array<{ name: string; arguments: string | Record<string, any> }>
+  functionCalls?: Array<{ name: string; arguments: string | Record<string, any> }>,
 ): ToolCall[] {
   if (!functionCalls || functionCalls.length === 0) return [];
 
@@ -196,7 +198,7 @@ export function parseCactusFunctionCalls(
 export function hasToolCallPattern(text: string): boolean {
   return (
     text.includes('<start_function_call>') ||
-    text.includes('"name"') && text.includes('"arguments"') ||
+    (text.includes('"name"') && text.includes('"arguments"')) ||
     /call:\w+\{/.test(text)
   );
 }

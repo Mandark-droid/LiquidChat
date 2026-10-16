@@ -1,4 +1,5 @@
 import { NativeModules } from 'react-native';
+
 import type { ToolResult } from '../types';
 
 const { AccessibilityBridge } = NativeModules;
@@ -9,12 +10,13 @@ export async function takeScreenshot(): Promise<ToolResult> {
     if (!enabled) {
       return {
         success: false,
-        message: 'Accessibility service not enabled. Enable LiquidChat in Settings > Accessibility.',
+        message:
+          'Accessibility service not enabled. Enable LiquidChat in Settings > Accessibility.',
       };
     }
 
     const resultJson = await AccessibilityBridge.performAction(
-      JSON.stringify({ action: 'take_screenshot' })
+      JSON.stringify({ action: 'take_screenshot' }),
     );
 
     const result = JSON.parse(resultJson);

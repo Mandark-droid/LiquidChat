@@ -1,4 +1,5 @@
 import Torch from 'react-native-torch';
+
 import type { ToolResult } from '../types';
 
 export async function turnOnFlashlight(): Promise<ToolResult> {

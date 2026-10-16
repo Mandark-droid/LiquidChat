@@ -1,5 +1,6 @@
 import React from 'react';
-import { View, Text, ActivityIndicator, StyleSheet } from 'react-native';
+import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+
 import { theme } from '../config/theme';
 import type { ActionChainStep } from '../types';
 
@@ -26,10 +27,7 @@ function StatusIcon({ status }: { status: ActionChainStep['status'] }) {
   }
 }
 
-export default function ActionChainProgress({
-  steps,
-  totalPlanned,
-}: ActionChainProgressProps) {
+export default function ActionChainProgress({ steps, totalPlanned }: ActionChainProgressProps) {
   if (steps.length === 0) return null;
 
   return (

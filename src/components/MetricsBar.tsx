@@ -1,8 +1,9 @@
 import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
+
 import { theme } from '../config/theme';
-import PrivacyBadge from './PrivacyBadge';
 import type { ChatMetrics } from '../types';
+import PrivacyBadge from './PrivacyBadge';
 
 interface MetricsBarProps {
   metrics: ChatMetrics | null;
@@ -25,15 +26,19 @@ const MetricsBar: React.FC<MetricsBarProps> = ({
       <View style={styles.metric}>
         <Text style={styles.label}>Tokens</Text>
         <Text style={styles.value}>
-          {isGenerating ? liveTokenCount : (metrics?.totalTokens || 0)}
+          {isGenerating ? liveTokenCount : metrics?.totalTokens || 0}
         </Text>
       </View>
       <View style={styles.metric}>
         <Text style={styles.label}>Speed</Text>
         <Text style={styles.value}>
           {isGenerating
-            ? liveTokensPerSecond > 0 ? `${liveTokensPerSecond.toFixed(1)} t/s` : '...'
-            : metrics?.tokensPerSecond ? `${metrics.tokensPerSecond.toFixed(1)} t/s` : '-'}
+            ? liveTokensPerSecond > 0
+              ? `${liveTokensPerSecond.toFixed(1)} t/s`
+              : '...'
+            : metrics?.tokensPerSecond
+              ? `${metrics.tokensPerSecond.toFixed(1)} t/s`
+              : '-'}
         </Text>
       </View>
       <View style={styles.metric}>
@@ -43,7 +48,9 @@ const MetricsBar: React.FC<MetricsBarProps> = ({
         </Text>
       </View>
       <View style={styles.modelBadge}>
-        <Text style={styles.modelText} numberOfLines={1}>{modelName}</Text>
+        <Text style={styles.modelText} numberOfLines={1}>
+          {modelName}
+        </Text>
       </View>
     </View>
   );

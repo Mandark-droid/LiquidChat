@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
-import { executeTool } from '../tools/registry';
+import React, { useEffect, useState } from 'react';
+import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+
 import { theme } from '../config/theme';
+import { executeTool } from '../tools/registry';
 import type { ToolCall, ToolResult } from '../types';
 
 interface ToolCallCardProps {
@@ -32,11 +33,7 @@ const TOOL_ICONS: Record<string, string> = {
   take_screenshot: '📱',
 };
 
-const ToolCallCard: React.FC<ToolCallCardProps> = ({
-  toolCall,
-  autoExecute = true,
-  onResult,
-}) => {
+const ToolCallCard: React.FC<ToolCallCardProps> = ({ toolCall, autoExecute = true, onResult }) => {
   const [status, setStatus] = useState<ExecutionStatus>('pending');
   const [result, setResult] = useState<ToolResult | null>(null);
 
@@ -66,10 +63,13 @@ const ToolCallCard: React.FC<ToolCallCardProps> = ({
 
   const icon = TOOL_ICONS[toolCall.name] || '⚙️';
   const statusColor =
-    status === 'success' ? theme.colors.success :
-    status === 'error' ? theme.colors.error :
-    status === 'executing' ? theme.colors.warning :
-    theme.colors.textMuted;
+    status === 'success'
+      ? theme.colors.success
+      : status === 'error'
+        ? theme.colors.error
+        : status === 'executing'
+          ? theme.colors.warning
+          : theme.colors.textMuted;
 
   return (
     <View style={styles.container}>
@@ -77,9 +77,7 @@ const ToolCallCard: React.FC<ToolCallCardProps> = ({
         <Text style={styles.icon}>{icon}</Text>
         <Text style={styles.functionName}>{toolCall.name}</Text>
         <View style={[styles.statusBadge, { backgroundColor: statusColor }]}>
-          <Text style={styles.statusText}>
-            {status === 'executing' ? 'Running...' : status}
-          </Text>
+          <Text style={styles.statusText}>{status === 'executing' ? 'Running...' : status}</Text>
         </View>
       </View>
 

@@ -56,7 +56,8 @@ export const LIQUID_MODELS: LiquidModel[] = [
     sizeMb: 1261,
     quantization: 'int4',
     minRamGb: 8,
-    description: 'Highest-quality Liquid model that fits phones. Best for meeting minutes and email drafts.',
+    description:
+      'Highest-quality Liquid model that fits phones. Best for meeting minutes and email drafts.',
     supportsCompletion: true,
     supportsToolCalling: true,
     supportsVision: false,
@@ -183,7 +184,8 @@ export const LIQUID_MODELS: LiquidModel[] = [
     category: 'audio',
     sizeMb: 411,
     quantization: 'int4',
-    description: 'NVIDIA Parakeet: top accuracy for meetings, multilingual (European languages). No Whisper prompt/translate.',
+    description:
+      'NVIDIA Parakeet: top accuracy for meetings, multilingual (European languages). No Whisper prompt/translate.',
     supportsCompletion: false,
     supportsToolCalling: false,
     supportsVision: false,

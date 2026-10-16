@@ -117,13 +117,8 @@ export async function pushDatasetToHub(
     const date = new Date().toISOString().split('T')[0];
     const repoId = `${userInfo.name}/liquidchat-mobile-actions-${date}`;
 
-    const repoCreated = await createDatasetRepo(
-      token,
-      repoId,
-      options.isPrivate ?? false,
-    );
-    if (!repoCreated)
-      return { success: false, error: 'Failed to create dataset repository.' };
+    const repoCreated = await createDatasetRepo(token, repoId, options.isPrivate ?? false);
+    if (!repoCreated) return { success: false, error: 'Failed to create dataset repository.' };
 
     const readme = generateReadme(repoId, userInfo.name);
     const result = await uploadFiles(

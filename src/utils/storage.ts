@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+
 import type { Chat, ChatSettings } from '../types';
 
 const CHATS_KEY = '@liquid_chats';
@@ -21,7 +22,7 @@ export const storage = {
   async getChat(chatId: string): Promise<Chat | null> {
     try {
       const chats = await this.getAllChats();
-      return chats.find((chat) => chat.id === chatId) || null;
+      return chats.find(chat => chat.id === chatId) || null;
     } catch (error) {
       console.error('Error loading chat:', error);
       return null;
@@ -31,7 +32,7 @@ export const storage = {
   async saveChat(chat: Chat): Promise<void> {
     try {
       const chats = await this.getAllChats();
-      const existingIndex = chats.findIndex((c) => c.id === chat.id);
+      const existingIndex = chats.findIndex(c => c.id === chat.id);
       if (existingIndex >= 0) {
         chats[existingIndex] = chat;
       } else {
@@ -46,7 +47,7 @@ export const storage = {
   async deleteChat(chatId: string): Promise<void> {
     try {
       const chats = await this.getAllChats();
-      const filteredChats = chats.filter((chat) => chat.id !== chatId);
+      const filteredChats = chats.filter(chat => chat.id !== chatId);
       await AsyncStorage.setItem(CHATS_KEY, JSON.stringify(filteredChats));
     } catch (error) {
       console.error('Error deleting chat:', error);

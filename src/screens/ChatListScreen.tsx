@@ -1,29 +1,27 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
-  View,
-  Text,
+  Alert,
   Image,
-  TouchableOpacity,
+  RefreshControl,
   ScrollView,
   StyleSheet,
-  Alert,
-  RefreshControl,
+  Text,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { storage } from '../utils/storage';
-import { generateChatId, formatTimestamp } from '../utils/chatHelpers';
-import { DEFAULT_SETTINGS, type Chat, type ChatSettings } from '../types';
+
 import { theme } from '../config/theme';
+import { type Chat, type ChatSettings, DEFAULT_SETTINGS } from '../types';
+import { formatTimestamp, generateChatId } from '../utils/chatHelpers';
+import { storage } from '../utils/storage';
 
 interface ChatListScreenProps {
   onOpenChat: (chatId: string) => void;
   onNewChat: () => void;
 }
 
-export default function ChatListScreen({
-  onOpenChat,
-  onNewChat,
-}: ChatListScreenProps) {
+export default function ChatListScreen({ onOpenChat }: ChatListScreenProps) {
   const [chats, setChats] = useState<Chat[]>([]);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -112,10 +110,7 @@ export default function ChatListScreen({
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
         <View style={styles.headerBrand}>
-          <Image
-            source={require('../assets/liquidchat_logo.png')}
-            style={styles.headerLogo}
-          />
+          <Image source={require('../assets/liquidchat_logo.png')} style={styles.headerLogo} />
           <Text style={styles.headerTitle}>LiquidChat</Text>
         </View>
         <View style={styles.headerActions}>
@@ -132,9 +127,7 @@ export default function ChatListScreen({
 
       <ScrollView
         style={styles.chatList}
-        contentContainerStyle={
-          chats.length === 0 ? styles.emptyContainer : styles.listContent
-        }
+        contentContainerStyle={chats.length === 0 ? styles.emptyContainer : styles.listContent}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -145,14 +138,9 @@ export default function ChatListScreen({
       >
         {chats.length === 0 ? (
           <View style={styles.emptyState}>
-            <Image
-              source={require('../assets/liquidchat_icon.png')}
-              style={styles.emptyLogo}
-            />
+            <Image source={require('../assets/liquidchat_icon.png')} style={styles.emptyLogo} />
             <Text style={styles.emptyTitle}>No Chats Yet</Text>
-            <Text style={styles.emptySubtitle}>
-              Tap "+ New" to start a conversation
-            </Text>
+            <Text style={styles.emptySubtitle}>Tap "+ New" to start a conversation</Text>
           </View>
         ) : (
           chats.map(chat => (
@@ -168,9 +156,7 @@ export default function ChatListScreen({
                   <Text style={styles.chatTitle} numberOfLines={1}>
                     {chat.title}
                   </Text>
-                  <Text style={styles.chatTimestamp}>
-                    {formatTimestamp(chat.updatedAt)}
-                  </Text>
+                  <Text style={styles.chatTimestamp}>{formatTimestamp(chat.updatedAt)}</Text>
                 </View>
                 <Text style={styles.chatPreview} numberOfLines={2}>
                   {getMessagePreview(chat)}

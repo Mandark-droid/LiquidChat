@@ -1,8 +1,9 @@
 import { CactusLM } from 'cactus-react-native';
 import DeviceInfo from 'react-native-device-info';
-import { LIQUID_MODELS, getModelBySlug, quantizationFor } from '../config/models';
-import { getDeviceProfile, getModelTier, type DeviceProfile } from '../config/modelTiers';
-import type { ModelTier, ModelState } from '../types';
+
+import { getModelBySlug, LIQUID_MODELS, quantizationFor } from '../config/models';
+import { type DeviceProfile, getDeviceProfile, getModelTier } from '../config/modelTiers';
+import type { ModelState, ModelTier } from '../types';
 
 const RAM_MULTIPLIER = 1.3;
 
@@ -44,7 +45,9 @@ class ModelLifecycleManager {
     }
 
     this.profile = getDeviceProfile(totalRamBytes);
-    console.log(`[ModelLifecycle] Device profile: ${this.profile.name} (budget: ${this.profile.ramBudgetMb}MB)`);
+    console.log(
+      `[ModelLifecycle] Device profile: ${this.profile.name} (budget: ${this.profile.ramBudgetMb}MB)`,
+    );
 
     // Register all catalog models
     for (const model of LIQUID_MODELS) {
@@ -131,7 +134,10 @@ class ModelLifecycleManager {
       // derived from weight filenames on Cactus-Compute HuggingFace repos.
       console.log(`[ModelLifecycle] Loading "${slug}" via CactusLM SDK...`);
       const quantization = quantizationFor(slug);
-      const cactusLM = new CactusLM({ model: slug, options: quantization ? { quantization } : undefined });
+      const cactusLM = new CactusLM({
+        model: slug,
+        options: quantization ? { quantization } : undefined,
+      });
 
       // Download if not already cached
       await cactusLM.download({

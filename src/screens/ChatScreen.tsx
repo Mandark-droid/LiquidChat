@@ -1,80 +1,67 @@
-import React, { useEffect, useState, useRef, useCallback } from 'react';
+import { CactusLM, type CactusLMMessage } from 'cactus-react-native';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  View,
-  Text,
+  ActivityIndicator,
+  Alert,
   Image,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+  StatusBar,
+  StyleSheet,
+  Text,
   TextInput,
   TouchableOpacity,
-  ScrollView,
-  StyleSheet,
-  ActivityIndicator,
-  Platform,
-  KeyboardAvoidingView,
-  StatusBar,
-  Alert,
+  View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import {
+  type ImagePickerResponse,
   launchCamera,
   launchImageLibrary,
-  type ImagePickerResponse,
 } from 'react-native-image-picker';
-import { CactusLM, type CactusLMMessage } from 'cactus-react-native';
-import { storage } from '../utils/storage';
-import { generateChatTitle } from '../utils/chatHelpers';
-import { triggerLightHaptic, triggerMediumHaptic } from '../utils/haptics';
-import { speak, stopSpeaking } from '../utils/ttsManager';
-import {
-  parseToolCalls,
-  parseCactusFunctionCalls,
-} from '../utils/toolParser';
-import {
-  executeTool,
-  getToolDefinitionsJSON,
-  getDefaultSystemPrompt,
-} from '../tools/registry';
-import { getModelBySlug, quantizationFor } from '../config/models';
-import { modelLifecycle } from '../services/ModelLifecycleManager';
-import { actionLogger } from '../services/ActionLogger';
-import { memoryService } from '../services/MemoryService';
-import { useIntentRouter } from '../hooks/useIntentRouter';
+import { SafeAreaView } from 'react-native-safe-area-context';
+
+import ActionChainProgress from '../components/ActionChainProgress';
+import AgentStateBar from '../components/AgentStateBar';
+import MemoryChips from '../components/MemoryChips';
 import MessageBubble from '../components/MessageBubble';
 import MetricsBar from '../components/MetricsBar';
-import AgentStateBar from '../components/AgentStateBar';
-import ActionChainProgress from '../components/ActionChainProgress';
+import ScreenshotPreview from '../components/ScreenshotPreview';
 import VisionModeOverlay from '../components/VisionModeOverlay';
 import VoiceInputButton from '../components/VoiceInputButton';
-import MemoryChips from '../components/MemoryChips';
-import ScreenshotPreview from '../components/ScreenshotPreview';
-import { useMemory } from '../hooks/useMemory';
-import { triggerSuccessHaptic } from '../utils/haptics';
+import { getModelBySlug, quantizationFor } from '../config/models';
 import { theme } from '../config/theme';
+import { useIntentRouter } from '../hooks/useIntentRouter';
+import { useMemory } from '../hooks/useMemory';
+import { actionLogger } from '../services/ActionLogger';
+import { memoryService } from '../services/MemoryService';
+import { modelLifecycle } from '../services/ModelLifecycleManager';
+import { executeTool, getDefaultSystemPrompt } from '../tools/registry';
 import type {
+  ActionChainStep,
+  AgentState,
   Chat,
   ChatMessage,
   ChatMetrics,
   ChatSettings,
   ToolCall,
   ToolResult,
-  AgentState,
-  ActionChainStep,
 } from '../types';
 import { DEFAULT_SETTINGS } from '../types';
+import { generateChatTitle } from '../utils/chatHelpers';
+import { triggerLightHaptic, triggerMediumHaptic } from '../utils/haptics';
+import { triggerSuccessHaptic } from '../utils/haptics';
+import { storage } from '../utils/storage';
+import { parseCactusFunctionCalls, parseToolCalls } from '../utils/toolParser';
+import { speak, stopSpeaking } from '../utils/ttsManager';
 
 interface ChatScreenProps {
   chatId: string;
   onBack: () => void;
-  onOpenModelSelector: (
-    currentModel: string,
-    onSelect: (model: string) => void,
-  ) => void;
+  onOpenModelSelector: (currentModel: string, onSelect: (model: string) => void) => void;
 }
 
-export default function ChatScreen({
-  chatId,
-  onBack,
-  onOpenModelSelector,
-}: ChatScreenProps) {
+export default function ChatScreen({ chatId, onBack, onOpenModelSelector }: ChatScreenProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputText, setInputText] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
@@ -90,7 +77,7 @@ export default function ChatScreen({
   const [liveTokensPerSecond, setLiveTokensPerSecond] = useState(0);
   const [agentState, setAgentState] = useState<AgentState>({ kind: 'idle' });
   const [actionChainSteps, setActionChainSteps] = useState<ActionChainStep[]>([]);
-  const [isVisionActive, setIsVisionActive] = useState(false);
+  const [isVisionActive] = useState(false);
 
   const scrollViewRef = useRef<ScrollView>(null);
   const cactusLMRef = useRef<CactusLM | null>(null);
@@ -101,12 +88,7 @@ export default function ChatScreen({
   const { routeAndLoad } = useIntentRouter();
 
   // Memory hook
-  const {
-    relevantMemories,
-    recallForMessage,
-    rememberInteraction,
-    clearRecalled,
-  } = useMemory(
+  const { relevantMemories, recallForMessage, rememberInteraction, clearRecalled } = useMemory(
     settings?.memoryEnabled ?? false,
     settings?.embeddingModel,
   );
@@ -210,7 +192,10 @@ export default function ChatScreen({
 
       console.log(`[LiquidChat] Loading "${modelSlug}" via CactusLM SDK...`);
       const quantization = quantizationFor(modelSlug);
-      const cactusLM = new CactusLM({ model: modelSlug, options: quantization ? { quantization } : undefined });
+      const cactusLM = new CactusLM({
+        model: modelSlug,
+        options: quantization ? { quantization } : undefined,
+      });
       cactusLMRef.current = cactusLM;
 
       await cactusLM.download({
@@ -225,8 +210,7 @@ export default function ChatScreen({
       setModelDisplayName(getModelBySlug(modelSlug)?.name || modelSlug);
       console.log(`[LiquidChat] Model "${modelSlug}" loaded successfully`);
     } catch (error) {
-      const errMsg =
-        error instanceof Error ? error.message : String(error);
+      const errMsg = error instanceof Error ? error.message : String(error);
       console.error(`[LiquidChat] Failed to load "${modelSlug}": ${errMsg}`);
       Alert.alert(
         'Model Error',
@@ -238,23 +222,17 @@ export default function ChatScreen({
     }
   };
 
-  const saveMessages = useCallback(
-    async (updatedMessages: ChatMessage[]) => {
-      if (!chatRef.current) return;
-      chatRef.current.messages = updatedMessages;
-      chatRef.current.updatedAt = Date.now();
+  const saveMessages = useCallback(async (updatedMessages: ChatMessage[]) => {
+    if (!chatRef.current) return;
+    chatRef.current.messages = updatedMessages;
+    chatRef.current.updatedAt = Date.now();
 
-      if (
-        updatedMessages.length === 2 &&
-        chatRef.current.title === 'New Chat'
-      ) {
-        chatRef.current.title = generateChatTitle(updatedMessages);
-      }
+    if (updatedMessages.length === 2 && chatRef.current.title === 'New Chat') {
+      chatRef.current.title = generateChatTitle(updatedMessages);
+    }
 
-      await storage.saveChat(chatRef.current);
-    },
-    [],
-  );
+    await storage.saveChat(chatRef.current);
+  }, []);
 
   const scrollToBottom = useCallback(() => {
     setTimeout(() => {
@@ -266,11 +244,7 @@ export default function ChatScreen({
     launchImageLibrary(
       { mediaType: 'photo', quality: 0.8, maxWidth: 1024, maxHeight: 1024 },
       (response: ImagePickerResponse) => {
-        if (
-          !response.didCancel &&
-          !response.errorCode &&
-          response.assets?.[0]?.uri
-        ) {
+        if (!response.didCancel && !response.errorCode && response.assets?.[0]?.uri) {
           setSelectedImage(response.assets[0].uri);
         }
       },
@@ -281,11 +255,7 @@ export default function ChatScreen({
     launchCamera(
       { mediaType: 'photo', quality: 0.8, maxWidth: 1024, maxHeight: 1024 },
       (response: ImagePickerResponse) => {
-        if (
-          !response.didCancel &&
-          !response.errorCode &&
-          response.assets?.[0]?.uri
-        ) {
+        if (!response.didCancel && !response.errorCode && response.assets?.[0]?.uri) {
           setSelectedImage(response.assets[0].uri);
         }
       },
@@ -296,13 +266,16 @@ export default function ChatScreen({
     setSelectedImage(null);
   };
 
-  const handleVoiceTranscription = useCallback((text: string) => {
-    if (settings?.autoSendVoice) {
-      handleSend(text);
-    } else {
-      setInputText(text);
-    }
-  }, [settings?.autoSendVoice]);
+  const handleVoiceTranscription = useCallback(
+    (text: string) => {
+      if (settings?.autoSendVoice) {
+        handleSend(text);
+      } else {
+        setInputText(text);
+      }
+    },
+    [settings?.autoSendVoice],
+  );
 
   const handleSend = async (overrideText?: string) => {
     const text = (overrideText ?? inputText).trim();
@@ -355,12 +328,16 @@ export default function ChatScreen({
       if (settings?.memoryEnabled) {
         const memories = await recallForMessage(text);
         if (memories.length > 0) {
-          memoryContext = '\n\nRelevant context from previous interactions:\n' +
+          memoryContext =
+            '\n\nRelevant context from previous interactions:\n' +
             memories.map(m => `- ${m.text}`).join('\n');
         }
       }
 
-      const { text: responseText, functionCalls } = await generateResponse(updatedMessages, memoryContext);
+      const { text: responseText, functionCalls } = await generateResponse(
+        updatedMessages,
+        memoryContext,
+      );
       if (abortRef.current) return;
 
       // Parse tool calls from response text or from CactusLM functionCalls
@@ -395,16 +372,12 @@ export default function ChatScreen({
       }
 
       // Execute tool calls if found and auto-execute is enabled
-      if (
-        toolCalls.length > 0 &&
-        settings?.autoExecuteTools !== false
-      ) {
+      if (toolCalls.length > 0 && settings?.autoExecuteTools !== false) {
         await handleToolExecution(withAssistant, toolCalls);
       }
     } catch (error) {
       if (abortRef.current) return;
-      const errMsg =
-        error instanceof Error ? error.message : 'Generation failed';
+      const errMsg = error instanceof Error ? error.message : 'Generation failed';
       setAgentState({ kind: 'error', message: errMsg });
 
       const errorMessage: ChatMessage = {
@@ -425,12 +398,13 @@ export default function ChatScreen({
   const generateResponse = async (
     allMessages: ChatMessage[],
     memoryContext?: string,
-  ): Promise<{ text: string; functionCalls?: Array<{ name: string; arguments: string | Record<string, any> }> }> => {
+  ): Promise<{
+    text: string;
+    functionCalls?: Array<{ name: string; arguments: string | Record<string, any> }>;
+  }> => {
     const systemPrompt = buildSystemPrompt(settings?.systemPrompt, memoryContext);
 
-    const formattedMessages: CactusLMMessage[] = [
-      { role: 'system', content: systemPrompt },
-    ];
+    const formattedMessages: CactusLMMessage[] = [{ role: 'system', content: systemPrompt }];
 
     for (const msg of allMessages) {
       if (msg.role === 'system') continue;
@@ -461,17 +435,13 @@ export default function ChatScreen({
 
       const elapsed = Date.now() - startTime;
       if (elapsed > 0) {
-        setLiveTokensPerSecond(
-          Math.round((tokenCount / elapsed) * 1000 * 10) / 10,
-        );
+        setLiveTokensPerSecond(Math.round((tokenCount / elapsed) * 1000 * 10) / 10);
       }
 
       if (tokenCount % 10 === 0) {
         scrollToBottom();
       }
     };
-
-    let functionCalls: Array<{ name: string; arguments: string | Record<string, any> }> | undefined;
 
     if (!cactusLMRef.current) {
       throw new Error('No model loaded');
@@ -488,7 +458,9 @@ export default function ChatScreen({
       onToken,
     });
     fullResponse = result.response || fullResponse;
-    functionCalls = result.functionCalls;
+    const functionCalls:
+      Array<{ name: string; arguments: string | Record<string, any> }> | undefined =
+      result.functionCalls;
 
     const totalTime = Date.now() - startTime;
     setMetrics({
@@ -505,9 +477,7 @@ export default function ChatScreen({
       const totalTime = Date.now() - startTime;
       setMetrics({
         totalTokens: tokenCount,
-        timeToFirstTokenMs: firstTokenTime
-          ? firstTokenTime - startTime
-          : 0,
+        timeToFirstTokenMs: firstTokenTime ? firstTokenTime - startTime : 0,
         totalTimeMs: totalTime,
         tokensPerSecond: totalTime > 0 ? (tokenCount / totalTime) * 1000 : 0,
         prefillTokens: 0,
@@ -518,10 +488,7 @@ export default function ChatScreen({
     return { text: fullResponse, functionCalls };
   };
 
-  const handleToolExecution = async (
-    currentMessages: ChatMessage[],
-    toolCalls: ToolCall[],
-  ) => {
+  const handleToolExecution = async (currentMessages: ChatMessage[], toolCalls: ToolCall[]) => {
     triggerMediumHaptic();
     let updatedMessages = [...currentMessages];
 
@@ -542,10 +509,7 @@ export default function ChatScreen({
 
       const toolStart = Date.now();
       try {
-        const result: ToolResult = await executeTool(
-          tc.name,
-          tc.arguments,
-        );
+        const result: ToolResult = await executeTool(tc.name, tc.arguments);
 
         // Mark step success
         steps[i] = { ...steps[i], status: 'success', resultMessage: result.message };
@@ -576,10 +540,7 @@ export default function ChatScreen({
       } catch (error) {
         const errResult: ToolResult = {
           success: false,
-          message:
-            error instanceof Error
-              ? error.message
-              : 'Tool execution failed',
+          message: error instanceof Error ? error.message : 'Tool execution failed',
         };
 
         // Mark step error
@@ -641,10 +602,7 @@ export default function ChatScreen({
           role: 'assistant' as const,
           content: followUp,
           timestamp: Date.now(),
-          toolCalls:
-            followUpToolCalls.length > 0
-              ? followUpToolCalls
-              : undefined,
+          toolCalls: followUpToolCalls.length > 0 ? followUpToolCalls : undefined,
         };
 
         const withFollowUp = [...updatedMessages, followUpMessage];
@@ -705,21 +663,14 @@ export default function ChatScreen({
       <TouchableOpacity onPress={onBack} style={styles.backButton}>
         <Text style={styles.backButtonText}>Back</Text>
       </TouchableOpacity>
-      <TouchableOpacity
-        onPress={handleModelSwitch}
-        style={styles.modelNameContainer}
-      >
+      <TouchableOpacity onPress={handleModelSwitch} style={styles.modelNameContainer}>
         <Text style={styles.modelName} numberOfLines={1}>
           {modelDisplayName}
         </Text>
-        {isModelLoading && (
-          <Text style={styles.loadingLabel}>{loadProgress}%</Text>
-        )}
+        {isModelLoading && <Text style={styles.loadingLabel}>{loadProgress}%</Text>}
       </TouchableOpacity>
       <View style={styles.headerRight}>
-        {isModelLoading && (
-          <ActivityIndicator size="small" color={theme.colors.accent} />
-        )}
+        {isModelLoading && <ActivityIndicator size="small" color={theme.colors.accent} />}
       </View>
     </View>
   );
@@ -752,10 +703,7 @@ export default function ChatScreen({
         )}
 
         {messages.map((msg, index) => (
-          <MessageBubble
-            key={`${msg.timestamp}-${index}`}
-            message={msg}
-          />
+          <MessageBubble key={`${msg.timestamp}-${index}`} message={msg} />
         ))}
 
         {isGenerating && streamingText && (
@@ -806,7 +754,7 @@ export default function ChatScreen({
     { label: '⚙️ Settings', text: 'Open settings for ' },
   ];
 
-  const handleQuickAction = (action: typeof QUICK_ACTIONS[0]) => {
+  const handleQuickAction = (action: (typeof QUICK_ACTIONS)[0]) => {
     setInputText(action.text);
   };
 
@@ -857,7 +805,7 @@ export default function ChatScreen({
             sttModel={settings?.sttModel || 'whisper-small'}
             disabled={isGenerating || !modelLoaded}
             onTranscription={handleVoiceTranscription}
-            onError={(err) => Alert.alert('Voice Input Error', err)}
+            onError={err => Alert.alert('Voice Input Error', err)}
             onRecordingStart={() => setAgentState({ kind: 'listening' })}
             onRecordingEnd={() => setAgentState({ kind: 'idle' })}
           />
@@ -877,10 +825,7 @@ export default function ChatScreen({
         />
 
         {isGenerating ? (
-          <TouchableOpacity
-            onPress={handleStop}
-            style={[styles.sendButton, styles.stopButton]}
-          >
+          <TouchableOpacity onPress={handleStop} style={[styles.sendButton, styles.stopButton]}>
             <Text style={styles.sendButtonEmoji}>⏹️</Text>
           </TouchableOpacity>
         ) : (
@@ -888,14 +833,11 @@ export default function ChatScreen({
             onPress={() => handleSend()}
             style={[
               styles.sendButton,
-              (!inputText.trim() && !selectedImage) ||
-              !modelLoaded
+              (!inputText.trim() && !selectedImage) || !modelLoaded
                 ? styles.sendButtonDisabled
                 : null,
             ]}
-            disabled={
-              (!inputText.trim() && !selectedImage) || !modelLoaded
-            }
+            disabled={(!inputText.trim() && !selectedImage) || !modelLoaded}
           >
             <Text style={styles.sendButtonEmoji}>💧</Text>
           </TouchableOpacity>
@@ -923,10 +865,7 @@ export default function ChatScreen({
         <AgentStateBar agentState={agentState} />
         {renderMessages()}
         {actionChainSteps.length > 0 && (
-          <ActionChainProgress
-            steps={actionChainSteps}
-            totalPlanned={actionChainSteps.length}
-          />
+          <ActionChainProgress steps={actionChainSteps} totalPlanned={actionChainSteps.length} />
         )}
         {renderInputArea()}
       </KeyboardAvoidingView>

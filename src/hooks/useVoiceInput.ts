@@ -1,9 +1,15 @@
-import { useState, useRef, useCallback, useEffect } from 'react';
 import * as RNFS from '@dr.pogodin/react-native-fs';
 import { useCactusSTT } from 'cactus-react-native';
+import { useCallback, useEffect, useRef, useState } from 'react';
+
 import { quantizationFor } from '../config/models';
-import { Recorder, RecorderEvents, ensureRecordingPermissions, isRecorderAvailable } from '../meetings/native';
 import { meetingSession } from '../meetings/MeetingSession';
+import {
+  ensureRecordingPermissions,
+  isRecorderAvailable,
+  Recorder,
+  RecorderEvents,
+} from '../meetings/native';
 import { cleanTranscript } from '../meetings/Transcriber';
 import type { RecorderSegmentEvent } from '../meetings/types';
 
@@ -71,7 +77,6 @@ export function useVoiceInput({
       detach();
       if (stateRef.current === 'recording') Recorder.stop().catch(() => {});
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const fail = (msg: string) => {
@@ -135,7 +140,9 @@ export function useVoiceInput({
     await RNFS.mkdir(VOICE_DIR);
     detach();
     subsRef.current = [
-      RecorderEvents.onSegment(seg => { segmentRef.current = seg; }),
+      RecorderEvents.onSegment(seg => {
+        segmentRef.current = seg;
+      }),
       RecorderEvents.onLevel(l => {
         durationRef.current = l.elapsedMs;
         if (mountedRef.current) setRecordingDurationMs(l.elapsedMs);

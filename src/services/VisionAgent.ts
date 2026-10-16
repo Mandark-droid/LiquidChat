@@ -36,7 +36,8 @@ class VisionAgent {
     const messages: CactusLMMessage[] = [
       {
         role: 'user',
-        content: 'Describe all UI elements visible on this screen, including their approximate positions (top, center, bottom) and types (button, text, input, icon). Be concise.',
+        content:
+          'Describe all UI elements visible on this screen, including their approximate positions (top, center, bottom) and types (button, text, input, icon). Be concise.',
         images: [imagePath],
       },
     ];

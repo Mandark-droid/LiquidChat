@@ -1,16 +1,8 @@
-import type { Chat, ChatMessage } from '../types';
 import { MOBILE_ACTION_TOOLS } from '../tools/registry';
+import type { Chat } from '../types';
 
 export function chatToJsonl(chat: Chat): string {
-  const dayOfWeek = [
-    'Sunday',
-    'Monday',
-    'Tuesday',
-    'Wednesday',
-    'Thursday',
-    'Friday',
-    'Saturday',
-  ];
+  const dayOfWeek = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
   const now = new Date();
   const systemContent = `Current date and time given in YYYY-MM-DDTHH:MM:SS format: ${now.toISOString().slice(0, 19)}\nDay of week is ${dayOfWeek[now.getDay()]}\nYou are a model that can do function calling with the following functions\n\n${JSON.stringify(MOBILE_ACTION_TOOLS)}`;
 
@@ -66,15 +58,10 @@ export function chatsToJsonl(chats: Chat[]): string {
     .join('\n');
 }
 
-export function exportForFineTuning(
-  chats: Chat[],
-  options: { minMessages?: number } = {},
-): string {
+export function exportForFineTuning(chats: Chat[], options: { minMessages?: number } = {}): string {
   const { minMessages = 2 } = options;
   return chats
-    .filter(
-      c => c.messages.filter(m => m.role !== 'system').length >= minMessages,
-    )
+    .filter(c => c.messages.filter(m => m.role !== 'system').length >= minMessages)
     .map(chatToJsonl)
     .join('\n');
 }

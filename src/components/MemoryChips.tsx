@@ -1,15 +1,9 @@
 import React from 'react';
-import {
-  View,
-  Text,
-  ScrollView,
-  TouchableOpacity,
-  StyleSheet,
-  Alert,
-} from 'react-native';
+import { Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+
 import { theme } from '../config/theme';
-import { triggerLightHaptic } from '../utils/haptics';
 import type { MemoryResult } from '../types';
+import { triggerLightHaptic } from '../utils/haptics';
 
 interface MemoryChipsProps {
   memories: MemoryResult[];
@@ -21,11 +15,7 @@ export default function MemoryChips({ memories, onDismiss }: MemoryChipsProps) {
 
   const handleChipPress = (memory: MemoryResult) => {
     triggerLightHaptic();
-    Alert.alert(
-      'Recalled Memory',
-      memory.text,
-      [{ text: 'OK' }],
-    );
+    Alert.alert('Recalled Memory', memory.text, [{ text: 'OK' }]);
   };
 
   return (
@@ -36,7 +26,7 @@ export default function MemoryChips({ memories, onDismiss }: MemoryChipsProps) {
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
       >
-        {memories.map((memory) => (
+        {memories.map(memory => (
           <TouchableOpacity
             key={memory.id}
             style={styles.chip}
@@ -44,9 +34,7 @@ export default function MemoryChips({ memories, onDismiss }: MemoryChipsProps) {
           >
             <Text style={styles.chipText} numberOfLines={1}>
               {'\uD83E\uDDE0'}{' '}
-              {memory.text.length > 55
-                ? memory.text.slice(0, 55) + '...'
-                : memory.text}
+              {memory.text.length > 55 ? memory.text.slice(0, 55) + '...' : memory.text}
             </Text>
           </TouchableOpacity>
         ))}

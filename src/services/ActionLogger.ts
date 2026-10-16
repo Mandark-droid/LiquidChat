@@ -67,9 +67,8 @@ class ActionLogger {
     const total = this.entries.length;
     const success = this.entries.filter(e => e.success).length;
     const fail = total - success;
-    const avgDurationMs = total > 0
-      ? Math.round(this.entries.reduce((sum, e) => sum + e.durationMs, 0) / total)
-      : 0;
+    const avgDurationMs =
+      total > 0 ? Math.round(this.entries.reduce((sum, e) => sum + e.durationMs, 0) / total) : 0;
     return { total, success, fail, avgDurationMs };
   }
 

@@ -1,10 +1,8 @@
 import { Linking, Platform } from 'react-native';
+
 import type { ToolResult } from '../types';
 
-export async function createCalendarEvent(
-  title: string,
-  datetime: string
-): Promise<ToolResult> {
+export async function createCalendarEvent(title: string, datetime: string): Promise<ToolResult> {
   try {
     const date = new Date(datetime);
     const endDate = new Date(date.getTime() + 60 * 60 * 1000); // 1 hour default

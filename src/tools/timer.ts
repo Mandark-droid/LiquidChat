@@ -1,10 +1,8 @@
 import { Linking, Platform } from 'react-native';
+
 import type { ToolResult } from '../types';
 
-export async function setTimer(
-  seconds: number,
-  message?: string,
-): Promise<ToolResult> {
+export async function setTimer(seconds: number, message?: string): Promise<ToolResult> {
   try {
     if (Platform.OS === 'android') {
       const extras: Array<{ key: string; value: string }> = [
@@ -21,9 +19,7 @@ export async function setTimer(
 
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
-    const timeStr = mins > 0
-      ? `${mins}m ${secs}s`
-      : `${secs}s`;
+    const timeStr = mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
     return {
       success: true,
       message: `Timer set for ${timeStr}${message ? ` - "${message}"` : ''}`,

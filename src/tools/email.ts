@@ -1,11 +1,8 @@
 import { Linking } from 'react-native';
+
 import type { ToolResult } from '../types';
 
-export async function sendEmail(
-  to: string,
-  subject: string,
-  body?: string
-): Promise<ToolResult> {
+export async function sendEmail(to: string, subject: string, body?: string): Promise<ToolResult> {
   try {
     const params = new URLSearchParams();
     params.append('subject', subject);

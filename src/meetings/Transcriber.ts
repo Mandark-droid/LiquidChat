@@ -1,4 +1,5 @@
 import { CactusSTT } from 'cactus-react-native';
+
 import { quantizationFor } from '../config/models';
 
 /**
@@ -59,12 +60,19 @@ function collapseRepeats(text: string): string {
     const out: string[] = [];
     let i = 0;
     while (i < words.length) {
-      const gram = words.slice(i, i + n).join(' ').toLowerCase();
+      const gram = words
+        .slice(i, i + n)
+        .join(' ')
+        .toLowerCase();
       let reps = 1;
       if (i + n <= words.length) {
         while (
-          words.slice(i + reps * n, i + (reps + 1) * n).join(' ').toLowerCase() === gram
-        ) reps++;
+          words
+            .slice(i + reps * n, i + (reps + 1) * n)
+            .join(' ')
+            .toLowerCase() === gram
+        )
+          reps++;
       }
       if (reps >= 4) {
         out.push(...words.slice(i, i + 2 * n)); // keep two copies
@@ -113,20 +121,33 @@ class TranscriberImpl {
   private running = false;
   private promptSupported = true;
   private listeners = new Set<Listener>();
-  private status: TranscriberStatus = { model: '', phase: 'idle', downloadProgress: 0, queueLength: 0 };
+  private status: TranscriberStatus = {
+    model: '',
+    phase: 'idle',
+    downloadProgress: 0,
+    queueLength: 0,
+  };
   private preparing: Promise<void> | null = null;
 
   subscribe(l: Listener): () => void {
     this.listeners.add(l);
     l(this.status);
-    return () => { this.listeners.delete(l); };
+    return () => {
+      this.listeners.delete(l);
+    };
   }
 
-  getStatus(): TranscriberStatus { return this.status; }
+  getStatus(): TranscriberStatus {
+    return this.status;
+  }
 
   private set(p: Partial<TranscriberStatus>) {
     this.status = { ...this.status, ...p, queueLength: this.queue.length };
-    for (const l of this.listeners) { try { l(this.status); } catch {} }
+    for (const l of this.listeners) {
+      try {
+        l(this.status);
+      } catch {}
+    }
   }
 
   /** Downloads (if needed) and initialises the STT model. Idempotent. */
@@ -149,7 +170,9 @@ class TranscriberImpl {
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
         this.set({ phase: 'error', error: msg });
-        try { await stt.destroy(); } catch {}
+        try {
+          await stt.destroy();
+        } catch {}
         throw e;
       } finally {
         this.preparing = null;
@@ -208,8 +231,10 @@ class TranscriberImpl {
 
       // If context prompting confused the decoder (echoed the prompt or produced nothing
       // from a speech-heavy segment), retry plain once and stop prompting for this session.
-      const ctxUsed = whisper && job.contextPrompting && usePrompt && (job.glossary || job.previousText);
-      const echoed = !!job.glossary && text.length > 0 && text.startsWith(job.glossary.trim().slice(0, 40));
+      const ctxUsed =
+        whisper && job.contextPrompting && usePrompt && (job.glossary || job.previousText);
+      const echoed =
+        !!job.glossary && text.length > 0 && text.startsWith(job.glossary.trim().slice(0, 40));
       if (ctxUsed && (echoed || (!text && job.speechRatio > 0.3))) {
         this.promptSupported = false;
         result = await stt.transcribe({
@@ -228,7 +253,11 @@ class TranscriberImpl {
   async release(): Promise<void> {
     const stt = this.stt;
     this.stt = null;
-    if (stt) { try { await stt.destroy(); } catch {} }
+    if (stt) {
+      try {
+        await stt.destroy();
+      } catch {}
+    }
     this.set({ phase: 'idle', downloadProgress: 0 });
   }
 }

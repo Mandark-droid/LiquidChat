@@ -1,7 +1,8 @@
 import type { CactusLM } from 'cactus-react-native';
+
 import { modelLifecycle } from '../services/ModelLifecycleManager';
-import { meetingStore, newActionId } from './MeetingStore';
 import { resolveDue } from './dateResolver';
+import { meetingStore, newActionId } from './MeetingStore';
 import { transcriber } from './Transcriber';
 import type { ActionItem, ActionPriority, Meeting, Minutes } from './types';
 
@@ -47,7 +48,10 @@ export function transcriptLines(m: Meeting): string[] {
     else lines.push({ at: s.startMs, text: `[${formatClock(s.startMs)}] ${s.text}` });
   });
   for (const mk of m.markers) {
-    lines.push({ at: mk.atMs, text: `[${formatClock(mk.atMs)}] ★ FLAGGED BY USER: ${mk.note || 'important moment'}` });
+    lines.push({
+      at: mk.atMs,
+      text: `[${formatClock(mk.atMs)}] ★ FLAGGED BY USER: ${mk.note || 'important moment'}`,
+    });
   }
   return lines.sort((a, b) => a.at - b.at).map(l => l.text);
 }
@@ -60,7 +64,10 @@ function chunkLines(lines: string[], maxChars: number): string[] {
   const chunks: string[] = [];
   let cur = '';
   for (const line of lines) {
-    if (cur && cur.length + line.length + 1 > maxChars) { chunks.push(cur); cur = ''; }
+    if (cur && cur.length + line.length + 1 > maxChars) {
+      chunks.push(cur);
+      cur = '';
+    }
     if (line.length > maxChars) {
       for (let i = 0; i < line.length; i += maxChars) chunks.push(line.slice(i, i + maxChars));
       continue;
@@ -136,7 +143,7 @@ Use only the information above.`;
 
 export function extractJson(raw: string): any | null {
   if (!raw) return null;
-  let s = raw
+  const s = raw
     .replace(/<think>[\s\S]*?<\/think>/gi, '')
     .replace(/```(?:json)?/gi, '')
     .replace(/[“”]/g, '"')
@@ -144,7 +151,10 @@ export function extractJson(raw: string): any | null {
   const start = s.indexOf('{');
   if (start < 0) return null;
   // Balance braces to find the end (tolerates trailing chatter or truncation).
-  let depth = 0, inStr = false, esc = false, end = -1;
+  let depth = 0,
+    inStr = false,
+    esc = false,
+    end = -1;
   for (let i = start; i < s.length; i++) {
     const c = s[i];
     if (inStr) {
@@ -155,16 +165,25 @@ export function extractJson(raw: string): any | null {
     }
     if (c === '"') inStr = true;
     else if (c === '{' || c === '[') depth++;
-    else if (c === '}' || c === ']') { depth--; if (depth === 0) { end = i; break; } }
+    else if (c === '}' || c === ']') {
+      depth--;
+      if (depth === 0) {
+        end = i;
+        break;
+      }
+    }
   }
-  let body = end > 0 ? s.slice(start, end + 1) : closeTruncated(s.slice(start));
+  const body = end > 0 ? s.slice(start, end + 1) : closeTruncated(s.slice(start));
   for (const attempt of [
     (x: string) => x,
     (x: string) => x.replace(/,\s*([}\]])/g, '$1'),
-    (x: string) => x.replace(/,\s*([}\]])/g, '$1').replace(/([{,]\s*)([A-Za-z_][\w]*)\s*:/g, '$1"$2":'),
+    (x: string) =>
+      x.replace(/,\s*([}\]])/g, '$1').replace(/([{,]\s*)([A-Za-z_][\w]*)\s*:/g, '$1"$2":'),
     (x: string) => x.replace(/,\s*([}\]])/g, '$1').replace(/'([^'"\n]*)'/g, '"$1"'),
   ]) {
-    try { return JSON.parse(attempt(body)); } catch {}
+    try {
+      return JSON.parse(attempt(body));
+    } catch {}
   }
   return null;
 }
@@ -172,10 +191,13 @@ export function extractJson(raw: string): any | null {
 /** Closes brackets/strings of output cut off by maxTokens. */
 function closeTruncated(s: string): string {
   const stack: string[] = [];
-  let inStr = false, esc = false;
+  let inStr = false,
+    esc = false;
   for (const c of s) {
     if (inStr) {
-      if (esc) esc = false; else if (c === '\\') esc = true; else if (c === '"') inStr = false;
+      if (esc) esc = false;
+      else if (c === '\\') esc = true;
+      else if (c === '"') inStr = false;
       continue;
     }
     if (c === '"') inStr = true;
@@ -190,17 +212,41 @@ function closeTruncated(s: string): string {
 
 /** Last resort: read "Decisions:"-style headed bullet lists. */
 function parseHeadedText(raw: string): Partial<PartialMinutes> {
-  const out: Partial<PartialMinutes> = { keyPoints: [], decisions: [], actionItems: [], openQuestions: [], nextSteps: [] };
+  const out: Partial<PartialMinutes> = {
+    keyPoints: [],
+    decisions: [],
+    actionItems: [],
+    openQuestions: [],
+    nextSteps: [],
+  };
   let section: keyof PartialMinutes | null = null;
   for (const line of raw.split('\n')) {
     const l = line.trim();
     const h = l.toLowerCase().replace(/[#*:]/g, '').trim();
-    if (/^(key points|discussion|highlights)/.test(h)) { section = 'keyPoints'; continue; }
-    if (/^decisions?/.test(h)) { section = 'decisions'; continue; }
-    if (/^action items?/.test(h)) { section = 'actionItems'; continue; }
-    if (/^open questions?/.test(h)) { section = 'openQuestions'; continue; }
-    if (/^next steps?/.test(h)) { section = 'nextSteps'; continue; }
-    if (/^summary/.test(h)) { section = 'summary'; continue; }
+    if (/^(key points|discussion|highlights)/.test(h)) {
+      section = 'keyPoints';
+      continue;
+    }
+    if (/^decisions?/.test(h)) {
+      section = 'decisions';
+      continue;
+    }
+    if (/^action items?/.test(h)) {
+      section = 'actionItems';
+      continue;
+    }
+    if (/^open questions?/.test(h)) {
+      section = 'openQuestions';
+      continue;
+    }
+    if (/^next steps?/.test(h)) {
+      section = 'nextSteps';
+      continue;
+    }
+    if (/^summary/.test(h)) {
+      section = 'summary';
+      continue;
+    }
     const item = l.replace(/^[-*•\d.)\s]+/, '').trim();
     if (!item || !section) continue;
     if (section === 'summary') out.summary = `${out.summary ?? ''} ${item}`.trim();
@@ -211,11 +257,18 @@ function parseHeadedText(raw: string): Partial<PartialMinutes> {
 }
 
 const strList = (v: any): string[] =>
-  Array.isArray(v) ? v.map(x => (typeof x === 'string' ? x : x?.text ?? x?.point ?? JSON.stringify(x))).map(s => String(s).trim()).filter(Boolean) : [];
+  Array.isArray(v)
+    ? v
+        .map(x => (typeof x === 'string' ? x : (x?.text ?? x?.point ?? JSON.stringify(x))))
+        .map(s => String(s).trim())
+        .filter(Boolean)
+    : [];
 
 function normalizePartial(j: any, raw: string): PartialMinutes {
   const src = j ?? parseHeadedText(raw);
-  const actions = Array.isArray(src.action_items ?? src.actionItems) ? (src.action_items ?? src.actionItems) : [];
+  const actions = Array.isArray(src.action_items ?? src.actionItems)
+    ? (src.action_items ?? src.actionItems)
+    : [];
   return {
     title: String(src.title ?? '').trim(),
     summary: String(src.summary ?? '').trim(),
@@ -230,7 +283,8 @@ function normalizePartial(j: any, raw: string): PartialMinutes {
         owner: cleanField(a.owner ?? a.assignee),
         due: cleanField(a.due ?? a.deadline ?? a.due_date),
         priority: (['high', 'medium', 'low'].includes(String(a.priority).toLowerCase())
-          ? String(a.priority).toLowerCase() : undefined) as ActionPriority | undefined,
+          ? String(a.priority).toLowerCase()
+          : undefined) as ActionPriority | undefined,
       }))
       .filter((a: any) => a.task),
   };
@@ -245,10 +299,17 @@ function cleanField(v: any): string | undefined {
 // Fuzzy dedupe
 
 function tokens(s: string): Set<string> {
-  return new Set(s.toLowerCase().replace(/[^a-z0-9ऀ-ॿ ]/g, ' ').split(/\s+/).filter(w => w.length > 2));
+  return new Set(
+    s
+      .toLowerCase()
+      .replace(/[^\p{L}\p{N} ]/gu, ' ')
+      .split(/\s+/)
+      .filter(w => w.length > 2),
+  );
 }
 function similar(a: string, b: string): boolean {
-  const ta = tokens(a), tb = tokens(b);
+  const ta = tokens(a),
+    tb = tokens(b);
   if (!ta.size || !tb.size) return a.trim().toLowerCase() === b.trim().toLowerCase();
   let inter = 0;
   for (const t of ta) if (tb.has(t)) inter++;
@@ -274,7 +335,10 @@ export function mergePartials(parts: PartialMinutes[]): PartialMinutes {
   }
   return {
     title: parts.find(p => p.title)?.title ?? '',
-    summary: parts.map(p => p.summary).filter(Boolean).join('\n'),
+    summary: parts
+      .map(p => p.summary)
+      .filter(Boolean)
+      .join('\n'),
     keyPoints: dedupe(parts.flatMap(p => p.keyPoints)),
     decisions: dedupe(parts.flatMap(p => p.decisions)),
     openQuestions: dedupe(parts.flatMap(p => p.openQuestions)),
@@ -286,7 +350,9 @@ export function mergePartials(parts: PartialMinutes[]): PartialMinutes {
 // ---------------------------------------------------------------------------
 
 async function complete(lm: CactusLM, user: string, maxTokens: number): Promise<string> {
-  try { await lm.reset(); } catch {}
+  try {
+    await lm.reset();
+  } catch {}
   const r = await lm.complete({
     messages: [
       { role: 'system', content: SYSTEM },
@@ -305,7 +371,8 @@ export async function generateMinutes(
   const meeting = await meetingStore.get(meetingId);
   if (!meeting) throw new Error('Meeting not found');
   const lines = transcriptLines(meeting);
-  if (!lines.some(l => !l.includes('★'))) throw new Error('Transcript is empty — nothing to summarise.');
+  if (!lines.some(l => !l.includes('★')))
+    throw new Error('Transcript is empty — nothing to summarise.');
 
   // Free the STT model before loading the LLM; phones rarely fit both comfortably.
   await transcriber.release();
@@ -323,7 +390,7 @@ export async function generateMinutes(
     parts.push(normalizePartial(extractJson(raw), raw));
   }
 
-  let merged = mergePartials(parts);
+  const merged = mergePartials(parts);
   let title = merged.title;
   let summary = merged.summary;
   if (chunks.length > 1) {
@@ -393,5 +460,9 @@ export function defaultTitle(ts: number, client?: string): string {
 }
 
 function isDefaultTitle(m: Meeting): boolean {
-  return !m.title.trim() || m.title === defaultTitle(m.startedAt, m.client) || m.title.startsWith('Meeting · ');
+  return (
+    !m.title.trim() ||
+    m.title === defaultTitle(m.startedAt, m.client) ||
+    m.title.startsWith('Meeting · ')
+  );
 }

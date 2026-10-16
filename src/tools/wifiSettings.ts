@@ -1,4 +1,5 @@
 import { Linking, Platform } from 'react-native';
+
 import type { ToolResult } from '../types';
 
 export async function openWifiSettings(): Promise<ToolResult> {

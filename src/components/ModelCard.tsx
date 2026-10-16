@@ -1,8 +1,9 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+
 import { theme } from '../config/theme';
-import TierBadge from './TierBadge';
 import type { LiquidModel, ModelTier } from '../types';
+import TierBadge from './TierBadge';
 
 interface ModelCardProps {
   model: LiquidModel;
@@ -29,20 +30,23 @@ const ModelCard: React.FC<ModelCardProps> = ({
 }) => {
   const getCategoryIcon = () => {
     switch (model.category) {
-      case 'text': return '💬';
-      case 'vision': return '👁️';
-      case 'audio': return '🎤';
-      case 'specialized': return '🔧';
-      case 'custom': return '⚡';
-      default: return '🤖';
+      case 'text':
+        return '💬';
+      case 'vision':
+        return '👁️';
+      case 'audio':
+        return '🎤';
+      case 'specialized':
+        return '🔧';
+      case 'custom':
+        return '⚡';
+      default:
+        return '🤖';
     }
   };
 
   return (
-    <TouchableOpacity
-      style={[styles.card, isSelected && styles.cardSelected]}
-      onPress={onSelect}
-    >
+    <TouchableOpacity style={[styles.card, isSelected && styles.cardSelected]} onPress={onSelect}>
       <View style={styles.header}>
         <Text style={styles.categoryIcon}>{getCategoryIcon()}</Text>
         <View style={styles.titleContainer}>
@@ -53,7 +57,9 @@ const ModelCard: React.FC<ModelCardProps> = ({
 
       <View style={styles.details}>
         <View style={styles.sizeBadge}>
-          <Text style={styles.sizeText}>{model.sizeMb >= 1000 ? `${(model.sizeMb / 1000).toFixed(1)}GB` : `${model.sizeMb}MB`}</Text>
+          <Text style={styles.sizeText}>
+            {model.sizeMb >= 1000 ? `${(model.sizeMb / 1000).toFixed(1)}GB` : `${model.sizeMb}MB`}
+          </Text>
         </View>
         {model.supportsToolCalling && (
           <View style={[styles.capBadge, { backgroundColor: 'rgba(0, 212, 255, 0.2)' }]}>
@@ -128,7 +134,12 @@ const styles = StyleSheet.create({
   name: { fontSize: 16, fontWeight: '700', color: theme.colors.text },
   description: { fontSize: 12, color: theme.colors.textSecondary, marginTop: 2 },
   details: { flexDirection: 'row', gap: 6, flexWrap: 'wrap' },
-  sizeBadge: { backgroundColor: 'rgba(255,255,255,0.1)', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
+  sizeBadge: {
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
   sizeText: { fontSize: 11, color: theme.colors.textSecondary, fontWeight: '600' },
   capBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
   capText: { fontSize: 11, fontWeight: '600' },
@@ -148,7 +159,12 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.secondary,
     borderRadius: 12,
   },
-  progressText: { textAlign: 'center', fontSize: 11, fontWeight: '700', color: theme.colors.textLight },
+  progressText: {
+    textAlign: 'center',
+    fontSize: 11,
+    fontWeight: '700',
+    color: theme.colors.textLight,
+  },
   downloadButton: {
     marginTop: 10,
     backgroundColor: 'rgba(108, 99, 255, 0.2)',

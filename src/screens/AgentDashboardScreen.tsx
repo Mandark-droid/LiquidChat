@@ -1,19 +1,13 @@
-import React, { useEffect, useState, useCallback } from 'react';
-import {
-  View,
-  Text,
-  ScrollView,
-  StyleSheet,
-  Platform,
-  NativeModules,
-} from 'react-native';
+import React, { useCallback, useEffect, useState } from 'react';
+import { NativeModules, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useModelManager } from '../hooks/useModelManager';
-import { actionLogger, type ActionLogEntry } from '../services/ActionLogger';
-import { memoryService } from '../services/MemoryService';
-import TierBadge from '../components/TierBadge';
+
 import RamUsageBar from '../components/RamUsageBar';
+import TierBadge from '../components/TierBadge';
 import { theme } from '../config/theme';
+import { useModelManager } from '../hooks/useModelManager';
+import { type ActionLogEntry, actionLogger } from '../services/ActionLogger';
+import { memoryService } from '../services/MemoryService';
 
 interface DeviceMetrics {
   totalRamGb: string;
@@ -25,8 +19,17 @@ interface DeviceMetrics {
 export default function AgentDashboardScreen() {
   const { loadedModels, totalRamMb, ramBudgetMb, deviceProfile } = useModelManager();
   const [recentActions, setRecentActions] = useState<ActionLogEntry[]>([]);
-  const [actionStats, setActionStats] = useState({ total: 0, success: 0, fail: 0, avgDurationMs: 0 });
-  const [memoryStats, setMemoryStats] = useState({ memoryCount: 0, documentCount: 0, documentFiles: [] as string[] });
+  const [actionStats, setActionStats] = useState({
+    total: 0,
+    success: 0,
+    fail: 0,
+    avgDurationMs: 0,
+  });
+  const [memoryStats, setMemoryStats] = useState({
+    memoryCount: 0,
+    documentCount: 0,
+    documentFiles: [] as string[],
+  });
   const [deviceMetrics, setDeviceMetrics] = useState<DeviceMetrics>({
     totalRamGb: '...',
     usedRamMb: '...',
@@ -100,9 +103,8 @@ export default function AgentDashboardScreen() {
       );
     }
 
-    const successRate = actionStats.total > 0
-      ? Math.round((actionStats.success / actionStats.total) * 100)
-      : 0;
+    const successRate =
+      actionStats.total > 0 ? Math.round((actionStats.success / actionStats.total) * 100) : 0;
 
     return (
       <>
@@ -122,9 +124,7 @@ export default function AgentDashboardScreen() {
                 {entry.modelSlug} - {entry.durationMs}ms
               </Text>
             </View>
-            <Text style={styles.actionTime}>
-              {new Date(entry.timestamp).toLocaleTimeString()}
-            </Text>
+            <Text style={styles.actionTime}>{new Date(entry.timestamp).toLocaleTimeString()}</Text>
           </View>
         ))}
       </>
@@ -173,9 +173,7 @@ export default function AgentDashboardScreen() {
       </View>
       <View style={styles.metricRow}>
         <Text style={styles.metricLabel}>Max Concurrent Models</Text>
-        <Text style={styles.metricValue}>
-          {deviceProfile?.maxConcurrentModels ?? '-'}
-        </Text>
+        <Text style={styles.metricValue}>{deviceProfile?.maxConcurrentModels ?? '-'}</Text>
       </View>
     </>
   );

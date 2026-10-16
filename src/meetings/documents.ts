@@ -1,5 +1,6 @@
 import * as RNFS from '@dr.pogodin/react-native-fs';
 import JSZip from 'jszip';
+
 import { meetingStore } from './MeetingStore';
 import { formatClock, transcriptLines } from './MinutesGenerator';
 import { Docs } from './native';
@@ -49,7 +50,12 @@ interface DocModel {
 }
 
 function fmtDate(ts: number) {
-  return new Date(ts).toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
+  return new Date(ts).toLocaleDateString('en-IN', {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  });
 }
 function fmtTime(ts: number) {
   return new Date(ts).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
@@ -62,12 +68,20 @@ function fmtDuration(ms: number) {
 export function fmtDue(a: ActionItem): string {
   if (a.dueDate) {
     const [y, m, d] = a.dueDate.split('-').map(Number);
-    return new Date(y, m - 1, d).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+    return new Date(y, m - 1, d).toLocaleDateString('en-IN', {
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+    });
   }
   return a.dueText ?? '—';
 }
 
-function model(m: Meeting, lh: Letterhead, opts: Pick<ExportOptions, 'includeTranscript' | 'includeCompleted'>): DocModel {
+function model(
+  m: Meeting,
+  lh: Letterhead,
+  opts: Pick<ExportOptions, 'includeTranscript' | 'includeCompleted'>,
+): DocModel {
   const details: [string, string][] = [
     ['Date', fmtDate(m.startedAt)],
     ['Time', `${fmtTime(m.startedAt)}${m.endedAt ? ` – ${fmtTime(m.endedAt)}` : ''}`],
@@ -77,7 +91,10 @@ function model(m: Meeting, lh: Letterhead, opts: Pick<ExportOptions, 'includeTra
   if (m.project) details.push(['Project', m.project]);
   if (m.location) details.push(['Location', m.location]);
   if (m.attendees.length) {
-    details.push(['Attendees', m.attendees.map(a => (a.org ? `${a.name} (${a.org})` : a.name)).join(', ')]);
+    details.push([
+      'Attendees',
+      m.attendees.map(a => (a.org ? `${a.name} (${a.org})` : a.name)).join(', '),
+    ]);
   }
   if (m.agenda) details.push(['Agenda', m.agenda]);
   if (lh.preparedBy) details.push(['Prepared by', lh.preparedBy]);
@@ -107,17 +124,30 @@ export function buildMinutesMarkdown(
   lh?: Letterhead,
   opts = { includeTranscript: false, includeCompleted: true },
 ): string {
-  const d = model(m, lh ?? { companyName: '', preparedBy: '', contactLine: '', footerNote: '', accentColor: '' }, opts);
+  const d = model(
+    m,
+    lh ?? { companyName: '', preparedBy: '', contactLine: '', footerNote: '', accentColor: '' },
+    opts,
+  );
   const out: string[] = [`# ${d.title}`, `*Minutes of Meeting — ${d.brand}*`, ''];
   for (const [k, v] of d.details) out.push(`**${k}:** ${v}  `);
-  const list = (h: string, xs: string[]) => { if (xs.length) out.push('', `## ${h}`, ...xs.map(x => `- ${x}`)); };
+  const list = (h: string, xs: string[]) => {
+    if (xs.length) out.push('', `## ${h}`, ...xs.map(x => `- ${x}`));
+  };
   if (d.summary) out.push('', '## Summary', d.summary);
   list('Key discussion points', d.keyPoints);
   list('Decisions', d.decisions);
   if (d.actions.length) {
-    out.push('', '## Action items', '| # | Action | Owner | Due | Status |', '|---|---|---|---|---|');
+    out.push(
+      '',
+      '## Action items',
+      '| # | Action | Owner | Due | Status |',
+      '|---|---|---|---|---|',
+    );
     d.actions.forEach((a, i) =>
-      out.push(`| ${i + 1} | ${a.task.replace(/\|/g, '/')} | ${a.owner ?? '—'} | ${fmtDue(a)} | ${a.status === 'done' ? 'Done' : 'Open'} |`),
+      out.push(
+        `| ${i + 1} | ${a.task.replace(/\|/g, '/')} | ${a.owner ?? '—'} | ${fmtDue(a)} | ${a.status === 'done' ? 'Done' : 'Open'} |`,
+      ),
     );
   }
   list('Open questions', d.openQuestions);
@@ -145,7 +175,13 @@ export function shareBlurb(m: Meeting): string {
   if (m.minutes?.summary) lines.push('', m.minutes.summary);
   if (open.length) {
     lines.push('', 'Action items:');
-    open.slice(0, 8).forEach(a => lines.push(`• ${a.task}${a.owner ? ` — ${a.owner}` : ''}${a.dueDate || a.dueText ? ` (${fmtDue(a)})` : ''}`));
+    open
+      .slice(0, 8)
+      .forEach(a =>
+        lines.push(
+          `• ${a.task}${a.owner ? ` — ${a.owner}` : ''}${a.dueDate || a.dueText ? ` (${fmtDue(a)})` : ''}`,
+        ),
+      );
   }
   return lines.join('\n');
 }
@@ -167,12 +203,16 @@ export function buildMinutesHtml(m: Meeting, lh: Letterhead, opts: ExportOptions
     xs.length ? `<h2>${esc(h)}</h2><ul>${xs.map(x => `<li>${esc(x)}</li>`).join('')}</ul>` : '';
   const actions = d.actions.length
     ? `<h2>Action items</h2><table class="actions"><thead><tr><th>#</th><th>Action</th><th>Owner</th><th>Due</th><th>Status</th></tr></thead><tbody>${d.actions
-        .map((a, i) => `<tr class="${a.status}"><td>${i + 1}</td><td>${esc(a.task)}</td><td>${esc(a.owner ?? '—')}</td><td class="nowrap">${esc(fmtDue(a))}</td><td><span class="pill ${a.status}">${a.status === 'done' ? 'Done' : 'Open'}</span></td></tr>`)
+        .map(
+          (a, i) =>
+            `<tr class="${a.status}"><td>${i + 1}</td><td>${esc(a.task)}</td><td>${esc(a.owner ?? '—')}</td><td class="nowrap">${esc(fmtDue(a))}</td><td><span class="pill ${a.status}">${a.status === 'done' ? 'Done' : 'Open'}</span></td></tr>`,
+        )
         .join('')}</tbody></table>`
     : '';
   const transcript = d.transcript.length
     ? `<div class="pagebreak"></div><h2>Appendix — Transcript</h2><div class="transcript">${d.transcript
-        .map(l => `<p>${esc(l)}</p>`).join('')}</div>`
+        .map(l => `<p>${esc(l)}</p>`)
+        .join('')}</div>`
     : '';
 
   return `<!doctype html><html><head><meta charset="utf-8"><title>${esc(d.title)}</title>
@@ -224,7 +264,11 @@ ${transcript}
 // DOCX (WordprocessingML, built by hand — no native deps)
 
 const x = (s: string) =>
-  s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+  s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
     // strip characters illegal in XML 1.0
     // eslint-disable-next-line no-control-regex
     .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '');
@@ -248,7 +292,11 @@ function table(rows: string[][], widths: number[], headerFill?: string): string 
       const isHead = ri === 0 && !!headerFill;
       return `<w:tr>${isHead ? '<w:trPr><w:tblHeader/></w:trPr>' : ''}${r
         .map((c, ci) =>
-          cell(para(run(c, isHead ? '<w:b/><w:color w:val="FFFFFF"/>' : ''), 'TableText'), widths[ci], isHead ? headerFill : undefined),
+          cell(
+            para(run(c, isHead ? '<w:b/><w:color w:val="FFFFFF"/>' : ''), 'TableText'),
+            widths[ci],
+            isHead ? headerFill : undefined,
+          ),
         )
         .join('')}</w:tr>`;
     })
@@ -256,30 +304,57 @@ function table(rows: string[][], widths: number[], headerFill?: string): string 
   return `<w:tbl><w:tblPr><w:tblStyle w:val="LCTable"/><w:tblW w:w="${widths.reduce((a, b) => a + b, 0)}" w:type="dxa"/><w:tblLook w:val="04A0"/></w:tblPr><w:tblGrid>${grid}</w:tblGrid>${body}</w:tbl>`;
 }
 
-export async function buildMinutesDocxBase64(m: Meeting, lh: Letterhead, opts: ExportOptions): Promise<string> {
+export async function buildMinutesDocxBase64(
+  m: Meeting,
+  lh: Letterhead,
+  opts: ExportOptions,
+): Promise<string> {
   const d = model(m, lh, opts);
   const accent = safeColor(lh.accentColor).replace('#', '').slice(0, 6).toUpperCase();
   const parts: string[] = [];
-  parts.push(para(run(d.brand.toUpperCase(), `<w:b/><w:color w:val="${accent}"/><w:sz w:val="18"/>`) + run('   ·   MINUTES OF MEETING', '<w:color w:val="6B7280"/><w:sz w:val="18"/>')));
+  parts.push(
+    para(
+      run(d.brand.toUpperCase(), `<w:b/><w:color w:val="${accent}"/><w:sz w:val="18"/>`) +
+        run('   ·   MINUTES OF MEETING', '<w:color w:val="6B7280"/><w:sz w:val="18"/>'),
+    ),
+  );
   parts.push(para(run(d.title), 'Title'));
-  parts.push(table(d.details.map(([k, v]) => [k, v]), [2200, 7438]));
+  parts.push(
+    table(
+      d.details.map(([k, v]) => [k, v]),
+      [2200, 7438],
+    ),
+  );
 
   const section = (h: string, xs: string[]) => {
     if (!xs.length) return;
     parts.push(para(run(h), 'Heading1'));
     xs.forEach(t => parts.push(bullet(t)));
   };
-  if (d.summary) { parts.push(para(run('Summary'), 'Heading1')); parts.push(para(run(d.summary))); }
+  if (d.summary) {
+    parts.push(para(run('Summary'), 'Heading1'));
+    parts.push(para(run(d.summary)));
+  }
   section('Key discussion points', d.keyPoints);
   section('Decisions', d.decisions);
   if (d.actions.length) {
     parts.push(para(run('Action items'), 'Heading1'));
-    parts.push(table(
-      [['#', 'Action', 'Owner', 'Due', 'Status'],
-        ...d.actions.map((a, i) => [String(i + 1), a.task, a.owner ?? '—', fmtDue(a), a.status === 'done' ? 'Done' : 'Open'])],
-      [500, 4938, 1700, 1500, 1000],
-      accent,
-    ));
+    parts.push(
+      table(
+        [
+          ['#', 'Action', 'Owner', 'Due', 'Status'],
+          ...d.actions.map((a, i) => [
+            String(i + 1),
+            a.task,
+            a.owner ?? '—',
+            fmtDue(a),
+            a.status === 'done' ? 'Done' : 'Open',
+          ]),
+        ],
+        [500, 4938, 1700, 1500, 1000],
+        accent,
+      ),
+    );
   }
   section('Open questions', d.openQuestions);
   section('Next steps', d.nextSteps);
@@ -290,7 +365,8 @@ export async function buildMinutesDocxBase64(m: Meeting, lh: Letterhead, opts: E
     d.transcript.forEach(l => parts.push(para(run(l, '<w:sz w:val="18"/>'))));
   }
 
-  const W = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"';
+  const W =
+    'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"';
   const documentXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <w:document ${W}><w:body>${parts.join('')}<w:sectPr><w:footerReference w:type="default" r:id="rIdFooter"/><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1134" w:right="1134" w:bottom="1134" w:left="1134" w:header="567" w:footer="567" w:gutter="0"/></w:sectPr></w:body></w:document>`;
 
@@ -312,14 +388,26 @@ export async function buildMinutesDocxBase64(m: Meeting, lh: Letterhead, opts: E
 <w:numbering ${W}><w:abstractNum w:abstractNumId="0"><w:lvl w:ilvl="0"><w:start w:val="1"/><w:numFmt w:val="bullet"/><w:lvlText w:val="•"/><w:lvlJc w:val="left"/><w:pPr><w:ind w:left="360" w:hanging="260"/></w:pPr></w:lvl></w:abstractNum><w:num w:numId="1"><w:abstractNumId w:val="0"/></w:num></w:numbering>`;
 
   const zip = new JSZip();
-  zip.file('[Content_Types].xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/><Override PartName="/word/numbering.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml"/><Override PartName="/word/footer1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"/><Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/></Types>`);
-  zip.file('_rels/.rels', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/></Relationships>`);
-  zip.file('word/_rels/document.xml.rels', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdStyles" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/><Relationship Id="rIdNumbering" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/numbering" Target="numbering.xml"/><Relationship Id="rIdFooter" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="footer1.xml"/></Relationships>`);
-  zip.file('docProps/core.xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><dc:title>${x(d.title)}</dc:title><dc:creator>${x(lh.preparedBy || BRAND)}</dc:creator><dc:description>${x(GENERATED_BY)}</dc:description><dcterms:created xsi:type="dcterms:W3CDTF">${new Date(m.startedAt).toISOString().replace(/\.\d+Z$/, 'Z')}</dcterms:created></cp:coreProperties>`);
+  zip.file(
+    '[Content_Types].xml',
+    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/><Override PartName="/word/numbering.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml"/><Override PartName="/word/footer1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"/><Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/></Types>`,
+  );
+  zip.file(
+    '_rels/.rels',
+    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/></Relationships>`,
+  );
+  zip.file(
+    'word/_rels/document.xml.rels',
+    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdStyles" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/><Relationship Id="rIdNumbering" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/numbering" Target="numbering.xml"/><Relationship Id="rIdFooter" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="footer1.xml"/></Relationships>`,
+  );
+  zip.file(
+    'docProps/core.xml',
+    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><dc:title>${x(d.title)}</dc:title><dc:creator>${x(lh.preparedBy || BRAND)}</dc:creator><dc:description>${x(GENERATED_BY)}</dc:description><dcterms:created xsi:type="dcterms:W3CDTF">${new Date(m.startedAt).toISOString().replace(/\.\d+Z$/, 'Z')}</dcterms:created></cp:coreProperties>`,
+  );
   zip.file('word/document.xml', documentXml);
   zip.file('word/styles.xml', stylesXml);
   zip.file('word/numbering.xml', numberingXml);
@@ -334,12 +422,20 @@ export function exportFileName(m: Meeting, format: ExportFormat): string {
   const d = new Date(m.startedAt);
   const date = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   const slug = (m.client ? `${m.client} ` : '') + m.title;
-  const safe = slug.replace(/[^\wऀ-ॿ -]+/g, '').trim().replace(/\s+/g, '_').slice(0, 60) || 'Meeting';
+  const safe =
+    slug
+      .replace(/[^\wऀ-ॿ -]+/g, '')
+      .trim()
+      .replace(/\s+/g, '_')
+      .slice(0, 60) || 'Meeting';
   return `MoM_${date}_${safe}.${format}`;
 }
 
 /** Writes the document to the meeting's exports folder and returns its path. */
-export async function exportMinutes(meetingId: string, opts: ExportOptions): Promise<{ path: string; mime: string; name: string }> {
+export async function exportMinutes(
+  meetingId: string,
+  opts: ExportOptions,
+): Promise<{ path: string; mime: string; name: string }> {
   const m = await meetingStore.get(meetingId);
   if (!m) throw new Error('Meeting not found');
   const { letterhead } = await getMeetingSettings();
@@ -365,7 +461,11 @@ export async function exportMinutes(meetingId: string, opts: ExportOptions): Pro
   return { path, mime: MIME[opts.format], name };
 }
 
-export async function shareMinutes(meetingId: string, opts: ExportOptions, email = false): Promise<void> {
+export async function shareMinutes(
+  meetingId: string,
+  opts: ExportOptions,
+  email = false,
+): Promise<void> {
   const m = await meetingStore.get(meetingId);
   if (!m) throw new Error('Meeting not found');
   const file = await exportMinutes(meetingId, opts);
@@ -380,7 +480,10 @@ export async function shareMinutes(meetingId: string, opts: ExportOptions, email
   });
 }
 
-export async function saveMinutesToDownloads(meetingId: string, opts: ExportOptions): Promise<string> {
+export async function saveMinutesToDownloads(
+  meetingId: string,
+  opts: ExportOptions,
+): Promise<string> {
   const file = await exportMinutes(meetingId, opts);
   await Docs.saveToDownloads(file.path, file.name, file.mime);
   return `Downloads/LiquidChat/${file.name}`;

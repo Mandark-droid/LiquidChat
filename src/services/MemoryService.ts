@@ -1,7 +1,8 @@
 import * as RNFS from '@dr.pogodin/react-native-fs';
+
+import type { DocumentResult, MemoryResult } from '../types';
+import { type ManagedModel, modelLifecycle } from './ModelLifecycleManager';
 import { VectorStore } from './VectorStore';
-import { modelLifecycle, type ManagedModel } from './ModelLifecycleManager';
-import type { MemoryResult, DocumentResult } from '../types';
 
 function generateId(): string {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
@@ -72,10 +73,7 @@ class MemoryService {
       if (model) this.modelSlug = model;
 
       // Load persisted vector stores
-      await Promise.all([
-        this.memoryStore.load(),
-        this.documentStore.load(),
-      ]);
+      await Promise.all([this.memoryStore.load(), this.documentStore.load()]);
 
       // Use ModelLifecycleManager for robust download + native fallback support
       if (!modelLifecycle.initialized) await modelLifecycle.init();
@@ -96,10 +94,7 @@ class MemoryService {
   async destroy(): Promise<void> {
     try {
       // Flush pending saves
-      await Promise.all([
-        this.memoryStore.save(),
-        this.documentStore.save(),
-      ]);
+      await Promise.all([this.memoryStore.save(), this.documentStore.save()]);
       // ModelLifecycleManager owns the model instance — don't destroy it here
       this.managedModel = null;
     } catch (e) {

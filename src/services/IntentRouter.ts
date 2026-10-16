@@ -1,5 +1,5 @@
-import type { IntentType } from '../types';
 import { getModelBySlug } from '../config/models';
+import type { IntentType } from '../types';
 
 interface RoutingContext {
   currentModelSlug: string;
@@ -14,11 +14,40 @@ interface RoutingResult {
 }
 
 const ACTION_VERBS = [
-  'turn', 'set', 'open', 'toggle', 'create', 'send', 'tap', 'scroll',
-  'click', 'swipe', 'press', 'enable', 'disable', 'launch', 'close',
-  'start', 'stop', 'switch', 'navigate', 'call', 'dial', 'text',
-  'compose', 'share', 'search', 'find', 'show', 'hide', 'move',
-  'adjust', 'increase', 'decrease', 'mute', 'unmute',
+  'turn',
+  'set',
+  'open',
+  'toggle',
+  'create',
+  'send',
+  'tap',
+  'scroll',
+  'click',
+  'swipe',
+  'press',
+  'enable',
+  'disable',
+  'launch',
+  'close',
+  'start',
+  'stop',
+  'switch',
+  'navigate',
+  'call',
+  'dial',
+  'text',
+  'compose',
+  'share',
+  'search',
+  'find',
+  'show',
+  'hide',
+  'move',
+  'adjust',
+  'increase',
+  'decrease',
+  'mute',
+  'unmute',
 ];
 
 const QUERY_PATTERNS = [

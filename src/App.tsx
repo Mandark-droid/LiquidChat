@@ -1,34 +1,26 @@
-import React, { useState, useCallback, useEffect } from 'react';
-import {
-  View,
-  Text,
-  TouchableOpacity,
-  StyleSheet,
-  StatusBar,
-} from 'react-native';
-import {
-  SafeAreaProvider,
-  useSafeAreaInsets,
-} from 'react-native-safe-area-context';
+import React, { useCallback, useEffect, useState } from 'react';
+import { StatusBar, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
+
+import { theme } from './config/theme';
+import { buildMinutesMarkdown } from './meetings/documents';
+import { meetingStore } from './meetings/MeetingStore';
+import { transcriptPlain } from './meetings/MinutesGenerator';
+import AgentDashboardScreen from './screens/AgentDashboardScreen';
 import ChatListScreen from './screens/ChatListScreen';
 import ChatScreen from './screens/ChatScreen';
+import EmailDraftScreen from './screens/EmailDraftScreen';
+import MeetingDetailScreen from './screens/MeetingDetailScreen';
+import MeetingRecorderScreen from './screens/MeetingRecorderScreen';
+import MeetingSettingsScreen from './screens/MeetingSettingsScreen';
+import MeetingsScreen from './screens/MeetingsScreen';
 import ModelSelectionScreen from './screens/ModelSelectionScreen';
 import SettingsScreen from './screens/SettingsScreen';
-import AgentDashboardScreen from './screens/AgentDashboardScreen';
-import MeetingsScreen from './screens/MeetingsScreen';
-import MeetingRecorderScreen from './screens/MeetingRecorderScreen';
-import MeetingDetailScreen from './screens/MeetingDetailScreen';
-import MeetingSettingsScreen from './screens/MeetingSettingsScreen';
 import TasksScreen from './screens/TasksScreen';
-import EmailDraftScreen from './screens/EmailDraftScreen';
-import { meetingStore } from './meetings/MeetingStore';
-import { buildMinutesMarkdown } from './meetings/documents';
-import { transcriptPlain } from './meetings/MinutesGenerator';
-import { checkEngineMigration } from './utils/engineMigration';
+import { type Chat, DEFAULT_SETTINGS } from './types';
 import { generateChatId } from './utils/chatHelpers';
+import { checkEngineMigration } from './utils/engineMigration';
 import { storage } from './utils/storage';
-import { DEFAULT_SETTINGS, type Chat } from './types';
-import { theme } from './config/theme';
 
 type Tab = 'chats' | 'meetings' | 'tasks' | 'models' | 'agent' | 'settings';
 type Screen =
@@ -82,7 +74,12 @@ function AppContent() {
       createdAt: Date.now(),
       updatedAt: Date.now(),
       model: base.model,
-      settings: { ...base, systemPrompt: context, autoExecuteTools: false, intentRoutingEnabled: false },
+      settings: {
+        ...base,
+        systemPrompt: context,
+        autoExecuteTools: false,
+        intentRoutingEnabled: false,
+      },
     };
     await storage.saveChat(chat);
     setScreen({ type: 'chat', chatId });
@@ -101,47 +98,38 @@ function AppContent() {
     setScreen({ type: 'tabs' });
   }, []);
 
-  const handleOpenModelSelector = useCallback(
-    (model: string, onSelect: (m: string) => void) => {
-      setScreen({
-        type: 'modelSelection',
-        currentModel: model,
-        onSelect: (selected: string) => {
-          onSelect(selected);
-          setCurrentModel(selected);
-          setScreen({ type: 'tabs' });
-        },
-      });
-    },
-    [],
-  );
+  const handleOpenModelSelector = useCallback((model: string, onSelect: (m: string) => void) => {
+    setScreen({
+      type: 'modelSelection',
+      currentModel: model,
+      onSelect: (selected: string) => {
+        onSelect(selected);
+        setCurrentModel(selected);
+        setScreen({ type: 'tabs' });
+      },
+    });
+  }, []);
 
-  const handleModelSelectFromTab = useCallback(
-    (model: string, onSelect: (m: string) => void) => {
-      setScreen({
-        type: 'modelSelection',
-        currentModel: model,
-        onSelect: (selected: string) => {
-          onSelect(selected);
-          setCurrentModel(selected);
-        },
-      });
-    },
-    [],
-  );
+  const handleModelSelectFromTab = useCallback((model: string, onSelect: (m: string) => void) => {
+    setScreen({
+      type: 'modelSelection',
+      currentModel: model,
+      onSelect: (selected: string) => {
+        onSelect(selected);
+        setCurrentModel(selected);
+      },
+    });
+  }, []);
 
-  const handleSelectModelDirect = useCallback(
-    async (modelSlug: string) => {
-      setCurrentModel(modelSlug);
-      // Persist to storage so ChatScreen picks up the new model
-      const saved = await storage.getSettings();
-      const updated = { ...(saved ?? DEFAULT_SETTINGS), model: modelSlug };
-      await storage.saveSettings(updated);
-      setActiveTab('chats');
-      setScreen({ type: 'tabs' });
-    },
-    [],
-  );
+  const handleSelectModelDirect = useCallback(async (modelSlug: string) => {
+    setCurrentModel(modelSlug);
+    // Persist to storage so ChatScreen picks up the new model
+    const saved = await storage.getSettings();
+    const updated = { ...(saved ?? DEFAULT_SETTINGS), model: modelSlug };
+    await storage.saveSettings(updated);
+    setActiveTab('chats');
+    setScreen({ type: 'tabs' });
+  }, []);
 
   // Render current screen
   if (screen.type === 'meetingRecorder') {
@@ -149,7 +137,10 @@ function AppContent() {
       <>
         <StatusBar barStyle="light-content" backgroundColor={theme.colors.primary} />
         <MeetingRecorderScreen
-          onBack={() => { setActiveTab('meetings'); setScreen({ type: 'tabs' }); }}
+          onBack={() => {
+            setActiveTab('meetings');
+            setScreen({ type: 'tabs' });
+          }}
           onFinished={meetingId => setScreen({ type: 'meetingDetail', meetingId })}
         />
       </>
@@ -192,10 +183,7 @@ function AppContent() {
   if (screen.type === 'chat') {
     return (
       <>
-        <StatusBar
-          barStyle="light-content"
-          backgroundColor={theme.colors.primary}
-        />
+        <StatusBar barStyle="light-content" backgroundColor={theme.colors.primary} />
         <ChatScreen
           chatId={screen.chatId}
           onBack={handleBackToTabs}
@@ -208,10 +196,7 @@ function AppContent() {
   if (screen.type === 'modelSelection') {
     return (
       <>
-        <StatusBar
-          barStyle="light-content"
-          backgroundColor={theme.colors.primary}
-        />
+        <StatusBar barStyle="light-content" backgroundColor={theme.colors.primary} />
         <ModelSelectionScreen
           currentModel={screen.currentModel}
           onSelectModel={(model: string) => {
@@ -228,12 +213,7 @@ function AppContent() {
   const renderTabContent = () => {
     switch (activeTab) {
       case 'chats':
-        return (
-          <ChatListScreen
-            onOpenChat={handleOpenChat}
-            onNewChat={handleNewChat}
-          />
-        );
+        return <ChatListScreen onOpenChat={handleOpenChat} onNewChat={handleNewChat} />;
       case 'meetings':
         return (
           <MeetingsScreen
@@ -260,11 +240,7 @@ function AppContent() {
       case 'agent':
         return <AgentDashboardScreen />;
       case 'settings':
-        return (
-          <SettingsScreen
-            onOpenModelSelector={handleModelSelectFromTab}
-          />
-        );
+        return <SettingsScreen onOpenModelSelector={handleModelSelectFromTab} />;
       default:
         return null;
     }
@@ -272,33 +248,17 @@ function AppContent() {
 
   return (
     <View style={styles.container}>
-      <StatusBar
-        barStyle="light-content"
-        backgroundColor={theme.colors.primary}
-      />
+      <StatusBar barStyle="light-content" backgroundColor={theme.colors.primary} />
       <View style={styles.content}>{renderTabContent()}</View>
-      <View
-        style={[
-          styles.tabBar,
-          { paddingBottom: Math.max(insets.bottom, 12) },
-        ]}
-      >
+      <View style={[styles.tabBar, { paddingBottom: Math.max(insets.bottom, 12) }]}>
         {TAB_CONFIG.map(tab => (
           <TouchableOpacity
             key={tab.key}
-            style={[
-              styles.tabItem,
-              activeTab === tab.key && styles.activeTabItem,
-            ]}
+            style={[styles.tabItem, activeTab === tab.key && styles.activeTabItem]}
             onPress={() => setActiveTab(tab.key)}
           >
             <Text style={styles.tabIcon}>{tab.icon}</Text>
-            <Text
-              style={[
-                styles.tabLabel,
-                activeTab === tab.key && styles.activeTabLabel,
-              ]}
-            >
+            <Text style={[styles.tabLabel, activeTab === tab.key && styles.activeTabLabel]}>
               {tab.label}
             </Text>
           </TouchableOpacity>

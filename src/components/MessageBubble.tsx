@@ -1,15 +1,9 @@
 import React, { useState } from 'react';
-import {
-  View,
-  Text,
-  TouchableOpacity,
-  StyleSheet,
-  Alert,
-  Share,
-} from 'react-native';
-import ToolCallCard from './ToolCallCard';
+import { Alert, Share, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+
 import { theme } from '../config/theme';
 import type { ChatMessage, ToolResult } from '../types';
+import ToolCallCard from './ToolCallCard';
 
 interface MessageBubbleProps {
   message: ChatMessage;
@@ -29,30 +23,28 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({
   const isTool = message.role === 'tool';
 
   const handleLongPress = () => {
-    const cleanedContent = stripThinkingTags(cleanSpecialTokens(message.content));
-    Alert.alert(
-      isUser ? 'Message Options' : 'Assistant Message',
-      'Choose an action:',
-      [
-        {
-          text: 'Copy',
-          onPress: () => {
-            // Use Clipboard API
-            try {
-              const { Clipboard } = require('react-native');
-              Clipboard.setString(cleanedContent);
-            } catch {}
-          },
+    const cleanedContent = stripThinkingTags(cleanSpecialTokens(message.content ?? ''));
+    Alert.alert(isUser ? 'Message Options' : 'Assistant Message', 'Choose an action:', [
+      {
+        text: 'Copy',
+        onPress: () => {
+          // Use Clipboard API
+          try {
+            const { Clipboard } = require('react-native');
+            Clipboard.setString(cleanedContent);
+          } catch {}
         },
-        {
-          text: 'Share',
-          onPress: async () => {
-            try { await Share.share({ message: cleanedContent }); } catch {}
-          },
+      },
+      {
+        text: 'Share',
+        onPress: async () => {
+          try {
+            await Share.share({ message: cleanedContent });
+          } catch {}
         },
-        { text: 'Cancel', style: 'cancel' },
-      ]
-    );
+      },
+      { text: 'Cancel', style: 'cancel' },
+    ]);
   };
 
   const parseThinkingContent = (content: string) => {
@@ -81,10 +73,12 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({
     return (
       <View style={styles.toolResultContainer}>
         <Text style={styles.toolResultLabel}>Tool Result</Text>
-        <Text style={[
-          styles.toolResultText,
-          message.toolResult.success ? styles.toolResultSuccess : styles.toolResultError,
-        ]}>
+        <Text
+          style={[
+            styles.toolResultText,
+            message.toolResult.success ? styles.toolResultSuccess : styles.toolResultError,
+          ]}
+        >
           {message.toolResult.message}
         </Text>
       </View>
@@ -98,7 +92,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({
         onLongPress={handleLongPress}
         style={[styles.bubble, isUser ? styles.userBubble : styles.assistantBubble]}
       >
-        {parseThinkingContent(message.content).map((part, idx) => {
+        {parseThinkingContent(message.content ?? '').map((part, idx) => {
           if (part.type === 'thinking') {
             return (
               <View key={idx} style={styles.thinkingContainer}>
@@ -108,31 +102,32 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({
                 >
                   <Text style={styles.thinkingLabel}>Thinking {expandedThinking ? '▼' : '▶'}</Text>
                 </TouchableOpacity>
-                {expandedThinking && (
-                  <Text style={styles.thinkingText}>{part.content}</Text>
-                )}
+                {expandedThinking && <Text style={styles.thinkingText}>{part.content}</Text>}
               </View>
             );
           }
           return part.content.trim() ? (
-            <Text key={idx} style={[styles.messageText, isUser && styles.userMessageText]} selectable={!isUser}>
+            <Text
+              key={idx}
+              style={[styles.messageText, isUser && styles.userMessageText]}
+              selectable={!isUser}
+            >
               {part.content}
             </Text>
           ) : null;
         })}
 
-        {message.toolCalls && message.toolCalls.map((tc, idx) => (
-          <ToolCallCard
-            key={idx}
-            toolCall={tc}
-            autoExecute={autoExecuteTools}
-            onResult={onToolResult}
-          />
-        ))}
+        {message.toolCalls &&
+          message.toolCalls.map((tc, idx) => (
+            <ToolCallCard
+              key={idx}
+              toolCall={tc}
+              autoExecute={autoExecuteTools}
+              onResult={onToolResult}
+            />
+          ))}
 
-        {isStreaming && (
-          <Text style={styles.streamingIndicator}>●</Text>
-        )}
+        {isStreaming && <Text style={styles.streamingIndicator}>●</Text>}
 
         {message.tokens && !isStreaming && (
           <Text style={styles.tokenInfo}>
@@ -166,7 +161,12 @@ const styles = StyleSheet.create({
   assistantRow: { justifyContent: 'flex-start' },
   bubble: { padding: 12, borderRadius: 16, maxWidth: '85%', flexShrink: 1 },
   userBubble: { backgroundColor: theme.colors.userBubble, borderBottomRightRadius: 4 },
-  assistantBubble: { backgroundColor: theme.colors.assistantBubble, borderBottomLeftRadius: 4, borderWidth: 1, borderColor: theme.colors.border },
+  assistantBubble: {
+    backgroundColor: theme.colors.assistantBubble,
+    borderBottomLeftRadius: 4,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
   messageText: { fontSize: 15, color: theme.colors.text, lineHeight: 22, flexWrap: 'wrap' },
   userMessageText: { color: '#FFFFFF' },
   thinkingContainer: {
@@ -179,7 +179,12 @@ const styles = StyleSheet.create({
   },
   thinkingHeader: { flexDirection: 'row', alignItems: 'center' },
   thinkingLabel: { fontSize: 12, fontWeight: '600', color: theme.colors.secondary },
-  thinkingText: { fontSize: 12, color: theme.colors.textSecondary, marginTop: 6, fontStyle: 'italic' },
+  thinkingText: {
+    fontSize: 12,
+    color: theme.colors.textSecondary,
+    marginTop: 6,
+    fontStyle: 'italic',
+  },
   tokenInfo: { fontSize: 10, color: theme.colors.textMuted, marginTop: 6 },
   streamingIndicator: { color: theme.colors.accent, fontSize: 16, marginTop: 4 },
   toolResultContainer: {
@@ -189,7 +194,12 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     backgroundColor: theme.colors.surface,
   },
-  toolResultLabel: { fontSize: 10, color: theme.colors.textMuted, marginBottom: 4, textTransform: 'uppercase' },
+  toolResultLabel: {
+    fontSize: 10,
+    color: theme.colors.textMuted,
+    marginBottom: 4,
+    textTransform: 'uppercase',
+  },
   toolResultText: { fontSize: 12, color: theme.colors.text },
   toolResultSuccess: { color: theme.colors.success },
   toolResultError: { color: theme.colors.error },

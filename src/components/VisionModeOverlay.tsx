@@ -1,5 +1,6 @@
 import React, { useEffect, useRef } from 'react';
-import { View, Text, Animated, StyleSheet } from 'react-native';
+import { Animated, StyleSheet, Text, View } from 'react-native';
+
 import { theme } from '../config/theme';
 
 interface VisionModeOverlayProps {
@@ -35,12 +36,7 @@ export default function VisionModeOverlay({ active }: VisionModeOverlayProps) {
 
   return (
     <View style={styles.overlay} pointerEvents="none">
-      <Animated.View
-        style={[
-          styles.shimmer,
-          { transform: [{ translateY: shimmerTranslateY }] },
-        ]}
-      />
+      <Animated.View style={[styles.shimmer, { transform: [{ translateY: shimmerTranslateY }] }]} />
       <View style={styles.labelContainer}>
         <Text style={styles.label}>{'\uD83D\uDC41\uFE0F'} Vision Mode</Text>
       </View>

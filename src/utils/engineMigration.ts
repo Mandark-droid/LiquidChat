@@ -1,5 +1,5 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as RNFS from '@dr.pogodin/react-native-fs';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Alert } from 'react-native';
 
 /**
@@ -13,7 +13,9 @@ export const CACTUS_MODELS_DIR = `${RNFS.DocumentDirectoryPath}/cactus/models`;
 const ENGINE_KEY = '@liquid_cactus_engine';
 const ENGINE = '1.13';
 
-export async function listDownloadedCactusModels(): Promise<{ name: string; slug: string; quant: string; path: string }[]> {
+export async function listDownloadedCactusModels(): Promise<
+  { name: string; slug: string; quant: string; path: string }[]
+> {
   try {
     if (!(await RNFS.exists(CACTUS_MODELS_DIR))) return [];
     const entries = await RNFS.readDir(CACTUS_MODELS_DIR);
@@ -46,7 +48,9 @@ export async function checkEngineMigration(): Promise<void> {
           style: 'destructive',
           onPress: async () => {
             for (const m of models) {
-              try { await RNFS.unlink(m.path); } catch {}
+              try {
+                await RNFS.unlink(m.path);
+              } catch {}
             }
           },
         },

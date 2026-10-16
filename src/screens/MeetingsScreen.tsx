@@ -12,15 +12,26 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+
+import {
+  Button,
+  Card,
+  Chip,
+  EmptyState,
+  Field,
+  HeaderButton,
+  ScreenHeader,
+  Segmented,
+  ui,
+} from '../components/ui';
 import { theme } from '../config/theme';
-import { Button, Card, Chip, EmptyState, Field, HeaderButton, ScreenHeader, Segmented, ui } from '../components/ui';
 import { useLiveSession, useMeetingList } from '../meetings/hooks';
+import { detectSpeakers, parseAttendees, parseTranscript } from '../meetings/importTranscript';
 import { meetingSession } from '../meetings/MeetingSession';
 import { meetingStore } from '../meetings/MeetingStore';
 import { defaultTitle, formatClock } from '../meetings/MinutesGenerator';
-import { detectSpeakers, parseAttendees, parseTranscript } from '../meetings/importTranscript';
-import { getMeetingSettings } from '../meetings/settings';
 import { isRecorderAvailable } from '../meetings/native';
+import { getMeetingSettings } from '../meetings/settings';
 import type { MeetingIndexEntry, MeetingStatus } from '../meetings/types';
 
 interface Props {
@@ -29,7 +40,10 @@ interface Props {
   onOpenSettings: () => void;
 }
 
-const STATUS_LABEL: Record<MeetingStatus, { label: string; tone: 'warn' | 'ok' | 'info' | 'muted' }> = {
+const STATUS_LABEL: Record<
+  MeetingStatus,
+  { label: string; tone: 'warn' | 'ok' | 'info' | 'muted' }
+> = {
   recording: { label: '● Recording', tone: 'warn' },
   paused: { label: 'Paused', tone: 'warn' },
   transcribing: { label: 'Transcribing…', tone: 'info' },
@@ -58,7 +72,8 @@ export default function MeetingsScreen({ onOpenMeeting, onOpenRecorder, onOpenSe
 
   const visible = clientFilter ? meetings.filter(m => m.client === clientFilter) : meetings;
   const openActions = meetings.reduce((n, m) => n + m.openActions, 0);
-  const recordingActive = live.phase === 'recording' || live.phase === 'paused' || live.phase === 'starting';
+  const recordingActive =
+    live.phase === 'recording' || live.phase === 'paused' || live.phase === 'starting';
 
   return (
     <SafeAreaView style={ui.screen} edges={['top']}>
@@ -71,7 +86,9 @@ export default function MeetingsScreen({ onOpenMeeting, onOpenRecorder, onOpenSe
       {recordingActive || live.phase === 'transcribing' || live.phase === 'summarizing' ? (
         <TouchableOpacity
           style={[styles.liveBanner, !recordingActive && { backgroundColor: theme.colors.accent }]}
-          onPress={() => (recordingActive ? onOpenRecorder() : live.meetingId && onOpenMeeting(live.meetingId))}
+          onPress={() =>
+            recordingActive ? onOpenRecorder() : live.meetingId && onOpenMeeting(live.meetingId)
+          }
         >
           <Text style={styles.liveText}>
             {recordingActive
@@ -87,7 +104,11 @@ export default function MeetingsScreen({ onOpenMeeting, onOpenRecorder, onOpenSe
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
-            onRefresh={async () => { setRefreshing(true); await refresh(); setRefreshing(false); }}
+            onRefresh={async () => {
+              setRefreshing(true);
+              await refresh();
+              setRefreshing(false);
+            }}
             tintColor={theme.colors.accent}
           />
         }
@@ -102,10 +123,23 @@ export default function MeetingsScreen({ onOpenMeeting, onOpenRecorder, onOpenSe
         </View>
 
         {clients.length > 0 ? (
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips}>
-            <Chip label="All clients" active={!clientFilter} onPress={() => setClientFilter(null)} />
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.chips}
+          >
+            <Chip
+              label="All clients"
+              active={!clientFilter}
+              onPress={() => setClientFilter(null)}
+            />
             {clients.map(c => (
-              <Chip key={c} label={c} active={clientFilter === c} onPress={() => setClientFilter(clientFilter === c ? null : c)} />
+              <Chip
+                key={c}
+                label={c}
+                active={clientFilter === c}
+                onPress={() => setClientFilter(clientFilter === c ? null : c)}
+              />
             ))}
           </ScrollView>
         ) : null}
@@ -118,7 +152,12 @@ export default function MeetingsScreen({ onOpenMeeting, onOpenRecorder, onOpenSe
         ) : (
           <View style={[ui.pad, { gap: 8, marginTop: 8 }]}>
             {visible.map(m => (
-              <MeetingRow key={m.id} m={m} onPress={() => onOpenMeeting(m.id)} onDeleted={refresh} />
+              <MeetingRow
+                key={m.id}
+                m={m}
+                onPress={() => onOpenMeeting(m.id)}
+                onDeleted={refresh}
+              />
             ))}
           </View>
         )}
@@ -128,14 +167,28 @@ export default function MeetingsScreen({ onOpenMeeting, onOpenRecorder, onOpenSe
         visible={sheet === 'new'}
         knownClients={clients}
         onClose={() => setSheet('none')}
-        onStarted={() => { setSheet('none'); onOpenRecorder(); }}
-        onImported={id => { setSheet('none'); onOpenMeeting(id); }}
+        onStarted={() => {
+          setSheet('none');
+          onOpenRecorder();
+        }}
+        onImported={id => {
+          setSheet('none');
+          onOpenMeeting(id);
+        }}
       />
     </SafeAreaView>
   );
 }
 
-function MeetingRow({ m, onPress, onDeleted }: { m: MeetingIndexEntry; onPress: () => void; onDeleted: () => void }) {
+function MeetingRow({
+  m,
+  onPress,
+  onDeleted,
+}: {
+  m: MeetingIndexEntry;
+  onPress: () => void;
+  onDeleted: () => void;
+}) {
   const st = STATUS_LABEL[m.status];
   const d = new Date(m.startedAt);
   return (
@@ -145,13 +198,22 @@ function MeetingRow({ m, onPress, onDeleted }: { m: MeetingIndexEntry; onPress: 
       onLongPress={() =>
         Alert.alert('Delete meeting', `Delete "${m.title}" with its audio and transcript?`, [
           { text: 'Cancel', style: 'cancel' },
-          { text: 'Delete', style: 'destructive', onPress: async () => { await meetingStore.delete(m.id); onDeleted(); } },
+          {
+            text: 'Delete',
+            style: 'destructive',
+            onPress: async () => {
+              await meetingStore.delete(m.id);
+              onDeleted();
+            },
+          },
         ])
       }
     >
       <Card>
         <View style={[ui.row, { justifyContent: 'space-between' }]}>
-          <Text style={styles.rowTitle} numberOfLines={1}>{m.title}</Text>
+          <Text style={styles.rowTitle} numberOfLines={1}>
+            {m.title}
+          </Text>
           <Chip label={st.label} tone={st.tone} />
         </View>
         <Text style={[ui.muted, { marginTop: 4 }]}>
@@ -162,7 +224,9 @@ function MeetingRow({ m, onPress, onDeleted }: { m: MeetingIndexEntry; onPress: 
         </Text>
         {m.totalActions > 0 ? (
           <Text style={[styles.actions, m.openActions === 0 && { color: theme.colors.success }]}>
-            {m.openActions > 0 ? `${m.openActions} open of ${m.totalActions} action items` : `All ${m.totalActions} action items done`}
+            {m.openActions > 0
+              ? `${m.openActions} open of ${m.totalActions} action items`
+              : `All ${m.totalActions} action items done`}
           </Text>
         ) : null}
       </Card>
@@ -192,12 +256,20 @@ function NewMeetingSheet({
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    if (visible) { setTitle(''); setAgenda(''); setPasted(''); setBusy(false); }
+    if (visible) {
+      setTitle('');
+      setAgenda('');
+      setPasted('');
+      setBusy(false);
+    }
   }, [visible]);
 
   const start = async () => {
     if (!isRecorderAvailable()) {
-      Alert.alert('Rebuild required', 'The meeting recorder native module is missing. Rebuild the Android app.');
+      Alert.alert(
+        'Rebuild required',
+        'The meeting recorder native module is missing. Rebuild the Android app.',
+      );
       return;
     }
     setBusy(true);
@@ -218,7 +290,10 @@ function NewMeetingSheet({
 
   const importNow = async () => {
     const segments = parseTranscript(pasted);
-    if (!segments.length) { Alert.alert('Nothing to import', 'Paste a transcript first.'); return; }
+    if (!segments.length) {
+      Alert.alert('Nothing to import', 'Paste a transcript first.');
+      return;
+    }
     setBusy(true);
     try {
       const settings = await getMeetingSettings();
@@ -259,20 +334,38 @@ function NewMeetingSheet({
 
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
-      <KeyboardAvoidingView style={styles.backdrop} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <KeyboardAvoidingView
+        style={styles.backdrop}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
         <View style={styles.sheet}>
           <View style={[ui.row, { justifyContent: 'space-between', marginBottom: 12 }]}>
             <Text style={styles.sheetTitle}>New meeting</Text>
-            <TouchableOpacity onPress={onClose} hitSlop={12}><Text style={styles.close}>✕</Text></TouchableOpacity>
+            <TouchableOpacity onPress={onClose} hitSlop={12}>
+              <Text style={styles.close}>✕</Text>
+            </TouchableOpacity>
           </View>
           <Segmented
-            options={[{ key: 'record', label: 'Record' }, { key: 'import', label: 'Paste transcript' }]}
+            options={[
+              { key: 'record', label: 'Record' },
+              { key: 'import', label: 'Paste transcript' },
+            ]}
             value={mode}
             onChange={setMode}
           />
           <ScrollView style={{ marginTop: 12 }} keyboardShouldPersistTaps="handled">
-            <Field label="Title (optional)" value={title} onChangeText={setTitle} placeholder="Auto-generated from the discussion" />
-            <Field label="Client" value={client} onChangeText={setClient} placeholder="e.g. Acme Bank" />
+            <Field
+              label="Title (optional)"
+              value={title}
+              onChangeText={setTitle}
+              placeholder="Auto-generated from the discussion"
+            />
+            <Field
+              label="Client"
+              value={client}
+              onChangeText={setClient}
+              placeholder="e.g. Acme Bank"
+            />
             {knownClients.length > 0 ? (
               <View style={[ui.wrap, { marginTop: -6, marginBottom: 12 }]}>
                 {knownClients.slice(0, 8).map(c => (
@@ -287,7 +380,13 @@ function NewMeetingSheet({
               placeholder="Rahul Mehta <rahul@acme.com>; Priya (Acme)"
               hint="Names improve transcription; emails pre-fill the follow-up mail."
             />
-            <Field label="Agenda (optional)" value={agenda} onChangeText={setAgenda} multiline placeholder="What should this meeting decide?" />
+            <Field
+              label="Agenda (optional)"
+              value={agenda}
+              onChangeText={setAgenda}
+              multiline
+              placeholder="What should this meeting decide?"
+            />
             {mode === 'import' ? (
               <Field
                 label="Transcript"
@@ -325,8 +424,19 @@ const styles = StyleSheet.create({
   },
   liveText: { color: theme.colors.textLight, fontWeight: '700', fontSize: theme.fontSize.md },
   chips: { paddingHorizontal: theme.spacing.lg, paddingTop: 14, gap: 6 },
-  rowTitle: { flex: 1, fontSize: theme.fontSize.lg, fontWeight: '700', color: theme.colors.text, marginRight: 8 },
-  actions: { marginTop: 6, fontSize: theme.fontSize.sm, color: theme.colors.warning, fontWeight: '600' },
+  rowTitle: {
+    flex: 1,
+    fontSize: theme.fontSize.lg,
+    fontWeight: '700',
+    color: theme.colors.text,
+    marginRight: 8,
+  },
+  actions: {
+    marginTop: 6,
+    fontSize: theme.fontSize.sm,
+    color: theme.colors.warning,
+    fontWeight: '600',
+  },
   backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
   sheet: {
     backgroundColor: theme.colors.background,

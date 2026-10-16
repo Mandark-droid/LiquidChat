@@ -1,5 +1,5 @@
-import DeviceInfo from 'react-native-device-info';
 import { Platform } from 'react-native';
+import DeviceInfo from 'react-native-device-info';
 
 export interface DeviceMetrics {
   totalMemory: number;
@@ -16,21 +16,15 @@ export interface DeviceMetrics {
 
 export async function getDeviceMetrics(): Promise<DeviceMetrics> {
   try {
-    const [
-      totalMemory,
-      usedMemory,
-      batteryLevel,
-      isCharging,
-      totalDiskSpace,
-      freeDiskSpace,
-    ] = await Promise.all([
-      DeviceInfo.getTotalMemory(),
-      DeviceInfo.getUsedMemory(),
-      DeviceInfo.getBatteryLevel(),
-      DeviceInfo.isBatteryCharging(),
-      DeviceInfo.getTotalDiskCapacity(),
-      DeviceInfo.getFreeDiskStorage(),
-    ]);
+    const [totalMemory, usedMemory, batteryLevel, isCharging, totalDiskSpace, freeDiskSpace] =
+      await Promise.all([
+        DeviceInfo.getTotalMemory(),
+        DeviceInfo.getUsedMemory(),
+        DeviceInfo.getBatteryLevel(),
+        DeviceInfo.isBatteryCharging(),
+        DeviceInfo.getTotalDiskCapacity(),
+        DeviceInfo.getFreeDiskStorage(),
+      ]);
 
     const freeMemory = totalMemory - usedMemory;
 
@@ -40,7 +34,8 @@ export async function getDeviceMetrics(): Promise<DeviceMetrics> {
       freeMemory,
       batteryLevel,
       isCharging,
-      cpuArchitecture: Platform.OS === 'ios' ? 'arm64' : (await DeviceInfo.supportedAbis())[0] || 'unknown',
+      cpuArchitecture:
+        Platform.OS === 'ios' ? 'arm64' : (await DeviceInfo.supportedAbis())[0] || 'unknown',
       deviceModel: DeviceInfo.getModel(),
       systemVersion: DeviceInfo.getSystemVersion(),
       totalDiskSpace,

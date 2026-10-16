@@ -1,5 +1,6 @@
 import React, { useEffect, useRef } from 'react';
-import { View, Text, Animated, StyleSheet } from 'react-native';
+import { Animated, StyleSheet, Text, View } from 'react-native';
+
 import { theme } from '../config/theme';
 import type { AgentState } from '../types';
 
@@ -7,10 +8,7 @@ interface AgentStateBarProps {
   agentState: AgentState;
 }
 
-const STATE_CONFIG: Record<
-  string,
-  { color: string; emoji: string; label: string }
-> = {
+const STATE_CONFIG: Record<string, { color: string; emoji: string; label: string }> = {
   listening: {
     color: theme.colors.agentListening,
     emoji: '\uD83C\uDFA4',
@@ -80,10 +78,7 @@ export default function AgentStateBar({ agentState }: AgentStateBarProps) {
     <View style={styles.wrapper}>
       <View style={[styles.pill, { backgroundColor: bgColor }]}>
         <Animated.View
-          style={[
-            styles.shimmer,
-            { transform: [{ translateX: shimmerTranslateX }] },
-          ]}
+          style={[styles.shimmer, { transform: [{ translateX: shimmerTranslateX }] }]}
         />
         <Text style={styles.emoji}>{config.emoji}</Text>
         <Text style={styles.label} numberOfLines={1}>

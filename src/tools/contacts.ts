@@ -1,17 +1,16 @@
 import { Linking, Platform } from 'react-native';
+
 import type { ToolResult } from '../types';
 
 export async function createContact(
   firstName: string,
   lastName: string,
   phoneNumber?: string,
-  email?: string
+  email?: string,
 ): Promise<ToolResult> {
   try {
     if (Platform.OS === 'android') {
-      const extras = [
-        { key: 'name', value: `${firstName} ${lastName}` },
-      ];
+      const extras = [{ key: 'name', value: `${firstName} ${lastName}` }];
       if (phoneNumber) {
         extras.push({ key: 'phone', value: phoneNumber });
       }

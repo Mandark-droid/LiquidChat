@@ -56,11 +56,17 @@ export function resolveDue(phrase: string | undefined, meetingDate: Date): strin
   if ((m = p.match(/\b(\d{4})-(\d{1,2})-(\d{1,2})\b/))) {
     return toIsoDate(new Date(+m[1], +m[2] - 1, +m[3]));
   }
-  if ((m = p.match(/\b(\d{1,2})(?:st|nd|rd|th)?(?: of)? ([a-z]{3,9})(?: (\d{2,4}))?\b/)) && monthIndex(m[2]) >= 0) {
+  if (
+    (m = p.match(/\b(\d{1,2})(?:st|nd|rd|th)?(?: of)? ([a-z]{3,9})(?: (\d{2,4}))?\b/)) &&
+    monthIndex(m[2]) >= 0
+  ) {
     const d = withYear(base, monthIndex(m[2]), +m[1], m[3] ? +m[3] : undefined);
     return d ? toIsoDate(d) : undefined;
   }
-  if ((m = p.match(/\b([a-z]{3,9}) (\d{1,2})(?:st|nd|rd|th)?(?: (\d{2,4}))?\b/)) && monthIndex(m[1]) >= 0) {
+  if (
+    (m = p.match(/\b([a-z]{3,9}) (\d{1,2})(?:st|nd|rd|th)?(?: (\d{2,4}))?\b/)) &&
+    monthIndex(m[1]) >= 0
+  ) {
     const d = withYear(base, monthIndex(m[1]), +m[2], m[3] ? +m[3] : undefined);
     return d ? toIsoDate(d) : undefined;
   }
@@ -78,10 +84,13 @@ export function resolveDue(phrase: string | undefined, meetingDate: Date): strin
     const n = words[m[1]] ?? +m[1];
     if (m[2] === 'day') return toIsoDate(addDays(base, n));
     if (m[2] === 'week') return toIsoDate(addDays(base, 7 * n));
-    const d = new Date(base); d.setMonth(d.getMonth() + n); return toIsoDate(d);
+    const d = new Date(base);
+    d.setMonth(d.getMonth() + n);
+    return toIsoDate(d);
   }
 
-  if (/\bend of (the )?next week\b/.test(p)) return toIsoDate(addDays(nextWeekday(base, 5, false), 7));
+  if (/\bend of (the )?next week\b/.test(p))
+    return toIsoDate(addDays(nextWeekday(base, 5, false), 7));
   if (/\b(end of (the |this )?week|eow|this week)\b/.test(p)) {
     const fri = (5 - base.getDay() + 7) % 7;
     return toIsoDate(addDays(base, fri));
@@ -90,7 +99,8 @@ export function resolveDue(phrase: string | undefined, meetingDate: Date): strin
   if (/\b(end of (the |this )?month|eom|month end)\b/.test(p)) {
     return toIsoDate(new Date(base.getFullYear(), base.getMonth() + 1, 0));
   }
-  if (/\bnext month\b/.test(p)) return toIsoDate(new Date(base.getFullYear(), base.getMonth() + 1, 1));
+  if (/\bnext month\b/.test(p))
+    return toIsoDate(new Date(base.getFullYear(), base.getMonth() + 1, 1));
 
   for (let i = 0; i < 7; i++) {
     const re = new RegExp(`\\b(next |coming |this )?${WEEKDAYS[i]}\\b`);

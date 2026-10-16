@@ -1,12 +1,6 @@
 import React, { useState } from 'react';
-import {
-  View,
-  Image,
-  TouchableOpacity,
-  Modal,
-  StyleSheet,
-  Text,
-} from 'react-native';
+import { Image, Modal, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+
 import { theme } from '../config/theme';
 
 interface ScreenshotPreviewProps {
@@ -37,17 +31,10 @@ export default function ScreenshotPreview({ uri, onRemove }: ScreenshotPreviewPr
         onRequestClose={() => setModalVisible(false)}
       >
         <View style={styles.modalOverlay}>
-          <TouchableOpacity
-            style={styles.closeButton}
-            onPress={() => setModalVisible(false)}
-          >
+          <TouchableOpacity style={styles.closeButton} onPress={() => setModalVisible(false)}>
             <Text style={styles.closeText}>Close</Text>
           </TouchableOpacity>
-          <Image
-            source={{ uri }}
-            style={styles.fullImage}
-            resizeMode="contain"
-          />
+          <Image source={{ uri }} style={styles.fullImage} resizeMode="contain" />
         </View>
       </Modal>
     </>

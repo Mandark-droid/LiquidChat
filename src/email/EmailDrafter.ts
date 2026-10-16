@@ -1,9 +1,10 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Linking } from 'react-native';
-import { modelLifecycle } from '../services/ModelLifecycleManager';
-import { extractJson } from '../meetings/MinutesGenerator';
+
 import { fmtDue } from '../meetings/documents';
+import { extractJson } from '../meetings/MinutesGenerator';
 import type { Meeting } from '../meetings/types';
+import { modelLifecycle } from '../services/ModelLifecycleManager';
 
 /**
  * On-device email drafting agent.
@@ -68,27 +69,41 @@ const SYSTEM =
 
 function toneGuide(t: EmailTone): string {
   switch (t) {
-    case 'friendly': return 'warm and friendly, still professional';
-    case 'concise': return 'very short and to the point (under 120 words)';
-    case 'formal': return 'formal business English';
-    case 'apologetic': return 'sincerely apologetic and solution-oriented';
-    case 'firm': return 'polite but firm and unambiguous';
-    default: return 'professional and courteous';
+    case 'friendly':
+      return 'warm and friendly, still professional';
+    case 'concise':
+      return 'very short and to the point (under 120 words)';
+    case 'formal':
+      return 'formal business English';
+    case 'apologetic':
+      return 'sincerely apologetic and solution-oriented';
+    case 'firm':
+      return 'polite but firm and unambiguous';
+    default:
+      return 'professional and courteous';
   }
 }
 
 function meetingFacts(m: Meeting): string {
-  const date = new Date(m.startedAt).toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' });
+  const date = new Date(m.startedAt).toLocaleDateString('en-IN', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+  });
   const lines = [`Meeting: ${m.title} on ${date}`];
   if (m.client) lines.push(`Client: ${m.client}`);
   if (m.attendees.length) lines.push(`Attendees: ${m.attendees.map(a => a.name).join(', ')}`);
   if (m.minutes?.summary) lines.push(`Summary: ${m.minutes.summary}`);
-  if (m.minutes?.decisions.length) lines.push(`Decisions:\n${m.minutes.decisions.map(d => `- ${d}`).join('\n')}`);
+  if (m.minutes?.decisions.length)
+    lines.push(`Decisions:\n${m.minutes.decisions.map(d => `- ${d}`).join('\n')}`);
   const open = m.actionItems.filter(a => a.status === 'open');
   if (open.length) {
-    lines.push(`Action items:\n${open.map(a => `- ${a.task}${a.owner ? ` (owner: ${a.owner})` : ''}${a.dueDate || a.dueText ? ` — due ${fmtDue(a)}` : ''}`).join('\n')}`);
+    lines.push(
+      `Action items:\n${open.map(a => `- ${a.task}${a.owner ? ` (owner: ${a.owner})` : ''}${a.dueDate || a.dueText ? ` — due ${fmtDue(a)}` : ''}`).join('\n')}`,
+    );
   }
-  if (m.minutes?.nextSteps.length) lines.push(`Next steps:\n${m.minutes.nextSteps.map(s => `- ${s}`).join('\n')}`);
+  if (m.minutes?.nextSteps.length)
+    lines.push(`Next steps:\n${m.minutes.nextSteps.map(s => `- ${s}`).join('\n')}`);
   if (m.nextMeeting) lines.push(`Next meeting: ${m.nextMeeting}`);
   return lines.join('\n');
 }
@@ -97,7 +112,9 @@ function buildPrompt(r: DraftRequest): string {
   const who = [
     r.recipientName ? `Recipient: ${r.recipientName}` : '',
     r.senderName ? `Sender (sign off as): ${r.senderName}` : '',
-  ].filter(Boolean).join('\n');
+  ]
+    .filter(Boolean)
+    .join('\n');
   const tone = `Tone: ${toneGuide(r.tone)}.`;
   if (r.mode === 'followup' && r.meeting) {
     return `Write a follow-up email to the client after a meeting.
@@ -131,20 +148,36 @@ Return JSON {"subject": "...", "body": "..."}.`;
 function parseDraft(raw: string): { subject: string; body: string } {
   const j = extractJson(raw);
   if (j && (j.body || j.subject)) {
-    return { subject: String(j.subject ?? '').trim(), body: String(j.body ?? '').replace(/\\n/g, '\n').trim() };
+    return {
+      subject: String(j.subject ?? '').trim(),
+      body: String(j.body ?? '')
+        .replace(/\\n/g, '\n')
+        .trim(),
+    };
   }
   // Fallback: "Subject: …" on the first line, rest is the body.
-  const cleaned = raw.replace(/<think>[\s\S]*?<\/think>/gi, '').replace(/```[a-z]*\n?/gi, '').trim();
+  const cleaned = raw
+    .replace(/<think>[\s\S]*?<\/think>/gi, '')
+    .replace(/```[a-z]*\n?/gi, '')
+    .trim();
   const m = cleaned.match(/^\s*subject\s*:\s*(.+)\n([\s\S]*)$/i);
   return m ? { subject: m[1].trim(), body: m[2].trim() } : { subject: '', body: cleaned };
 }
 
-async function run(model: string, messages: { role: 'system' | 'user' | 'assistant'; content: string }[]) {
+async function run(
+  model: string,
+  messages: { role: 'system' | 'user' | 'assistant'; content: string }[],
+) {
   const managed = await modelLifecycle.ensure(model);
   const lm = managed.instance;
   if (!lm) throw new Error(`Model ${model} failed to load`);
-  try { await lm.reset(); } catch {}
-  const r = await lm.complete({ messages, options: { temperature: 0.5, topP: 0.9, maxTokens: 700 } });
+  try {
+    await lm.reset();
+  } catch {}
+  const r = await lm.complete({
+    messages,
+    options: { temperature: 0.5, topP: 0.9, maxTokens: 700 },
+  });
   return r.response ?? '';
 }
 
@@ -176,7 +209,11 @@ export async function draftEmail(r: DraftRequest): Promise<EmailDraft> {
 }
 
 /** Applies an instruction ("shorter", "mention the invoice") to the current draft. */
-export async function refineDraft(d: EmailDraft, instruction: string, model?: string): Promise<EmailDraft> {
+export async function refineDraft(
+  d: EmailDraft,
+  instruction: string,
+  model?: string,
+): Promise<EmailDraft> {
   const history = [...d.refinements, instruction];
   const raw = await run(model ?? d.model, [
     { role: 'system', content: SYSTEM },
@@ -193,7 +230,13 @@ Keep every fact unchanged unless an instruction says otherwise. Return JSON {"su
     },
   ]);
   const { subject, body } = parseDraft(raw);
-  return { ...d, subject: subject || d.subject, body: body || d.body, refinements: history, updatedAt: Date.now() };
+  return {
+    ...d,
+    subject: subject || d.subject,
+    body: body || d.body,
+    refinements: history,
+    updatedAt: Date.now(),
+  };
 }
 
 // ---------------------------------------------------------------------------

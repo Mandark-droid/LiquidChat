@@ -5,7 +5,7 @@ export function generateChatId(): string {
 }
 
 export function generateChatTitle(messages: ChatMessage[]): string {
-  const firstUserMessage = messages.find((m) => m.role === 'user');
+  const firstUserMessage = messages.find(m => m.role === 'user');
   if (!firstUserMessage || !firstUserMessage.content) {
     return 'New Chat';
   }

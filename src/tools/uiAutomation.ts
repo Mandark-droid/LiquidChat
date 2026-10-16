@@ -1,4 +1,5 @@
 import { NativeModules } from 'react-native';
+
 import type { ToolResult } from '../types';
 
 const { AccessibilityBridge } = NativeModules;
@@ -34,11 +35,14 @@ export async function tapElement(target: string): Promise<ToolResult> {
 
   try {
     const result = await AccessibilityBridge.performAction(
-      JSON.stringify({ action: 'tap', target })
+      JSON.stringify({ action: 'tap', target }),
     );
     return parseResult(result);
   } catch (error) {
-    return { success: false, message: `Tap failed: ${error instanceof Error ? error.message : String(error)}` };
+    return {
+      success: false,
+      message: `Tap failed: ${error instanceof Error ? error.message : String(error)}`,
+    };
   }
 }
 
@@ -48,11 +52,14 @@ export async function longPressElement(target: string): Promise<ToolResult> {
 
   try {
     const result = await AccessibilityBridge.performAction(
-      JSON.stringify({ action: 'long_press', target })
+      JSON.stringify({ action: 'long_press', target }),
     );
     return parseResult(result);
   } catch (error) {
-    return { success: false, message: `Long press failed: ${error instanceof Error ? error.message : String(error)}` };
+    return {
+      success: false,
+      message: `Long press failed: ${error instanceof Error ? error.message : String(error)}`,
+    };
   }
 }
 
@@ -62,11 +69,14 @@ export async function scrollScreen(direction: string = 'down'): Promise<ToolResu
 
   try {
     const result = await AccessibilityBridge.performAction(
-      JSON.stringify({ action: 'scroll', direction })
+      JSON.stringify({ action: 'scroll', direction }),
     );
     return parseResult(result);
   } catch (error) {
-    return { success: false, message: `Scroll failed: ${error instanceof Error ? error.message : String(error)}` };
+    return {
+      success: false,
+      message: `Scroll failed: ${error instanceof Error ? error.message : String(error)}`,
+    };
   }
 }
 
@@ -80,7 +90,10 @@ export async function typeTextInField(text: string, target?: string): Promise<To
     const result = await AccessibilityBridge.performAction(JSON.stringify(payload));
     return parseResult(result);
   } catch (error) {
-    return { success: false, message: `Type text failed: ${error instanceof Error ? error.message : String(error)}` };
+    return {
+      success: false,
+      message: `Type text failed: ${error instanceof Error ? error.message : String(error)}`,
+    };
   }
 }
 
@@ -90,11 +103,14 @@ export async function readScreen(): Promise<ToolResult> {
 
   try {
     const result = await AccessibilityBridge.performAction(
-      JSON.stringify({ action: 'read_screen' })
+      JSON.stringify({ action: 'read_screen' }),
     );
     return parseResult(result);
   } catch (error) {
-    return { success: false, message: `Read screen failed: ${error instanceof Error ? error.message : String(error)}` };
+    return {
+      success: false,
+      message: `Read screen failed: ${error instanceof Error ? error.message : String(error)}`,
+    };
   }
 }
 
@@ -104,11 +120,14 @@ export async function findElement(query: string): Promise<ToolResult> {
 
   try {
     const result = await AccessibilityBridge.performAction(
-      JSON.stringify({ action: 'find_element', query })
+      JSON.stringify({ action: 'find_element', query }),
     );
     return parseResult(result);
   } catch (error) {
-    return { success: false, message: `Find element failed: ${error instanceof Error ? error.message : String(error)}` };
+    return {
+      success: false,
+      message: `Find element failed: ${error instanceof Error ? error.message : String(error)}`,
+    };
   }
 }
 
@@ -117,12 +136,13 @@ export async function goBack(): Promise<ToolResult> {
   if (err) return { success: false, message: err };
 
   try {
-    const result = await AccessibilityBridge.performAction(
-      JSON.stringify({ action: 'go_back' })
-    );
+    const result = await AccessibilityBridge.performAction(JSON.stringify({ action: 'go_back' }));
     return parseResult(result);
   } catch (error) {
-    return { success: false, message: `Go back failed: ${error instanceof Error ? error.message : String(error)}` };
+    return {
+      success: false,
+      message: `Go back failed: ${error instanceof Error ? error.message : String(error)}`,
+    };
   }
 }
 
@@ -131,12 +151,13 @@ export async function goHome(): Promise<ToolResult> {
   if (err) return { success: false, message: err };
 
   try {
-    const result = await AccessibilityBridge.performAction(
-      JSON.stringify({ action: 'go_home' })
-    );
+    const result = await AccessibilityBridge.performAction(JSON.stringify({ action: 'go_home' }));
     return parseResult(result);
   } catch (error) {
-    return { success: false, message: `Go home failed: ${error instanceof Error ? error.message : String(error)}` };
+    return {
+      success: false,
+      message: `Go home failed: ${error instanceof Error ? error.message : String(error)}`,
+    };
   }
 }
 
@@ -146,11 +167,14 @@ export async function openRecents(): Promise<ToolResult> {
 
   try {
     const result = await AccessibilityBridge.performAction(
-      JSON.stringify({ action: 'open_recents' })
+      JSON.stringify({ action: 'open_recents' }),
     );
     return parseResult(result);
   } catch (error) {
-    return { success: false, message: `Open recents failed: ${error instanceof Error ? error.message : String(error)}` };
+    return {
+      success: false,
+      message: `Open recents failed: ${error instanceof Error ? error.message : String(error)}`,
+    };
   }
 }
 
@@ -170,6 +194,9 @@ export async function swipe(
     const result = await AccessibilityBridge.performAction(JSON.stringify(payload));
     return parseResult(result);
   } catch (error) {
-    return { success: false, message: `Swipe failed: ${error instanceof Error ? error.message : String(error)}` };
+    return {
+      success: false,
+      message: `Swipe failed: ${error instanceof Error ? error.message : String(error)}`,
+    };
   }
 }

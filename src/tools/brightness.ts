@@ -1,4 +1,5 @@
 import { NativeModules } from 'react-native';
+
 import type { ToolResult } from '../types';
 
 const { SystemControls } = NativeModules;

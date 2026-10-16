@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
+
+import { type LiveState, meetingSession } from './MeetingSession';
 import { meetingStore } from './MeetingStore';
-import { meetingSession, type LiveState } from './MeetingSession';
 import { transcriber, type TranscriberStatus } from './Transcriber';
 import type { Meeting, MeetingIndexEntry } from './types';
 
@@ -9,7 +10,9 @@ export function useMeetingList(): { meetings: MeetingIndexEntry[]; refresh: () =
   const refresh = useCallback(async () => setMeetings(await meetingStore.list()), []);
   useEffect(() => {
     refresh();
-    return meetingStore.subscribe(() => { refresh(); });
+    return meetingStore.subscribe(() => {
+      refresh();
+    });
   }, [refresh]);
   return { meetings, refresh };
 }
@@ -18,7 +21,10 @@ export function useMeetingList(): { meetings: MeetingIndexEntry[]; refresh: () =
 export function useMeeting(id: string | null): Meeting | null {
   const [meeting, setMeeting] = useState<Meeting | null>(null);
   useEffect(() => {
-    if (!id) { setMeeting(null); return; }
+    if (!id) {
+      setMeeting(null);
+      return;
+    }
     let alive = true;
     const load = async () => {
       const m = await meetingStore.get(id);
@@ -27,7 +33,10 @@ export function useMeeting(id: string | null): Meeting | null {
     };
     load();
     const unsub = meetingStore.subscribe(load);
-    return () => { alive = false; unsub(); };
+    return () => {
+      alive = false;
+      unsub();
+    };
   }, [id]);
   return meeting;
 }

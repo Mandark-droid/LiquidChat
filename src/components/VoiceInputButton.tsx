@@ -1,15 +1,16 @@
 import React, { useEffect, useRef } from 'react';
 import {
-  TouchableOpacity,
-  Text,
-  View,
   ActivityIndicator,
   Animated,
   StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from 'react-native';
+
+import { theme } from '../config/theme';
 import { useVoiceInput, type VoiceInputState } from '../hooks/useVoiceInput';
 import { triggerLightHaptic } from '../utils/haptics';
-import { theme } from '../config/theme';
 
 interface VoiceInputButtonProps {
   sttModel: string;
@@ -61,13 +62,7 @@ function SpeakingBars() {
   return (
     <View style={speakingStyles.container}>
       {[bar1, bar2, bar3].map((anim, i) => (
-        <Animated.View
-          key={i}
-          style={[
-            speakingStyles.bar,
-            { transform: [{ scaleY: anim }] },
-          ]}
-        />
+        <Animated.View key={i} style={[speakingStyles.bar, { transform: [{ scaleY: anim }] }]} />
       ))}
     </View>
   );
@@ -143,9 +138,9 @@ export default function VoiceInputButton({
       );
       animation.start();
       return () => animation.stop();
-    } else {
-      scaleAnim.setValue(1);
     }
+    scaleAnim.setValue(1);
+    return undefined;
   }, [state]);
 
   const handlePress = async () => {
@@ -186,11 +181,7 @@ export default function VoiceInputButton({
 
   return (
     <View style={styles.wrapper}>
-      <Animated.View
-        style={[
-          state === 'recording' && { transform: [{ scale: scaleAnim }] },
-        ]}
-      >
+      <Animated.View style={[state === 'recording' && { transform: [{ scale: scaleAnim }] }]}>
         <TouchableOpacity
           style={[
             styles.button,
@@ -205,9 +196,7 @@ export default function VoiceInputButton({
         </TouchableOpacity>
       </Animated.View>
       {state === 'recording' && (
-        <Text style={styles.durationText}>
-          {formatDuration(recordingDurationMs)}
-        </Text>
+        <Text style={styles.durationText}>{formatDuration(recordingDurationMs)}</Text>
       )}
     </View>
   );

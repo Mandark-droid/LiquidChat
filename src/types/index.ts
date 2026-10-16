@@ -11,7 +11,8 @@ export interface ToolResult {
   data?: any;
 }
 
-export interface ChatMessage extends CactusLMMessage {
+export interface ChatMessage extends Omit<CactusLMMessage, 'role'> {
+  role: CactusLMMessage['role'] | 'tool';
   timestamp: number;
   tokens?: number;
   timeToFirstTokenMs?: number;

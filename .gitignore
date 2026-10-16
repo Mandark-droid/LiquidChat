@@ -14,3 +14,4 @@ ios/build/
 .env.*
 *.log
 .metro-health-check*
+coverage/

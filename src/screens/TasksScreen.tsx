@@ -13,8 +13,22 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+
+import {
+  Button,
+  Chip,
+  EmptyState,
+  Field,
+  HeaderButton,
+  ScreenHeader,
+  Segmented,
+  ui,
+} from '../components/ui';
 import { theme } from '../config/theme';
-import { Button, Chip, EmptyState, Field, HeaderButton, ScreenHeader, Segmented, ui } from '../components/ui';
+import { useVoiceInput } from '../hooks/useVoiceInput';
+import { resolveDue, toIsoDate } from '../meetings/dateResolver';
+import { getMeetingSettings } from '../meetings/settings';
+import type { ActionPriority } from '../meetings/types';
 import {
   bucketOf,
   isMine,
@@ -23,11 +37,7 @@ import {
   taskStore,
   type UnifiedTask,
 } from '../tasks/TaskStore';
-import { resolveDue, toIsoDate } from '../meetings/dateResolver';
-import { getMeetingSettings } from '../meetings/settings';
-import { useVoiceInput } from '../hooks/useVoiceInput';
 import { createCalendarEvent } from '../tools/calendarEvent';
-import type { ActionPriority } from '../meetings/types';
 
 interface Props {
   onOpenMeeting: (id: string) => void;
@@ -72,7 +82,10 @@ export default function TasksScreen({ onOpenMeeting, onDraftEmail }: Props) {
     return taskStore.subscribe(load);
   }, [load]);
 
-  const clients = useMemo(() => [...new Set(tasks.map(t => t.client).filter((c): c is string => !!c))], [tasks]);
+  const clients = useMemo(
+    () => [...new Set(tasks.map(t => t.client).filter((c): c is string => !!c))],
+    [tasks],
+  );
 
   const filtered = useMemo(() => {
     let xs = tasks;
@@ -125,7 +138,13 @@ export default function TasksScreen({ onOpenMeeting, onDraftEmail }: Props) {
           onSubmitEditing={() => addQuick()}
           returnKeyType="done"
         />
-        {sttModel ? <VoiceAdd key={sttModel} sttModel={sttModel} onText={t => setQuick(q => (q ? `${q} ${t}` : t))} /> : null}
+        {sttModel ? (
+          <VoiceAdd
+            key={sttModel}
+            sttModel={sttModel}
+            onText={t => setQuick(q => (q ? `${q} ${t}` : t))}
+          />
+        ) : null}
         <TouchableOpacity style={styles.addBtn} onPress={() => addQuick()}>
           <Text style={styles.addText}>+</Text>
         </TouchableOpacity>
@@ -141,7 +160,10 @@ export default function TasksScreen({ onOpenMeeting, onDraftEmail }: Props) {
       <View style={[ui.pad, { marginTop: 12 }]}>
         <Segmented
           options={[
-            { key: 'focus', label: `Today${counts.overdue + counts.today ? ` (${counts.overdue + counts.today})` : ''}` },
+            {
+              key: 'focus',
+              label: `Today${counts.overdue + counts.today ? ` (${counts.overdue + counts.today})` : ''}`,
+            },
             { key: 'upcoming', label: 'Upcoming' },
             { key: 'open', label: 'All open' },
             { key: 'done', label: 'Done' },
@@ -150,25 +172,68 @@ export default function TasksScreen({ onOpenMeeting, onDraftEmail }: Props) {
           onChange={setView}
         />
       </View>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips} style={{ flexGrow: 0 }}>
-        {([['all', 'All'], ['mine', 'Mine'], ['personal', 'Personal'], ['meetings', 'From meetings']] as const).map(([k, l]) => (
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.chips}
+        style={{ flexGrow: 0 }}
+      >
+        {(
+          [
+            ['all', 'All'],
+            ['mine', 'Mine'],
+            ['personal', 'Personal'],
+            ['meetings', 'From meetings'],
+          ] as const
+        ).map(([k, l]) => (
           <Chip key={k} label={l} active={scope === k} onPress={() => setScope(k)} />
         ))}
-        {clients.map(c => <Chip key={c} label={`@${c}`} active={client === c} onPress={() => setClient(client === c ? null : c)} />)}
+        {clients.map(c => (
+          <Chip
+            key={c}
+            label={`@${c}`}
+            active={client === c}
+            onPress={() => setClient(client === c ? null : c)}
+          />
+        ))}
       </ScrollView>
 
       <ScrollView
         contentContainerStyle={{ padding: theme.spacing.lg, paddingTop: 4, paddingBottom: 40 }}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={async () => { setRefreshing(true); await load(); setRefreshing(false); }} />}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={async () => {
+              setRefreshing(true);
+              await load();
+              setRefreshing(false);
+            }}
+          />
+        }
       >
         {filtered.length === 0 ? (
           <EmptyState
-            title={view === 'focus' ? 'Nothing due today' : view === 'done' ? 'Nothing completed yet' : 'No tasks'}
-            body={view === 'focus' ? 'Enjoy it — or check Upcoming.' : 'Type above or tap 🎙 to add one. Meeting action items show up here automatically.'}
+            title={
+              view === 'focus'
+                ? 'Nothing due today'
+                : view === 'done'
+                  ? 'Nothing completed yet'
+                  : 'No tasks'
+            }
+            body={
+              view === 'focus'
+                ? 'Enjoy it — or check Upcoming.'
+                : 'Type above or tap 🎙 to add one. Meeting action items show up here automatically.'
+            }
           />
         ) : (
           filtered.map(t => (
-            <TaskRow key={t.key} t={t} onToggle={() => taskStore.setStatus(t, t.status === 'open' ? 'done' : 'open')} onPress={() => setEditing(t)} />
+            <TaskRow
+              key={t.key}
+              t={t}
+              onToggle={() => taskStore.setStatus(t, t.status === 'open' ? 'done' : 'open')}
+              onPress={() => setEditing(t)}
+            />
           ))
         )}
       </ScrollView>
@@ -179,40 +244,91 @@ export default function TasksScreen({ onOpenMeeting, onDraftEmail }: Props) {
 }
 
 function VoiceAdd({ sttModel, onText }: { sttModel: string; onText: (t: string) => void }) {
-  const v = useVoiceInput({ sttModel, onTranscription: onText, onError: msg => Alert.alert('Voice', msg) });
-  const label = v.state === 'recording' ? '■' : v.state === 'transcribing' || v.sttInitializing || v.sttDownloading ? '…' : '🎙';
+  const v = useVoiceInput({
+    sttModel,
+    onTranscription: onText,
+    onError: msg => Alert.alert('Voice', msg),
+  });
+  const label =
+    v.state === 'recording'
+      ? '■'
+      : v.state === 'transcribing' || v.sttInitializing || v.sttDownloading
+        ? '…'
+        : '🎙';
   return (
-    <TouchableOpacity style={[styles.addBtn, styles.micBtn, v.state === 'recording' && { backgroundColor: theme.colors.error }]} onPress={v.toggleRecording}>
+    <TouchableOpacity
+      style={[
+        styles.addBtn,
+        styles.micBtn,
+        v.state === 'recording' && { backgroundColor: theme.colors.error },
+      ]}
+      onPress={v.toggleRecording}
+    >
       <Text style={[styles.addText, { fontSize: 18 }]}>{label}</Text>
     </TouchableOpacity>
   );
 }
 
-function TaskRow({ t, onToggle, onPress }: { t: UnifiedTask; onToggle: () => void; onPress: () => void }) {
+function TaskRow({
+  t,
+  onToggle,
+  onPress,
+}: {
+  t: UnifiedTask;
+  onToggle: () => void;
+  onPress: () => void;
+}) {
   const b = bucketOf(t);
   return (
     <TouchableOpacity style={styles.row} onPress={onPress} activeOpacity={0.75}>
-      <TouchableOpacity onPress={onToggle} hitSlop={10} style={[styles.check, t.status === 'done' && styles.checkDone, t.priority === 'high' && t.status === 'open' && { borderColor: theme.colors.warning }]}>
+      <TouchableOpacity
+        onPress={onToggle}
+        hitSlop={10}
+        style={[
+          styles.check,
+          t.status === 'done' && styles.checkDone,
+          t.priority === 'high' && t.status === 'open' && { borderColor: theme.colors.warning },
+        ]}
+      >
         {t.status === 'done' ? <Text style={styles.checkMark}>✓</Text> : null}
       </TouchableOpacity>
       <View style={{ flex: 1 }}>
         <Text style={[ui.body, t.status === 'done' && styles.done]}>{t.title}</Text>
         <View style={[ui.row, { marginTop: 4, flexWrap: 'wrap', gap: 8 }]}>
           {t.dueDate || t.dueText ? (
-            <Text style={[styles.meta, b === 'overdue' && { color: theme.colors.error, fontWeight: '700' }, b === 'today' && { color: theme.colors.warning, fontWeight: '700' }]}>
+            <Text
+              style={[
+                styles.meta,
+                b === 'overdue' && { color: theme.colors.error, fontWeight: '700' },
+                b === 'today' && { color: theme.colors.warning, fontWeight: '700' },
+              ]}
+            >
               📅 {dueLabel(t)}
             </Text>
           ) : null}
           {t.source === 'meeting' ? (
-            <Text style={styles.meta} numberOfLines={1}>🗓 {t.meetingTitle}{t.owner ? ` · ${t.owner}` : ''}</Text>
-          ) : t.client ? <Text style={styles.meta}>@{t.client}</Text> : null}
+            <Text style={styles.meta} numberOfLines={1}>
+              🗓 {t.meetingTitle}
+              {t.owner ? ` · ${t.owner}` : ''}
+            </Text>
+          ) : t.client ? (
+            <Text style={styles.meta}>@{t.client}</Text>
+          ) : null}
         </View>
       </View>
     </TouchableOpacity>
   );
 }
 
-function TaskEditor({ task, onClose, onOpenMeeting }: { task: UnifiedTask | null; onClose: () => void; onOpenMeeting: (id: string) => void }) {
+function TaskEditor({
+  task,
+  onClose,
+  onOpenMeeting,
+}: {
+  task: UnifiedTask | null;
+  onClose: () => void;
+  onOpenMeeting: (id: string) => void;
+}) {
   const [title, setTitle] = useState('');
   const [due, setDue] = useState('');
   const [priority, setPriority] = useState<ActionPriority>('medium');
@@ -250,7 +366,10 @@ function TaskEditor({ task, onClose, onOpenMeeting }: { task: UnifiedTask | null
 
   const toCalendar = async () => {
     const date = resolved ?? task.dueDate;
-    if (!date) { Alert.alert('No due date', 'Set a due date first.'); return; }
+    if (!date) {
+      Alert.alert('No due date', 'Set a due date first.');
+      return;
+    }
     const r = await createCalendarEvent(task.title, `${date}T09:30:00`);
     if (r.success) await taskStore.markCalendarAdded(task);
     else Alert.alert('Calendar', r.message);
@@ -258,27 +377,76 @@ function TaskEditor({ task, onClose, onOpenMeeting }: { task: UnifiedTask | null
 
   return (
     <Modal visible transparent animationType="slide" onRequestClose={onClose}>
-      <KeyboardAvoidingView style={styles.backdrop} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <KeyboardAvoidingView
+        style={styles.backdrop}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
         <View style={styles.sheet}>
           <Text style={styles.sheetTitle}>{personal ? 'Task' : 'Meeting action item'}</Text>
           {!personal ? (
-            <TouchableOpacity onPress={() => { onClose(); task.meetingId && onOpenMeeting(task.meetingId); }}>
-              <Text style={[ui.muted, { marginBottom: 12, color: theme.colors.accent }]}>From “{task.meetingTitle}” — open meeting ›</Text>
+            <TouchableOpacity
+              onPress={() => {
+                onClose();
+                if (task.meetingId) onOpenMeeting(task.meetingId);
+              }}
+            >
+              <Text style={[ui.muted, { marginBottom: 12, color: theme.colors.accent }]}>
+                From “{task.meetingTitle}” — open meeting ›
+              </Text>
             </TouchableOpacity>
-          ) : <View style={{ height: 12 }} />}
-          {personal ? <Field label="Task" value={title} onChangeText={setTitle} multiline style={{ minHeight: 56 }} /> : <Text style={[ui.body, { marginBottom: 12 }]}>{task.title}</Text>}
-          <Field label="Due" value={due} onChangeText={setDue} placeholder="tomorrow · Friday · 24 Oct" hint={due ? `→ ${resolved ?? 'not recognised'}` : undefined} />
+          ) : (
+            <View style={{ height: 12 }} />
+          )}
+          {personal ? (
+            <Field
+              label="Task"
+              value={title}
+              onChangeText={setTitle}
+              multiline
+              style={{ minHeight: 56 }}
+            />
+          ) : (
+            <Text style={[ui.body, { marginBottom: 12 }]}>{task.title}</Text>
+          )}
+          <Field
+            label="Due"
+            value={due}
+            onChangeText={setDue}
+            placeholder="tomorrow · Friday · 24 Oct"
+            hint={due ? `→ ${resolved ?? 'not recognised'}` : undefined}
+          />
           {personal ? (
             <>
-              <Segmented options={[{ key: 'high', label: 'High' }, { key: 'medium', label: 'Medium' }, { key: 'low', label: 'Low' }]} value={priority} onChange={setPriority} />
+              <Segmented
+                options={[
+                  { key: 'high', label: 'High' },
+                  { key: 'medium', label: 'Medium' },
+                  { key: 'low', label: 'Low' },
+                ]}
+                value={priority}
+                onChange={setPriority}
+              />
               <View style={{ height: 12 }} />
-              <Field label="Client / project" value={client} onChangeText={setClient} placeholder="optional" />
+              <Field
+                label="Client / project"
+                value={client}
+                onChangeText={setClient}
+                placeholder="optional"
+              />
               <Field label="Notes" value={notes} onChangeText={setNotes} multiline />
             </>
           ) : null}
           <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
             {personal ? (
-              <Button label="Delete" kind="danger" small onPress={async () => { await taskStore.deletePersonal(task.id); onClose(); }} />
+              <Button
+                label="Delete"
+                kind="danger"
+                small
+                onPress={async () => {
+                  await taskStore.deletePersonal(task.id);
+                  onClose();
+                }}
+              />
             ) : null}
             <Button label="📅 Calendar" kind="secondary" small onPress={toCalendar} />
             <View style={{ flex: 1 }} />
@@ -292,28 +460,67 @@ function TaskEditor({ task, onClose, onOpenMeeting }: { task: UnifiedTask | null
 }
 
 const styles = StyleSheet.create({
-  quickWrap: { flexDirection: 'row', gap: 8, paddingHorizontal: theme.spacing.lg, paddingTop: 14, alignItems: 'center' },
-  quickInput: {
-    flex: 1, backgroundColor: theme.colors.surface, borderWidth: 1, borderColor: theme.colors.border,
-    borderRadius: theme.borderRadius.md, paddingHorizontal: 14, paddingVertical: 11, fontSize: theme.fontSize.md, color: theme.colors.text,
+  quickWrap: {
+    flexDirection: 'row',
+    gap: 8,
+    paddingHorizontal: theme.spacing.lg,
+    paddingTop: 14,
+    alignItems: 'center',
   },
-  addBtn: { width: 44, height: 44, borderRadius: 22, backgroundColor: theme.colors.secondary, alignItems: 'center', justifyContent: 'center' },
+  quickInput: {
+    flex: 1,
+    backgroundColor: theme.colors.surface,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    borderRadius: theme.borderRadius.md,
+    paddingHorizontal: 14,
+    paddingVertical: 11,
+    fontSize: theme.fontSize.md,
+    color: theme.colors.text,
+  },
+  addBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: theme.colors.secondary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   micBtn: { backgroundColor: theme.colors.accent },
   addText: { color: theme.colors.textLight, fontSize: 24, fontWeight: '600', marginTop: -2 },
   chips: { paddingHorizontal: theme.spacing.lg, paddingVertical: 12, gap: 6 },
   row: {
-    flexDirection: 'row', gap: 12, padding: 14, marginBottom: 8,
-    backgroundColor: theme.colors.surface, borderRadius: theme.borderRadius.md, borderWidth: 1, borderColor: theme.colors.border,
+    flexDirection: 'row',
+    gap: 12,
+    padding: 14,
+    marginBottom: 8,
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.borderRadius.md,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
   },
-  check: { width: 24, height: 24, borderRadius: 12, borderWidth: 2, borderColor: theme.colors.border, alignItems: 'center', justifyContent: 'center', marginTop: 1 },
+  check: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: theme.colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 1,
+  },
   checkDone: { backgroundColor: theme.colors.secondary, borderColor: theme.colors.secondary },
   checkMark: { color: theme.colors.textLight, fontWeight: '800', fontSize: 14 },
   done: { textDecorationLine: 'line-through', color: theme.colors.textMuted },
   meta: { fontSize: theme.fontSize.sm, color: theme.colors.textSecondary, maxWidth: 260 },
   backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
   sheet: {
-    backgroundColor: theme.colors.background, borderTopLeftRadius: theme.borderRadius.xl, borderTopRightRadius: theme.borderRadius.xl,
-    padding: theme.spacing.lg, paddingBottom: 28, maxHeight: '92%',
+    backgroundColor: theme.colors.background,
+    borderTopLeftRadius: theme.borderRadius.xl,
+    borderTopRightRadius: theme.borderRadius.xl,
+    padding: theme.spacing.lg,
+    paddingBottom: 28,
+    maxHeight: '92%',
   },
   sheetTitle: { fontSize: theme.fontSize.xl, fontWeight: '700', color: theme.colors.text },
 });

@@ -1,15 +1,12 @@
 import {
   DeviceEventEmitter,
+  type EmitterSubscription,
   NativeModules,
   PermissionsAndroid,
   Platform,
-  type EmitterSubscription,
 } from 'react-native';
-import type {
-  RecorderLevelEvent,
-  RecorderSegmentEvent,
-  RecorderStateEvent,
-} from './types';
+
+import type { RecorderLevelEvent, RecorderSegmentEvent, RecorderStateEvent } from './types';
 
 interface MeetingRecorderNative {
   start(opts: {
@@ -97,9 +94,7 @@ export async function ensureRecordingPermissions(): Promise<boolean> {
   if (mic !== PermissionsAndroid.RESULTS.GRANTED) return false;
   try {
     if (await Recorder.needsNotificationPermission()) {
-      await PermissionsAndroid.request(
-        'android.permission.POST_NOTIFICATIONS' as any,
-      );
+      await PermissionsAndroid.request('android.permission.POST_NOTIFICATIONS' as any);
     }
   } catch {}
   return true;

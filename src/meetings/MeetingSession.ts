@@ -1,15 +1,16 @@
 import * as RNFS from '@dr.pogodin/react-native-fs';
 import { AppState, type EmitterSubscription } from 'react-native';
-import { modelLifecycle } from '../services/ModelLifecycleManager';
+
 import { getModelTier } from '../config/modelTiers';
 import { memoryService } from '../services/MemoryService';
+import { modelLifecycle } from '../services/ModelLifecycleManager';
+import { buildMinutesMarkdown } from './documents';
 import { meetingStore } from './MeetingStore';
 import { defaultTitle, generateMinutes, transcriptPlain } from './MinutesGenerator';
-import { Recorder, RecorderEvents, ensureRecordingPermissions } from './native';
+import { ensureRecordingPermissions, Recorder, RecorderEvents } from './native';
 import { getMeetingSettings } from './settings';
 import { transcriber } from './Transcriber';
 import type { Attendee, Meeting, RecorderSegmentEvent, TranscriptSegment } from './types';
-import { buildMinutesMarkdown } from './documents';
 
 /**
  * Owns the single active recording and the post-processing pipeline:
@@ -37,7 +38,13 @@ export interface LiveState {
 type Listener = (s: LiveState) => void;
 
 const IDLE: LiveState = {
-  meetingId: null, phase: 'idle', elapsedMs: 0, levelDb: -90, isSpeech: false, silenced: false, pendingSegments: 0,
+  meetingId: null,
+  phase: 'idle',
+  elapsedMs: 0,
+  levelDb: -90,
+  isSpeech: false,
+  silenced: false,
+  pendingSegments: 0,
 };
 
 class MeetingSessionImpl {
@@ -50,12 +57,20 @@ class MeetingSessionImpl {
   subscribe(l: Listener): () => void {
     this.listeners.add(l);
     l(this.state);
-    return () => { this.listeners.delete(l); };
+    return () => {
+      this.listeners.delete(l);
+    };
   }
-  get live(): LiveState { return this.state; }
+  get live(): LiveState {
+    return this.state;
+  }
   private set(p: Partial<LiveState>) {
     this.state = { ...this.state, ...p };
-    for (const l of this.listeners) { try { l(this.state); } catch {} }
+    for (const l of this.listeners) {
+      try {
+        l(this.state);
+      } catch {}
+    }
   }
 
   syncElapsed(elapsedMs: number) {
@@ -63,7 +78,10 @@ class MeetingSessionImpl {
   }
 
   isBusy(id?: string): boolean {
-    if (id) return (this.state.meetingId === id && this.state.phase !== 'idle') || this.processing.has(id);
+    if (id)
+      return (
+        (this.state.meetingId === id && this.state.phase !== 'idle') || this.processing.has(id)
+      );
     return this.state.phase !== 'idle';
   }
 
@@ -81,14 +99,17 @@ class MeetingSessionImpl {
     if (this.state.phase !== 'idle') throw new Error('A meeting is already in progress');
     this.set({ ...IDLE, phase: 'starting' });
     try {
-      if (!(await ensureRecordingPermissions())) throw new Error('Microphone permission is required');
+      if (!(await ensureRecordingPermissions()))
+        throw new Error('Microphone permission is required');
       const settings = await getMeetingSettings();
 
       let meeting: Meeting;
       if (params.continueMeetingId) {
         const existing = await meetingStore.get(params.continueMeetingId);
         if (!existing) throw new Error('Meeting not found');
-        meeting = (await meetingStore.update(existing.id, m => { m.status = 'recording'; }))!;
+        meeting = (await meetingStore.update(existing.id, m => {
+          m.status = 'recording';
+        }))!;
       } else {
         const now = Date.now();
         meeting = await meetingStore.create({
@@ -125,9 +146,11 @@ class MeetingSessionImpl {
       this.set({ meetingId: meeting.id, phase: 'recording', elapsedMs: meeting.durationMs });
 
       // Warm up STT while the first segment fills (~20 s); failures surface per segment.
-      transcriber.prepare(settings.sttModel).catch(e =>
-        this.set({ error: `Speech model: ${e instanceof Error ? e.message : String(e)}` }),
-      );
+      transcriber
+        .prepare(settings.sttModel)
+        .catch(e =>
+          this.set({ error: `Speech model: ${e instanceof Error ? e.message : String(e)}` }),
+        );
       return meeting.id;
     } catch (e) {
       this.detach();
@@ -138,19 +161,27 @@ class MeetingSessionImpl {
 
   async pause() {
     await Recorder.pause();
-    if (this.state.meetingId) await meetingStore.update(this.state.meetingId, m => { m.status = 'paused'; });
+    if (this.state.meetingId)
+      await meetingStore.update(this.state.meetingId, m => {
+        m.status = 'paused';
+      });
   }
 
   async resume() {
     await Recorder.resume();
-    if (this.state.meetingId) await meetingStore.update(this.state.meetingId, m => { m.status = 'recording'; });
+    if (this.state.meetingId)
+      await meetingStore.update(this.state.meetingId, m => {
+        m.status = 'recording';
+      });
   }
 
   async addMarker(note: string) {
     const id = this.state.meetingId;
     if (!id) return;
     const at = this.state.elapsedMs;
-    await meetingStore.update(id, m => { m.markers.push({ atMs: at, note: note.trim() }); });
+    await meetingStore.update(id, m => {
+      m.markers.push({ atMs: at, note: note.trim() });
+    });
   }
 
   /** Stops capture, then transcribes the backlog and (optionally) writes minutes. */
@@ -186,16 +217,24 @@ class MeetingSessionImpl {
     const settings = await getMeetingSettings();
     try {
       await Recorder.setProcessing('Transcribing meeting…').catch(() => {});
-      this.set({ meetingId: id, phase: 'transcribing', progressLabel: 'Transcribing', progress: 0 });
+      this.set({
+        meetingId: id,
+        phase: 'transcribing',
+        progressLabel: 'Transcribing',
+        progress: 0,
+      });
       await this.transcribePending(id);
 
       const meeting = await meetingStore.get(id);
       if (!meeting) return;
       const hasText = meeting.segments.some(s => s.status === 'done' && s.text);
-      const wantMinutes = opts.forceMinutes || (settings.autoGenerateMinutes && !meeting.minutes?.edited);
+      const wantMinutes =
+        opts.forceMinutes || (settings.autoGenerateMinutes && !meeting.minutes?.edited);
 
       if (hasText && wantMinutes) {
-        await meetingStore.update(id, m => { m.status = 'summarizing'; });
+        await meetingStore.update(id, m => {
+          m.status = 'summarizing';
+        });
         await Recorder.setProcessing('Writing minutes…').catch(() => {});
         this.set({ phase: 'summarizing', progressLabel: 'Writing minutes', progress: 0 });
         await generateMinutes(id, settings.summaryModel, (label, p) =>
@@ -215,7 +254,10 @@ class MeetingSessionImpl {
       if (settings.indexForChat) await this.indexForChat(id).catch(() => {});
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      await meetingStore.update(id, m => { m.status = 'error'; m.error = msg; });
+      await meetingStore.update(id, m => {
+        m.status = 'error';
+        m.error = msg;
+      });
       this.set({ error: msg });
     } finally {
       this.processing.delete(id);
@@ -234,7 +276,9 @@ class MeetingSessionImpl {
       if (!['recording', 'paused', 'transcribing', 'summarizing'].includes(e.status)) continue;
       if (live || this.processing.has(e.id) || this.state.meetingId === e.id) continue;
       await this.adoptOrphanSegments(e.id);
-      await meetingStore.update(e.id, m => { m.status = 'interrupted'; });
+      await meetingStore.update(e.id, m => {
+        m.status = 'interrupted';
+      });
       out.push(e.id);
     }
     return out;
@@ -246,16 +290,25 @@ class MeetingSessionImpl {
     this.detach();
     this.subs = [
       RecorderEvents.onSegment(seg => {
-        this.segmentChain = this.segmentChain.then(() => this.onSegment(meetingId, seg)).catch(() => {});
+        this.segmentChain = this.segmentChain
+          .then(() => this.onSegment(meetingId, seg))
+          .catch(() => {});
       }),
-      RecorderEvents.onLevel(l => this.set({ levelDb: l.db, elapsedMs: l.elapsedMs, isSpeech: l.isSpeech })),
+      RecorderEvents.onLevel(l =>
+        this.set({ levelDb: l.db, elapsedMs: l.elapsedMs, isSpeech: l.isSpeech }),
+      ),
       RecorderEvents.onState(s => {
-        if (s.state === 'recording' || s.state === 'paused') this.set({ phase: s.state, elapsedMs: s.elapsedMs });
-        meetingStore.update(meetingId, m => { m.durationMs = Math.max(m.durationMs, s.elapsedMs); });
+        if (s.state === 'recording' || s.state === 'paused')
+          this.set({ phase: s.state, elapsedMs: s.elapsedMs });
+        meetingStore.update(meetingId, m => {
+          m.durationMs = Math.max(m.durationMs, s.elapsedMs);
+        });
       }),
       RecorderEvents.onError(e => this.set({ error: e.message })),
       RecorderEvents.onSilenced(e => this.set({ silenced: e.silenced })),
-      RecorderEvents.onStopRequested(() => { this.stop().catch(() => {}); }),
+      RecorderEvents.onStopRequested(() => {
+        this.stop().catch(() => {});
+      }),
     ];
   }
 
@@ -293,15 +346,15 @@ class MeetingSessionImpl {
     const m = await meetingStore.get(meetingId);
     const seg = m?.segments.find(s => s.index === index);
     if (!m || !seg || !seg.audioFile) return;
-    if (!transcriber.getStatus().model) transcriber.prepare(m.sttModel ?? settings.sttModel).catch(() => {});
+    if (!transcriber.getStatus().model)
+      transcriber.prepare(m.sttModel ?? settings.sttModel).catch(() => {});
 
-    const prev = [...m.segments].reverse().find(s => s.index < index && s.status === 'done' && s.text);
-    const glossary = [
-      m.client,
-      m.project,
-      ...m.attendees.map(a => a.name),
-      settings.vocabulary,
-    ].filter(Boolean).join(', ');
+    const prev = [...m.segments]
+      .reverse()
+      .find(s => s.index < index && s.status === 'done' && s.text);
+    const glossary = [m.client, m.project, ...m.attendees.map(a => a.name), settings.vocabulary]
+      .filter(Boolean)
+      .join(', ');
 
     const outcome = await transcriber.enqueue({
       audioPath: `${meetingStore.audioDir(meetingId)}/${seg.audioFile}`,
@@ -328,14 +381,22 @@ class MeetingSessionImpl {
     const m = await meetingStore.get(id);
     if (!m) return;
     const settings = await getMeetingSettings();
-    const todo = m.segments.filter(s => (s.status === 'pending' || s.status === 'error') && s.audioFile);
-    if (todo.length === 0) { await transcriber.drain(); return; }
+    const todo = m.segments.filter(
+      s => (s.status === 'pending' || s.status === 'error') && s.audioFile,
+    );
+    if (todo.length === 0) {
+      await transcriber.drain();
+      return;
+    }
     await transcriber.prepare(m.sttModel ?? settings.sttModel);
     let done = 0;
     for (const s of todo) {
       await this.transcribeSegment(id, s.index);
       done++;
-      this.set({ progress: done / todo.length, progressLabel: `Transcribing ${done}/${todo.length}` });
+      this.set({
+        progress: done / todo.length,
+        progressLabel: `Transcribing ${done}/${todo.length}`,
+      });
     }
     await transcriber.drain();
   }
@@ -348,7 +409,9 @@ class MeetingSessionImpl {
     const m = await meetingStore.get(id);
     if (!m) return;
     const known = new Set(m.segments.map(s => s.audioFile));
-    const orphans = files.filter(f => !known.has(f.name)).sort((a, b) => a.name.localeCompare(b.name));
+    const orphans = files
+      .filter(f => !known.has(f.name))
+      .sort((a, b) => a.name.localeCompare(b.name));
     if (!orphans.length) return;
     let offset = m.segments.reduce((n, s) => Math.max(n, s.startMs + s.durationMs), 0);
     const added: TranscriptSegment[] = [];

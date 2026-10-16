@@ -1,42 +1,42 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
-  View,
-  Text,
+  ActivityIndicator,
+  Alert,
   Image,
-  TextInput,
-  TouchableOpacity,
   ScrollView,
   StyleSheet,
   Switch,
-  Alert,
-  ActivityIndicator,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { storage } from '../utils/storage';
-import { validateHFToken, pushDatasetToHub } from '../services/huggingfaceApi';
+
+import { theme } from '../config/theme';
 import { exportForFineTuning } from '../services/chatExport';
+import { pushDatasetToHub, validateHFToken } from '../services/huggingfaceApi';
 import { memoryService } from '../services/MemoryService';
 import { modelLifecycle } from '../services/ModelLifecycleManager';
 import { getDefaultSystemPrompt } from '../tools/registry';
-import { theme } from '../config/theme';
 import type { ChatSettings } from '../types';
 import { DEFAULT_SETTINGS } from '../types';
+import { storage } from '../utils/storage';
 
 interface SettingsScreenProps {
-  onOpenModelSelector: (
-    currentModel: string,
-    onSelect: (model: string) => void,
-  ) => void;
+  onOpenModelSelector: (currentModel: string, onSelect: (model: string) => void) => void;
 }
 
-export default function SettingsScreen({
-  onOpenModelSelector,
-}: SettingsScreenProps) {
+export default function SettingsScreen({ onOpenModelSelector }: SettingsScreenProps) {
   const [settings, setSettings] = useState<ChatSettings>(DEFAULT_SETTINGS);
   const [hfUsername, setHfUsername] = useState<string | null>(null);
   const [hfValidating, setHfValidating] = useState(false);
   const [hfPushing, setHfPushing] = useState(false);
-  const [memoryStats, setMemoryStats] = useState({ memoryCount: 0, documentCount: 0, documentFiles: [] as string[] });
+  const [memoryStats, setMemoryStats] = useState({
+    memoryCount: 0,
+    documentCount: 0,
+    documentFiles: [] as string[],
+  });
   const [docPath, setDocPath] = useState('');
   const [isImporting, setIsImporting] = useState(false);
   const [deviceProfileName, setDeviceProfileName] = useState<string>('Not detected');
@@ -49,10 +49,13 @@ export default function SettingsScreen({
       const profile = modelLifecycle.getDeviceProfile();
       if (profile) setDeviceProfileName(`${profile.name} (${profile.ramBudgetMb}MB budget)`);
     } else {
-      modelLifecycle.init().then(() => {
-        const profile = modelLifecycle.getDeviceProfile();
-        if (profile) setDeviceProfileName(`${profile.name} (${profile.ramBudgetMb}MB budget)`);
-      }).catch(() => {});
+      modelLifecycle
+        .init()
+        .then(() => {
+          const profile = modelLifecycle.getDeviceProfile();
+          if (profile) setDeviceProfileName(`${profile.name} (${profile.ramBudgetMb}MB budget)`);
+        })
+        .catch(() => {});
     }
   }, []);
 
@@ -100,10 +103,7 @@ export default function SettingsScreen({
       const result = await validateHFToken(token);
       if (result.valid) {
         setHfUsername(result.username || null);
-        Alert.alert(
-          'Token Valid',
-          `Authenticated as ${result.username}`,
-        );
+        Alert.alert('Token Valid', `Authenticated as ${result.username}`);
       } else {
         setHfUsername(null);
         Alert.alert('Token Invalid', result.error || 'Could not validate token.');
@@ -128,48 +128,36 @@ export default function SettingsScreen({
       return;
     }
 
-    Alert.alert(
-      'Push to Hub',
-      `Export ${chats.length} chat(s) to HuggingFace Hub?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Push',
-          onPress: async () => {
-            setHfPushing(true);
-            try {
-              const jsonl = exportForFineTuning(chats);
-              if (!jsonl.trim()) {
-                Alert.alert('No Data', 'No chats with enough messages to export.');
-                return;
-              }
-
-              const result = await pushDatasetToHub(token, jsonl, {
-                isPrivate: settings.hfPrivateDataset,
-              });
-
-              if (result.success) {
-                Alert.alert(
-                  'Push Successful',
-                  `Dataset uploaded to:\n${result.url}`,
-                );
-              } else {
-                Alert.alert('Push Failed', result.error || 'Unknown error.');
-              }
-            } catch (error) {
-              Alert.alert(
-                'Error',
-                error instanceof Error
-                  ? error.message
-                  : 'Failed to push to Hub.',
-              );
-            } finally {
-              setHfPushing(false);
+    Alert.alert('Push to Hub', `Export ${chats.length} chat(s) to HuggingFace Hub?`, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Push',
+        onPress: async () => {
+          setHfPushing(true);
+          try {
+            const jsonl = exportForFineTuning(chats);
+            if (!jsonl.trim()) {
+              Alert.alert('No Data', 'No chats with enough messages to export.');
+              return;
             }
-          },
+
+            const result = await pushDatasetToHub(token, jsonl, {
+              isPrivate: settings.hfPrivateDataset,
+            });
+
+            if (result.success) {
+              Alert.alert('Push Successful', `Dataset uploaded to:\n${result.url}`);
+            } else {
+              Alert.alert('Push Failed', result.error || 'Unknown error.');
+            }
+          } catch (error) {
+            Alert.alert('Error', error instanceof Error ? error.message : 'Failed to push to Hub.');
+          } finally {
+            setHfPushing(false);
+          }
         },
-      ],
-    );
+      },
+    ]);
   };
 
   const refreshMemoryStats = () => {
@@ -182,41 +170,33 @@ export default function SettingsScreen({
   };
 
   const handleClearMemory = () => {
-    Alert.alert(
-      'Clear Memory',
-      'Delete all stored memories? This cannot be undone.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Clear',
-          style: 'destructive',
-          onPress: async () => {
-            await memoryService.clearMemory();
-            refreshMemoryStats();
-            Alert.alert('Done', 'All memories cleared.');
-          },
+    Alert.alert('Clear Memory', 'Delete all stored memories? This cannot be undone.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Clear',
+        style: 'destructive',
+        onPress: async () => {
+          await memoryService.clearMemory();
+          refreshMemoryStats();
+          Alert.alert('Done', 'All memories cleared.');
         },
-      ],
-    );
+      },
+    ]);
   };
 
   const handleClearDocuments = () => {
-    Alert.alert(
-      'Clear Documents',
-      'Delete all imported documents? This cannot be undone.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Clear',
-          style: 'destructive',
-          onPress: async () => {
-            await memoryService.clearDocuments();
-            refreshMemoryStats();
-            Alert.alert('Done', 'All documents cleared.');
-          },
+    Alert.alert('Clear Documents', 'Delete all imported documents? This cannot be undone.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Clear',
+        style: 'destructive',
+        onPress: async () => {
+          await memoryService.clearDocuments();
+          refreshMemoryStats();
+          Alert.alert('Done', 'All documents cleared.');
         },
-      ],
-    );
+      },
+    ]);
   };
 
   const handleImportDocument = async () => {
@@ -240,22 +220,18 @@ export default function SettingsScreen({
   };
 
   const handleResetSettings = () => {
-    Alert.alert(
-      'Reset Settings',
-      'Reset all settings to default values?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Reset',
-          style: 'destructive',
-          onPress: async () => {
-            setSettings(DEFAULT_SETTINGS);
-            await storage.saveSettings(DEFAULT_SETTINGS);
-            setHfUsername(null);
-          },
+    Alert.alert('Reset Settings', 'Reset all settings to default values?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Reset',
+        style: 'destructive',
+        onPress: async () => {
+          setSettings(DEFAULT_SETTINGS);
+          await storage.saveSettings(DEFAULT_SETTINGS);
+          setHfUsername(null);
         },
-      ],
-    );
+      },
+    ]);
   };
 
   const renderSection = (title: string, children: React.ReactNode) => (
@@ -289,12 +265,7 @@ export default function SettingsScreen({
           <Text style={styles.sliderButtonText}>-</Text>
         </TouchableOpacity>
         <View style={styles.sliderTrack}>
-          <View
-            style={[
-              styles.sliderFill,
-              { width: `${((value - min) / (max - min)) * 100}%` },
-            ]}
-          />
+          <View style={[styles.sliderFill, { width: `${((value - min) / (max - min)) * 100}%` }]} />
         </View>
         <TouchableOpacity
           style={styles.sliderButton}
@@ -318,9 +289,7 @@ export default function SettingsScreen({
     <View style={styles.toggleRow}>
       <View style={styles.toggleLabel}>
         <Text style={styles.settingLabel}>{label}</Text>
-        {description && (
-          <Text style={styles.settingDescription}>{description}</Text>
-        )}
+        {description && <Text style={styles.settingDescription}>{description}</Text>}
       </View>
       <Switch
         value={value}
@@ -343,30 +312,27 @@ export default function SettingsScreen({
         </TouchableOpacity>
       </View>
 
-      <ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
-      >
-        {renderSection('Model', (
-          <TouchableOpacity
-            style={styles.modelSelector}
-            onPress={handleSelectModel}
-          >
+      <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
+        {renderSection(
+          'Model',
+          <TouchableOpacity style={styles.modelSelector} onPress={handleSelectModel}>
             <Text style={styles.modelSelectorLabel}>Current Model</Text>
             <Text style={styles.modelSelectorValue}>{settings.model}</Text>
-          </TouchableOpacity>
-        ))}
+          </TouchableOpacity>,
+        )}
 
-        {renderSection('Generation Parameters', (
+        {renderSection(
+          'Generation Parameters',
           <>
             {renderSlider('Temperature', settings.temperature, 0.0, 2.0, 0.1, 'temperature')}
             {renderSlider('Top P', settings.topP, 0.0, 1.0, 0.1, 'topP')}
             {renderSlider('Top K', settings.topK, 1, 100, 1, 'topK')}
             {renderSlider('Max Tokens', settings.maxTokens, 64, 4096, 64, 'maxTokens')}
-          </>
-        ))}
+          </>,
+        )}
 
-        {renderSection('System Prompt', (
+        {renderSection(
+          'System Prompt',
           <>
             <TextInput
               style={styles.systemPromptInput}
@@ -384,10 +350,11 @@ export default function SettingsScreen({
             >
               <Text style={styles.resetPromptText}>Reset to Default</Text>
             </TouchableOpacity>
-          </>
-        ))}
+          </>,
+        )}
 
-        {renderSection('Tools', (
+        {renderSection(
+          'Tools',
           <>
             {renderToggle(
               'Auto-Execute Tools',
@@ -395,10 +362,11 @@ export default function SettingsScreen({
               'autoExecuteTools',
               'Automatically run tool calls from the model',
             )}
-          </>
-        ))}
+          </>,
+        )}
 
-        {renderSection('Interaction', (
+        {renderSection(
+          'Interaction',
           <>
             {renderToggle(
               'Haptic Feedback',
@@ -427,10 +395,11 @@ export default function SettingsScreen({
                 </View>
               </>
             )}
-          </>
-        ))}
+          </>,
+        )}
 
-        {renderSection('Voice Input', (
+        {renderSection(
+          'Voice Input',
           <>
             {renderToggle(
               'Enable Voice Input',
@@ -485,10 +454,11 @@ export default function SettingsScreen({
                 )}
               </>
             )}
-          </>
-        ))}
+          </>,
+        )}
 
-        {renderSection('Memory', (
+        {renderSection(
+          'Memory',
           <>
             {renderToggle(
               'Enable Memory',
@@ -508,15 +478,11 @@ export default function SettingsScreen({
                   <Text style={styles.settingLabel}>Memory Stats</Text>
                   <Text style={styles.memoryStatsText}>
                     {memoryStats.memoryCount} memories, {memoryStats.documentCount} doc chunks
-                    {memoryStats.documentFiles.length > 0 && (
-                      ` (${memoryStats.documentFiles.join(', ')})`
-                    )}
+                    {memoryStats.documentFiles.length > 0 &&
+                      ` (${memoryStats.documentFiles.join(', ')})`}
                   </Text>
                 </View>
-                <TouchableOpacity
-                  style={styles.memoryActionButton}
-                  onPress={handleClearMemory}
-                >
+                <TouchableOpacity style={styles.memoryActionButton} onPress={handleClearMemory}>
                   <Text style={styles.memoryActionText}>Clear Memory</Text>
                 </TouchableOpacity>
                 <View style={styles.settingRow}>
@@ -552,10 +518,11 @@ export default function SettingsScreen({
                 </View>
               </>
             )}
-          </>
-        ))}
+          </>,
+        )}
 
-        {renderSection('Model Orchestration', (
+        {renderSection(
+          'Model Orchestration',
           <>
             {renderToggle(
               'Enable Orchestration',
@@ -577,10 +544,11 @@ export default function SettingsScreen({
                 </View>
               </>
             )}
-          </>
-        ))}
+          </>,
+        )}
 
-        {renderSection('HuggingFace Hub', (
+        {renderSection(
+          'HuggingFace Hub',
           <>
             <View style={styles.settingRow}>
               <Text style={styles.settingLabel}>API Token</Text>
@@ -609,11 +577,7 @@ export default function SettingsScreen({
                 )}
               </TouchableOpacity>
 
-              {hfUsername && (
-                <Text style={styles.hfUsername}>
-                  Authenticated: {hfUsername}
-                </Text>
-              )}
+              {hfUsername && <Text style={styles.hfUsername}>Authenticated: {hfUsername}</Text>}
             </View>
 
             {renderToggle(
@@ -634,25 +598,18 @@ export default function SettingsScreen({
               {hfPushing ? (
                 <ActivityIndicator size="small" color={theme.colors.text} />
               ) : (
-                <Text style={styles.pushButtonText}>
-                  Push Chat History to Hub
-                </Text>
+                <Text style={styles.pushButtonText}>Push Chat History to Hub</Text>
               )}
             </TouchableOpacity>
-          </>
-        ))}
+          </>,
+        )}
 
         <View style={styles.footer}>
-          <Image
-            source={require('../assets/liquidchat_logo.png')}
-            style={styles.footerLogo}
-          />
+          <Image source={require('../assets/liquidchat_logo.png')} style={styles.footerLogo} />
           <Text style={styles.footerBranding}>🌵💧</Text>
           <Text style={styles.footerAppName}>LiquidChat</Text>
           <Text style={styles.footerText}>Powered by Liquid AI</Text>
-          <Text style={styles.footerDeveloper}>
-            Developed by Kshitij Thakkar
-          </Text>
+          <Text style={styles.footerDeveloper}>Developed by Kshitij Thakkar</Text>
         </View>
       </ScrollView>
     </SafeAreaView>

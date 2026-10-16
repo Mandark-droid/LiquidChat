@@ -1,4 +1,5 @@
 import { Linking, Platform } from 'react-native';
+
 import type { ToolResult } from '../types';
 
 const SETTINGS_PAGES: Record<string, string> = {
@@ -29,7 +30,11 @@ const SETTINGS_PAGES: Record<string, string> = {
 
 export async function openSettingsPage(page: string): Promise<ToolResult> {
   try {
-    const key = page.toLowerCase().replace(/[\s_-]+/g, '_').replace(/settings?$/i, '').replace(/_$/, '');
+    const key = page
+      .toLowerCase()
+      .replace(/[\s_-]+/g, '_')
+      .replace(/settings?$/i, '')
+      .replace(/_$/, '');
     const action = SETTINGS_PAGES[key];
 
     if (Platform.OS === 'android') {

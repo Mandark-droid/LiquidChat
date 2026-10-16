@@ -1,28 +1,24 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import * as RNFS from '@dr.pogodin/react-native-fs';
+import { CactusLM } from 'cactus-react-native';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
-  View,
+  ActivityIndicator,
+  Alert,
+  ScrollView,
+  StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
-  ScrollView,
-  StyleSheet,
-  ActivityIndicator,
-  Alert,
+  View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import * as RNFS from '@dr.pogodin/react-native-fs';
-import { CactusLM } from 'cactus-react-native';
-import {
-  LIQUID_MODELS,
-  getModelsByCategory,
-  getModelBySlug,
-  getModelTier,
-} from '../config/models';
+
 import ModelCard from '../components/ModelCard';
-import { useModelManager } from '../hooks/useModelManager';
-import { listDownloadedCactusModels } from '../utils/engineMigration';
+import { getModelsByCategory, getModelTier } from '../config/models';
 import { theme } from '../config/theme';
+import { useModelManager } from '../hooks/useModelManager';
 import type { LiquidModel, ModelCategory, ModelTier } from '../types';
+import { listDownloadedCactusModels } from '../utils/engineMigration';
 
 type Tab = 'local' | 'hub';
 type TierFilter = 'all' | ModelTier;
@@ -58,12 +54,8 @@ export default function ModelSelectionScreen({
   const [activeCategory, setActiveCategory] = useState<ModelCategory>('text');
   const [activeTier, setActiveTier] = useState<TierFilter>('all');
   const [searchQuery, setSearchQuery] = useState('');
-  const [downloadProgress, setDownloadProgress] = useState<
-    Record<string, number>
-  >({});
-  const [downloadedModels, setDownloadedModels] = useState<Set<string>>(
-    new Set(),
-  );
+  const [downloadProgress, setDownloadProgress] = useState<Record<string, number>>({});
+  const [downloadedModels, setDownloadedModels] = useState<Set<string>>(new Set());
   const [hfSearchQuery, setHfSearchQuery] = useState('');
   const [hfResults, setHfResults] = useState<any[]>([]);
   const [hfSearching, setHfSearching] = useState(false);
@@ -81,7 +73,8 @@ export default function ModelSelectionScreen({
       if (await RNFS.exists(modelsDir)) {
         for (const file of await RNFS.readDir(modelsDir)) {
           if (file.name.endsWith('.gguf')) downloaded.add(file.name.replace('.gguf', ''));
-          else if (file.isDirectory() && (await RNFS.exists(`${file.path}/config.txt`))) downloaded.add(file.name);
+          else if (file.isDirectory() && (await RNFS.exists(`${file.path}/config.txt`)))
+            downloaded.add(file.name);
         }
       }
     } catch {
@@ -175,7 +168,9 @@ export default function ModelSelectionScreen({
         const apiUrl = `https://huggingface.co/api/models/${model.hfRepo}`;
         const apiResponse = await fetch(apiUrl);
         if (!apiResponse.ok) {
-          throw new Error(`Failed to fetch model info from HuggingFace (HTTP ${apiResponse.status})`);
+          throw new Error(
+            `Failed to fetch model info from HuggingFace (HTTP ${apiResponse.status})`,
+          );
         }
         const repoInfo = await apiResponse.json();
         const siblings: Array<{ rfilename: string }> = repoInfo.siblings || [];
@@ -222,9 +217,8 @@ export default function ModelSelectionScreen({
               fromUrl: fileUrl,
               toFile: destPath,
               progress: res => {
-                const fileProgress = res.contentLength > 0
-                  ? res.bytesWritten / res.contentLength
-                  : 0;
+                const fileProgress =
+                  res.contentLength > 0 ? res.bytesWritten / res.contentLength : 0;
                 const overall = (downloadedCount + fileProgress) / filesToDownload.length;
                 setDownloadProgress(prev => ({
                   ...prev,
@@ -296,10 +290,7 @@ export default function ModelSelectionScreen({
         delete next[model.slug];
         return next;
       });
-      Alert.alert(
-        'Download Failed',
-        error instanceof Error ? error.message : 'Unknown error',
-      );
+      Alert.alert('Download Failed', error instanceof Error ? error.message : 'Unknown error');
     }
   };
 
@@ -384,12 +375,7 @@ export default function ModelSelectionScreen({
         style={[styles.tab, activeTab === 'local' && styles.activeTab]}
         onPress={() => setActiveTab('local')}
       >
-        <Text
-          style={[
-            styles.tabText,
-            activeTab === 'local' && styles.activeTabText,
-          ]}
-        >
+        <Text style={[styles.tabText, activeTab === 'local' && styles.activeTabText]}>
           Local Models
         </Text>
       </TouchableOpacity>
@@ -397,12 +383,7 @@ export default function ModelSelectionScreen({
         style={[styles.tab, activeTab === 'hub' && styles.activeTab]}
         onPress={() => setActiveTab('hub')}
       >
-        <Text
-          style={[
-            styles.tabText,
-            activeTab === 'hub' && styles.activeTabText,
-          ]}
-        >
+        <Text style={[styles.tabText, activeTab === 'hub' && styles.activeTabText]}>
           HuggingFace Hub
         </Text>
       </TouchableOpacity>
@@ -419,17 +400,11 @@ export default function ModelSelectionScreen({
       {CATEGORIES.map(cat => (
         <TouchableOpacity
           key={cat.key}
-          style={[
-            styles.categoryChip,
-            activeCategory === cat.key && styles.activeCategoryChip,
-          ]}
+          style={[styles.categoryChip, activeCategory === cat.key && styles.activeCategoryChip]}
           onPress={() => setActiveCategory(cat.key)}
         >
           <Text
-            style={[
-              styles.categoryText,
-              activeCategory === cat.key && styles.activeCategoryText,
-            ]}
+            style={[styles.categoryText, activeCategory === cat.key && styles.activeCategoryText]}
           >
             {cat.label}
           </Text>
@@ -459,17 +434,11 @@ export default function ModelSelectionScreen({
           {TIER_FILTERS.map(tf => (
             <TouchableOpacity
               key={tf.key}
-              style={[
-                styles.categoryChip,
-                activeTier === tf.key && styles.activeCategoryChip,
-              ]}
+              style={[styles.categoryChip, activeTier === tf.key && styles.activeCategoryChip]}
               onPress={() => setActiveTier(tf.key)}
             >
               <Text
-                style={[
-                  styles.categoryText,
-                  activeTier === tf.key && styles.activeCategoryText,
-                ]}
+                style={[styles.categoryText, activeTier === tf.key && styles.activeCategoryText]}
               >
                 {tf.label}
               </Text>
@@ -527,12 +496,8 @@ export default function ModelSelectionScreen({
 
       {hfResults.length === 0 && !hfSearching && (
         <View style={styles.emptyState}>
-          <Text style={styles.emptyText}>
-            Search for GGUF models on HuggingFace Hub
-          </Text>
-          <Text style={styles.emptySubtext}>
-            Results will show compatible quantized models
-          </Text>
+          <Text style={styles.emptyText}>Search for GGUF models on HuggingFace Hub</Text>
+          <Text style={styles.emptySubtext}>Results will show compatible quantized models</Text>
         </View>
       )}
 
