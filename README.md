@@ -16,6 +16,12 @@
   <img src="https://img.shields.io/badge/React%20Native-0.81.1-61dafb?style=flat-square&logo=react&logoColor=white" alt="React Native"/>
 </p>
 
+<p align="center">
+  <img src="docs/demo/liquidchat-v1.1-demo.gif" width="300" alt="LiquidChat v1.1 demo: streaming chat, model routing, Hugging Face search, speaker-labelled meeting minutes, creating and running a skill, agent dashboard"/>
+  <br/>
+  <sub>v1.1 on a Nothing Phone 2a, sped up: chat on LFM2.5-350M → tool request routed to LFM2.5-1.2B (Hugging Face search) → 5-speaker meeting with owners → a skill created from one sentence and run → loaded models and MCP settings.</sub>
+</p>
+
 ---
 
 ## Overview
@@ -24,11 +30,30 @@ LiquidChat is a React Native mobile application and personal agent platform buil
 
 The working prototype (v0.x) demonstrates the core loop: a LoRA fine-tuned LFM2.5-1.2B-Instruct model translates natural language into structured function calls that execute real Android device actions. The v1.0 roadmap expands this into a full multi-model orchestrator with voice input, vision pipeline, persistent semantic memory, and 30+ native tools.
 
-> **Current State (v0.x — Shipping)**
-> LFM2.5-1.2B-Instruct fine-tuned on 31,550 samples with LoRA (r=16, alpha=16) via Unsloth. 7 native tools with auto-execution. Token streaming, tool parsing, chat history, HF Hub dataset export, multi-model browser, custom model loading, TTS, haptics.
+> **Current release: v1.1**
+> A local-first agent: streaming on-device chat, 35+ native tools, a permission-gated multi-step agent runtime, meeting recording with speaker-labelled transcripts and client-ready minutes, tasks, an email drafter, and MCP servers (Hugging Face built in). See [What's new in v1.1](#whats-new-in-v11).
 
-> **In Progress (v1.0 — Phase 1)**
-> System Controls (+10 tools), multi-model orchestration, model lifecycle management, intent routing, and agent dashboard. See the [implementation roadmap](#roadmap) below.
+## What's new in v1.1
+
+**Chat & agent**
+- **Fast, streaming chat.** Plain conversation answers directly with a short prompt and streams tokens (first word in about a second on a mid-range phone). Tool and task requests go to the agent runtime. Live tokens, speed and time-to-first-token are shown.
+- **Smarter tool use.** The agent asks for details it wasn't given (an email address, a phone number) instead of inventing them; near-miss tool names from small models are repaired; alarms, timers, contacts and settings pages work on Android 11+ (they were silently failing).
+- **Hugging Face MCP server built in.** Search models, datasets and Spaces and read repo details from chat; uses your Hugging Face token if you saved one. Add any other MCP server in Agent settings.
+- **Task-based model routing.** Quick chat replies stay on the small LFM2.5-350M; tool calls, planning and structured work go to LFM2.5-1.2B. Only tools relevant to the request are sent to the model, which cut the wait before the first word from ~17 s to ~6 s.
+- **Skills from one sentence.** "Every evening summarize my open tasks" becomes a reviewed, schedulable skill in seconds; the five built-in skills (meeting prep, morning brief, focus mode, meeting follow-up, end of day) are unchanged.
+- **Updated model weights.** Chat, speech, embedding and speaker models use the v1.14 weights that match the Cactus 1.13 engine; the app replaces older copies once.
+
+**Meetings**
+- **Speaker identification.** Voice fingerprints separate speakers; names come from introductions ("I'm Priya") and from who answers whom; rename a speaker once and every line and the minutes follow. Action-item owners come from who actually said "I'll…".
+- **Upload or share a recording.** Pick any audio or video file (m4a, aac, mp3, wav, ogg, opus, amr, 3gp, mp4) or use *Share → LiquidChat* from your recorder app, then get the transcript and minutes.
+- **Auto-detect language, translate to English by default** (Whisper; Hindi/English code-switching), with an English fallback.
+- **Every exported MoM carries the LiquidChat footer** — logo, name and "Generated using LiquidChat" — on PDF, Word, Markdown and shared text.
+- Hardened transcription: loops, punctuation stalls and copied template text are filtered, with a sampling retry.
+
+**Tasks, email & the rest**
+- Tasks: calendar hand-off works, due dates and quick-add are reliable, editing sheet fixed. Email drafter uses a model that fits in memory and never leaves `[Your Name]` placeholders.
+- Speech speed setting (text-to-speech was playing at about 3×).
+- Text no longer clips under Android's *Bold text* setting; bottom bars clear the navigation bar; every dialog closes with Back; long menus use a proper sheet; Back navigates instead of exiting.
 
 ## How It Works
 
@@ -40,7 +65,7 @@ The working prototype (v0.x) demonstrates the core loop: a LoRA fine-tuned LFM2.
 
 ## Tools
 
-### Current Tools (7 — Shipping)
+### Core tools
 
 | Tool | Description | Implementation |
 |------|-------------|----------------|
@@ -52,7 +77,7 @@ The working prototype (v0.x) demonstrates the core loop: a LoRA fine-tuned LFM2.
 | `show_map` | Shows a location on the map | `geo:` URL scheme |
 | `create_contact` | Creates a new contact | Contacts content intent |
 
-### Phase 1 — System Controls (+10, in progress)
+### System controls
 
 | Tool | Description |
 |------|-------------|
@@ -67,10 +92,17 @@ The working prototype (v0.x) demonstrates the core loop: a LoRA fine-tuned LFM2.
 | `toggle_rotation_lock` | Lock/unlock screen rotation |
 | `open_settings_page` | Open any Android settings page |
 
-### Phases 2–3 (Planned)
+### UI automation (sideload build)
 
-- **Phase 2 — App Navigation (+8):** launch apps, open URLs, share text, web search, phone calls, SMS, file open, set wallpaper
-- **Phase 3 — UI Automation (+10):** tap, scroll, type, read screen, find elements, gestures via Android Accessibility Service
+`tap_element`, `long_press_element`, `scroll_screen`, `swipe_screen`, `type_text`, `read_screen`, `find_element`, `go_back`, `go_home` and `open_recents` run through an Android Accessibility Service. They are only in the `full` flavor; the `play` flavor (Play Store policy) does not declare the service.
+
+### Agent, memory and context tools
+
+`tasks.add`, `tasks.list`, `meetings.latest`, `meetings.search`, `memory.search`, `memory.remember`, `device.context`, `notifications.recent`, `time.now`, `dates.resolve` — plus any tools from connected MCP servers.
+
+### Planned
+
+- **App navigation:** launch apps, open URLs, share text, web search, phone calls, SMS, file open, set wallpaper
 
 ## Model Details
 
@@ -87,10 +119,12 @@ The working prototype (v0.x) demonstrates the core loop: a LoRA fine-tuned LFM2.
 
 Everything below runs on the phone; audio, transcripts and drafts never leave it.
 
-- **Meeting recorder** — tap record, lock the phone. A foreground service captures 16 kHz mono audio, cuts it into ~20–30 s segments at pauses, and transcribes each one while the meeting is still going (Whisper, Parakeet TDT v3 or Moonshine). Client and attendee names are fed to Whisper as context; Hindi and translate-to-English are supported. Pause/resume/stop from the notification; mark important moments with ★.
+- **Meeting recorder** — tap record, lock the phone. A foreground service captures 16 kHz mono audio, cuts it into ~20–30 s segments at pauses, and transcribes each one while the meeting is still going (Whisper, Parakeet TDT v3 or Moonshine). Client and attendee names are fed to Whisper as context; Language is auto-detected per segment and translated to English by default (Hindi, Marathi, Gujarati, Tamil, Telugu, Bengali and more with Whisper). Pause/resume/stop from the notification; mark important moments with ★.
 - **Minutes of meeting** — when you stop, an on-device LLM writes a summary, key points, decisions, open questions, next steps and action items (owner + due date, "by Friday" resolved to a real date). Long meetings are summarised in windows and merged. Everything is editable before it goes to a client.
+- **Speaker identification** — each transcript line carries a speaker; names are suggested from introductions and attendee lists, can be renamed in one tap, and action-item owners come from who spoke.
+- **Upload or share recordings** — pick an audio/video file (including `.aac`/`.m4a` from your phone's recorder) or share it to LiquidChat, then get a transcript and minutes.
 - **Import transcripts** — paste from Zoom, Google Meet, Teams, Otter or a `.vtt` file and get the same minutes.
-- **Client-ready documents** — export the MoM as **PDF**, **Word (.docx)**, Markdown or text, branded *LiquidChat* (optional organisation letterhead in Meeting settings). Share to any app, save to `Downloads/LiquidChat`, or email it to attendees with the file attached.
+- **Client-ready documents** — export the MoM as **PDF**, **Word (.docx)**, Markdown or text, with a LiquidChat footer on every export — logo, name and *Generated using LiquidChat* (optional organisation letterhead in Meeting settings). Share to any app, save to `Downloads/LiquidChat`, or email it to attendees with the file attached.
 - **Tasks** — one list for your own to-dos and every meeting's action items. Natural-language quick add (`send Acme proposal by Friday !high @Acme`), voice add, Today / Upcoming / Done views, "Mine" and per-client filters, add to calendar.
 - **Email drafter** — follow-up after a meeting, a new email from one line of intent, or a reply to a pasted email. Pick a tone, refine with instructions ("shorter", "more formal"), then open it in your mail app or send it with the MoM PDF attached.
 - **Ask about a meeting** — opens a chat grounded in that meeting's minutes and transcript.
@@ -105,7 +139,8 @@ LiquidChat is now a local-first agent, not just a chat with tools. Spec: [`docs/
 - **Approvals** — anything sensitive asks first (spoken in voice mode); sending is never "always allowed".
 - **Memory** — remembers preferences and past outcomes only with your OK; inspect, edit, pin, export or wipe it.
 - **Skills & routines** — Meeting preparation, Morning briefing, Focus mode, Meeting follow-up, End of day; create your own in plain language, save a workflow that worked, import/export. Skills are declarative — they cannot run code.
-- **Notification summaries** (opt-in), **MCP servers** as extra tools, **insights** (completion, routing, latency, cost) and an **offline evaluation set**.
+- **MCP servers** as extra tools — the read-only **Hugging Face** server (model/dataset/Space search and repo details) is preinstalled and can be disabled or removed; calls that leave the phone follow your privacy and approval settings.
+- **Notification summaries** (opt-in), **insights** (completion, routing, latency, cost) and an **offline evaluation set**.
 
 ### Code quality
 
@@ -125,7 +160,9 @@ LiquidChat is now a local-first agent, not just a chat with tools. Spec: [`docs/
 - **Inference metrics** — Live tokens/second, time-to-first-token display
 - **Text-to-speech** — Optional auto-speak for assistant responses
 - **Haptic feedback** — Vibration on send and tool execution
-- **Agent dashboard** — Loaded model states, RAM usage, action history (Phase 5)
+- **Agent dashboard** — Loaded model states, RAM usage, action history
+- **Speech speed** — adjustable text-to-speech rate with a voice preview
+- **Share to LiquidChat** — send audio from other apps straight into a new meeting
 
 ## Project Structure
 
@@ -221,8 +258,8 @@ The `ModelLifecycleManager` handles LRU eviction of warm/cold models to stay wit
 ### Phase 0 — Foundation (Done)
 LoRA trained, 7 tools working, token streaming, HF Hub export, APK shipping.
 
-### Phase 1 — System Controls (In Progress)
-+10 system control tools, `SystemControlsModule.java` native bridge, LoRA retrain on expanded dataset, compound action support.
+### Phase 1 — System Controls (Done)
++10 system control tools, `SystemControlsModule` native bridge, compound actions through the agent runtime. LoRA retrain on the expanded dataset is still open.
 
 ### Phase 2 — Voice Input
 Integrate `useCactusVAD` + `useCactusSTT` hooks, `VoiceInputButton` component, full voice loop via existing `ttsManager.ts`.
@@ -274,11 +311,11 @@ npm install
 # Debug build (run on connected device)
 npm run android
 
-# Release APK
-cd android && ./gradlew assembleRelease
+# Release APKs (two flavors: `full` = sideload with UI automation, `play` = Play Store policy-safe)
+cd android && ./gradlew assembleFullRelease -PreactNativeArchitectures=arm64-v8a
 ```
 
-APK output: `android/app/build/outputs/apk/release/app-release.apk`
+APK output: `android/app/build/outputs/apk/full/release/app-full-release.apk`. Release builds are currently signed with the debug keystore (fine for sideloading; add your own keystore before publishing to Play).
 
 ### Model Setup
 
