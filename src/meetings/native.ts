@@ -47,6 +47,8 @@ interface MeetingRecorderNative {
     opts?: { segmentSec?: number; startIndex?: number },
   ): Promise<ImportedAudio>;
   cancelImport(): Promise<void>;
+  /** Files shared into the app (Share / Open with) since the last call, as cached copies. */
+  consumeSharedAudio(): Promise<PickedAudio[]>;
 }
 
 interface MeetingDocsNative {
@@ -86,6 +88,9 @@ export const isRecorderAvailable = (): boolean =>
 export const isAudioImportAvailable = (): boolean =>
   isRecorderAvailable() && typeof NativeModules.MeetingRecorder.importAudio === 'function';
 
+export const isSharedAudioAvailable = (): boolean =>
+  isRecorderAvailable() && typeof NativeModules.MeetingRecorder.consumeSharedAudio === 'function';
+
 export const RecorderEvents = {
   onSegment: (cb: (e: RecorderSegmentEvent) => void): EmitterSubscription =>
     DeviceEventEmitter.addListener('MeetingRecorder:segment', cb),
@@ -101,6 +106,8 @@ export const RecorderEvents = {
     DeviceEventEmitter.addListener('MeetingRecorder:stopRequested', cb),
   onImportProgress: (cb: (e: ImportProgressEvent) => void): EmitterSubscription =>
     DeviceEventEmitter.addListener('MeetingRecorder:importProgress', cb),
+  onShared: (cb: () => void): EmitterSubscription =>
+    DeviceEventEmitter.addListener('MeetingRecorder:shared', cb),
 };
 
 /** Mic is mandatory; notifications are best-effort (FGS still runs without them). */

@@ -9,6 +9,7 @@ import { meetingStore } from './MeetingStore';
 import { defaultTitle, generateMinutes, transcriptPlain } from './MinutesGenerator';
 import { ensureRecordingPermissions, Recorder, RecorderEvents } from './native';
 import { getMeetingSettings } from './settings';
+import { identifySpeakers } from './SpeakerIdentifier';
 import { transcriber } from './Transcriber';
 import type {
   Attendee,
@@ -343,6 +344,17 @@ class MeetingSessionImpl {
         progress: 0,
       });
       await this.transcribePending(id);
+
+      const transcribed = await meetingStore.get(id);
+      if (transcribed && !transcribed.speakers?.length) {
+        // Cactus models share one native thread pool: Whisper must be idle (released).
+        await transcriber.release();
+        await Recorder.setProcessing('Identifying speakers…').catch(() => {});
+        this.set({ progressLabel: 'Identifying speakers', progress: 0 });
+        await identifySpeakers(id, (label, p) =>
+          this.set({ progressLabel: label, progress: p }),
+        ).catch(e => warn('speakers', e));
+      }
 
       const meeting = await meetingStore.get(id);
       if (!meeting) return;

@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import ActionSheet, { type ActionSheetOption } from '../components/ActionSheet';
 import {
   Button,
   Card,
@@ -41,6 +42,7 @@ import { formatAttendees, parseAttendees } from '../meetings/importTranscript';
 import { meetingSession } from '../meetings/MeetingSession';
 import { meetingStore, newActionId } from '../meetings/MeetingStore';
 import { formatClock } from '../meetings/MinutesGenerator';
+import { speakerLabel } from '../meetings/speakers';
 import type { ActionItem, ActionPriority, Meeting, Minutes } from '../meetings/types';
 import { createCalendarEvent } from '../tools/calendarEvent';
 
@@ -66,6 +68,7 @@ export default function MeetingDetailScreen({
   const [tab, setTab] = useState<Tab>('minutes');
   const [editing, setEditing] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
   const [editAction, setEditAction] = useState<ActionItem | 'new' | null>(null);
   const [audioBytes, setAudioBytes] = useState(0);
 
@@ -89,8 +92,8 @@ export default function MeetingDetailScreen({
   const busy = processingHere || recordingHere || meetingSession.isBusy(meetingId);
   const openCount = meeting.actionItems.filter(a => a.status === 'open').length;
 
-  const more = () => {
-    const opts: { text: string; onPress?: () => void; style?: 'cancel' | 'destructive' }[] = [
+  const menuOptions = (): ActionSheetOption[] => {
+    const opts: ActionSheetOption[] = [
       { text: 'Ask about this meeting in chat', onPress: () => onAskInChat(meetingId) },
     ];
     if (meeting.segments.some(s => s.status === 'done')) {
@@ -127,13 +130,13 @@ export default function MeetingDetailScreen({
     if (audioBytes > 0) {
       opts.push({
         text: `Delete audio (${(audioBytes / 1e6).toFixed(0)} MB)`,
-        style: 'destructive',
+        destructive: true,
         onPress: () => meetingStore.deleteAudio(meetingId),
       });
     }
     opts.push({
       text: 'Delete meeting',
-      style: 'destructive',
+      destructive: true,
       onPress: () =>
         Alert.alert('Delete meeting', 'Delete audio, transcript and minutes?', [
           { text: 'Cancel', style: 'cancel' },
@@ -147,8 +150,7 @@ export default function MeetingDetailScreen({
           },
         ]),
     });
-    opts.push({ text: 'Cancel', style: 'cancel' });
-    Alert.alert(meeting.title, undefined, opts);
+    return opts;
   };
 
   return (
@@ -172,7 +174,7 @@ export default function MeetingDetailScreen({
         right={
           <>
             <HeaderButton label="⤴" onPress={() => setExportOpen(true)} />
-            <HeaderButton label="⋯" onPress={more} />
+            <HeaderButton label="⋯" onPress={() => setMenuOpen(true)} />
           </>
         }
       />
@@ -238,6 +240,12 @@ export default function MeetingDetailScreen({
 
       <ExportSheet visible={exportOpen} meeting={meeting} onClose={() => setExportOpen(false)} />
       <ActionEditor meeting={meeting} item={editAction} onClose={() => setEditAction(null)} />
+      <ActionSheet
+        visible={menuOpen}
+        title={meeting.title}
+        options={menuOpen ? menuOptions() : []}
+        onClose={() => setMenuOpen(false)}
+      />
     </SafeAreaView>
   );
 }
@@ -560,7 +568,101 @@ export function ActionRow({
   );
 }
 
+const SPEAKER_COLORS = ['#2F6F9F', '#9A4D1F', '#3E7D3A', '#7B4F9E', '#A23B5A', '#4A6B78'];
+const speakerColor = (id: string) =>
+  SPEAKER_COLORS[
+    (Number(id.replace(/\D/g, '')) - 1 + SPEAKER_COLORS.length) % SPEAKER_COLORS.length
+  ];
+
+function SpeakerBar({ meeting, onRename }: { meeting: Meeting; onRename: () => void }) {
+  return (
+    <Card style={{ marginBottom: 12 }}>
+      <Text style={ui.body}>
+        {meeting.speakers!.length} speaker{meeting.speakers!.length === 1 ? '' : 's'} identified
+      </Text>
+      <View style={styles.speakerChips}>
+        {meeting.speakers!.map(sp => (
+          <Chip key={sp.id} label={speakerLabel(meeting.speakers, sp.id)} onPress={onRename} />
+        ))}
+      </View>
+      <Button
+        label="Rename speakers"
+        small
+        onPress={onRename}
+        style={{ marginTop: 8, alignSelf: 'flex-start' }}
+      />
+    </Card>
+  );
+}
+
+function SpeakerRenameSheet({
+  visible,
+  meeting,
+  onClose,
+}: {
+  visible: boolean;
+  meeting: Meeting;
+  onClose: () => void;
+}) {
+  const [names, setNames] = useState<Record<string, string>>({});
+  useEffect(() => {
+    if (visible)
+      setNames(Object.fromEntries((meeting.speakers ?? []).map(s => [s.id, s.name ?? ''])));
+  }, [visible, meeting.speakers]);
+
+  const save = async () => {
+    const changed = (meeting.speakers ?? []).some(
+      s => (s.name ?? '') !== (names[s.id] ?? '').trim(),
+    );
+    if (changed) {
+      await meetingStore.update(meeting.id, m => {
+        m.speakers = (m.speakers ?? []).map(s => {
+          const name = (names[s.id] ?? '').trim();
+          if (name === (s.name ?? '')) return s;
+          return name ? { id: s.id, name, nameSource: 'user' } : { id: s.id };
+        });
+      });
+      // Owners in the minutes come from these names, so rewrite them.
+      if (meeting.minutes) meetingSession.processMeeting(meeting.id, { forceMinutes: true });
+    }
+    onClose();
+  };
+
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <KeyboardAvoidingView
+        style={styles.backdrop}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        <View style={styles.sheet}>
+          <ScrollView keyboardShouldPersistTaps="handled">
+            <Text style={styles.sheetTitle}>Who is who?</Text>
+            <Text style={[ui.body, { marginBottom: 12 }]}>
+              Names apply to every line and to action-item owners. Minutes are rewritten after you
+              save.
+            </Text>
+            {(meeting.speakers ?? []).map(sp => (
+              <Field
+                key={sp.id}
+                label={`Speaker ${sp.id.replace(/^S/, '')}${sp.nameSource === 'auto' ? ' (suggested)' : ''}`}
+                value={names[sp.id] ?? ''}
+                placeholder="Name"
+                onChangeText={t => setNames(n => ({ ...n, [sp.id]: t }))}
+              />
+            ))}
+            <View style={styles.sheetButtons}>
+              <Button label="Cancel" small onPress={onClose} />
+              <Button label="Save" small onPress={save} />
+            </View>
+          </ScrollView>
+        </View>
+      </KeyboardAvoidingView>
+    </Modal>
+  );
+}
+
 function TranscriptView({ meeting }: { meeting: Meeting }) {
+  const [renaming, setRenaming] = useState(false);
   const segs = meeting.segments;
   if (!segs.length) return <EmptyState title="No transcript" />;
   const errors = segs.filter(s => s.status === 'error').length;
@@ -577,25 +679,44 @@ function TranscriptView({ meeting }: { meeting: Meeting }) {
           />
         </Card>
       ) : null}
-      {segs.map(s => (
-        <View key={s.index} style={{ marginBottom: 10 }}>
-          {s.startMs >= 0 ? <Text style={styles.ts}>{formatClock(s.startMs)}</Text> : null}
-          <Text
-            style={[
-              ui.body,
-              s.status !== 'done' && { color: theme.colors.textMuted, fontStyle: 'italic' },
-            ]}
-          >
-            {s.status === 'done'
-              ? s.text
-              : s.status === 'skipped'
-                ? '(silence)'
-                : s.status === 'pending'
-                  ? '(transcribing…)'
-                  : `(failed: ${s.error ?? 'error'})`}
-          </Text>
-        </View>
-      ))}
+      {meeting.speakers?.length ? (
+        <SpeakerBar meeting={meeting} onRename={() => setRenaming(true)} />
+      ) : null}
+      <SpeakerRenameSheet visible={renaming} meeting={meeting} onClose={() => setRenaming(false)} />
+      {segs.map(s =>
+        s.status === 'done' && s.utterances?.length ? (
+          s.utterances.map((u, k) => (
+            <View key={`${s.index}-${k}`} style={{ marginBottom: 10 }}>
+              <Text style={styles.ts}>
+                {formatClock(u.startMs)}
+                {'  '}
+                <Text style={[styles.speaker, { color: speakerColor(u.speakerId) }]}>
+                  {speakerLabel(meeting.speakers, u.speakerId)}
+                </Text>
+              </Text>
+              <Text style={ui.body}>{u.text}</Text>
+            </View>
+          ))
+        ) : (
+          <View key={s.index} style={{ marginBottom: 10 }}>
+            {s.startMs >= 0 ? <Text style={styles.ts}>{formatClock(s.startMs)}</Text> : null}
+            <Text
+              style={[
+                ui.body,
+                s.status !== 'done' && { color: theme.colors.textMuted, fontStyle: 'italic' },
+              ]}
+            >
+              {s.status === 'done'
+                ? s.text
+                : s.status === 'skipped'
+                  ? '(silence)'
+                  : s.status === 'pending'
+                    ? '(transcribing…)'
+                    : `(failed: ${s.error ?? 'error'})`}
+            </Text>
+          </View>
+        ),
+      )}
       {meeting.markers.length ? <SectionTitle>Marked moments</SectionTitle> : null}
       {meeting.markers.map((mk, i) => (
         <Text key={i} style={[ui.body, { color: theme.colors.warning }]}>
@@ -911,5 +1032,8 @@ const styles = StyleSheet.create({
     maxHeight: '92%',
   },
   sheetTitle: { fontSize: theme.fontSize.xl, fontWeight: '700', color: theme.colors.text },
+  sheetButtons: { flexDirection: 'row', justifyContent: 'flex-end', gap: 8, marginTop: 8 },
+  speaker: { fontWeight: '700', fontSize: theme.fontSize.sm },
+  speakerChips: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8 },
   close: { fontSize: 20, color: theme.colors.textSecondary },
 });

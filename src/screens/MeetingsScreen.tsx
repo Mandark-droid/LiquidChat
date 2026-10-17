@@ -38,6 +38,9 @@ interface Props {
   onOpenMeeting: (id: string) => void;
   onOpenRecorder: () => void;
   onOpenSettings: () => void;
+  /** A recording shared into the app; opens the upload sheet with it selected. */
+  sharedFile?: PickedAudio | null;
+  onSharedFileHandled?: () => void;
 }
 
 const STATUS_LABEL: Record<
@@ -53,12 +56,26 @@ const STATUS_LABEL: Record<
   error: { label: 'Needs attention', tone: 'warn' },
 };
 
-export default function MeetingsScreen({ onOpenMeeting, onOpenRecorder, onOpenSettings }: Props) {
+export default function MeetingsScreen({
+  onOpenMeeting,
+  onOpenRecorder,
+  onOpenSettings,
+  sharedFile,
+  onSharedFileHandled,
+}: Props) {
   const { meetings, refresh } = useMeetingList();
   const live = useLiveSession();
   const [clientFilter, setClientFilter] = useState<string | null>(null);
   const [sheet, setSheet] = useState<'none' | 'new'>('none');
+  const [initialFile, setInitialFile] = useState<PickedAudio | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+
+  useEffect(() => {
+    if (!sharedFile) return;
+    setInitialFile(sharedFile);
+    setSheet('new');
+    onSharedFileHandled?.();
+  }, [sharedFile, onSharedFileHandled]);
 
   useEffect(() => {
     meetingSession.recoverInterrupted().catch(() => {});
@@ -118,7 +135,10 @@ export default function MeetingsScreen({ onOpenMeeting, onOpenRecorder, onOpenSe
             label={recordingActive ? 'Recording in progress' : '●  New meeting'}
             kind="record"
             disabled={recordingActive}
-            onPress={() => setSheet('new')}
+            onPress={() => {
+              setInitialFile(null);
+              setSheet('new');
+            }}
           />
         </View>
 
@@ -165,6 +185,7 @@ export default function MeetingsScreen({ onOpenMeeting, onOpenRecorder, onOpenSe
 
       <NewMeetingSheet
         visible={sheet === 'new'}
+        initialFile={initialFile}
         knownClients={clients}
         onClose={() => setSheet('none')}
         onStarted={() => {
@@ -236,12 +257,14 @@ function MeetingRow({
 
 function NewMeetingSheet({
   visible,
+  initialFile,
   knownClients,
   onClose,
   onStarted,
   onImported,
 }: {
   visible: boolean;
+  initialFile?: PickedAudio | null;
   knownClients: string[];
   onClose: () => void;
   onStarted: () => void;
@@ -261,10 +284,11 @@ function NewMeetingSheet({
       setTitle('');
       setAgenda('');
       setPasted('');
-      setFile(null);
+      setFile(initialFile ?? null);
+      if (initialFile) setMode('upload');
       setBusy(false);
     }
-  }, [visible]);
+  }, [visible, initialFile]);
 
   const start = async () => {
     if (!isRecorderAvailable()) {

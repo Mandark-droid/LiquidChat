@@ -4,6 +4,7 @@ import DeviceInfo from 'react-native-device-info';
 import { getModelBySlug, LIQUID_MODELS, quantizationFor } from '../config/models';
 import { type DeviceProfile, getDeviceProfile, getModelTier } from '../config/modelTiers';
 import type { ModelState, ModelTier } from '../types';
+import { ensurePinnedWeights } from './cactusWeights';
 
 const RAM_MULTIPLIER = 1.3;
 
@@ -134,6 +135,11 @@ class ModelLifecycleManager {
       // derived from weight filenames on Cactus-Compute HuggingFace repos.
       console.log(`[ModelLifecycle] Loading "${slug}" via CactusLM SDK...`);
       const quantization = quantizationFor(slug);
+      // The SDK would pick v1.12 weights, which mismatch this engine; fetch v1.14 where published.
+      await ensurePinnedWeights(slug, quantization ?? 'int8', p => {
+        if (p % 0.25 < 0.01)
+          console.log(`[ModelLifecycle] Updating "${slug}" weights: ${Math.round(p * 100)}%`);
+      });
       const cactusLM = new CactusLM({
         model: slug,
         options: quantization ? { quantization } : undefined,

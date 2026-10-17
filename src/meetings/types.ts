@@ -20,6 +20,23 @@ export interface TranscriptSegment {
   text: string;
   status: SegmentStatus;
   error?: string;
+  /** The segment's text split by speaker; absent until speakers are identified. */
+  utterances?: Utterance[];
+}
+
+export interface Utterance {
+  speakerId: string;
+  /** Meeting timeline, like TranscriptSegment.startMs. */
+  startMs: number;
+  endMs: number;
+  text: string;
+}
+
+export interface Speaker {
+  id: string;
+  /** Unset means "Speaker N" in the UI. */
+  name?: string;
+  nameSource?: 'auto' | 'user';
 }
 
 export interface Marker {
@@ -84,6 +101,8 @@ export interface Meeting {
   language: string;
   sttModel?: string;
   segments: TranscriptSegment[];
+  /** Ordered by first appearance; older meetings have none. */
+  speakers?: Speaker[];
   markers: Marker[];
   minutes?: Minutes;
   actionItems: ActionItem[];

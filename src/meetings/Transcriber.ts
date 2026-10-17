@@ -1,6 +1,7 @@
 import { CactusSTT } from 'cactus-react-native';
 
 import { quantizationFor } from '../config/models';
+import { ensurePinnedWeights } from '../services/cactusWeights';
 
 /**
  * Serial on-device transcription for meeting segments.
@@ -193,6 +194,9 @@ class TranscriberImpl {
       const stt = new CactusSTT({ model, options: quantization ? { quantization } : undefined });
       try {
         this.set({ model, phase: 'downloading', downloadProgress: 0, error: undefined });
+        await ensurePinnedWeights(model, quantization ?? 'int8', p =>
+          this.set({ downloadProgress: p }),
+        );
         await stt.download({ onProgress: p => this.set({ downloadProgress: p }) });
         this.set({ phase: 'initializing', downloadProgress: 1 });
         await stt.init();

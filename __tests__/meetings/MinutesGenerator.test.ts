@@ -315,7 +315,7 @@ describe('generateMinutes', () => {
     ensure.mockReset();
   });
 
-  it('single window: one LM call, normalised fields, resolved due dates, saved to disk', async () => {
+  it('single window: one minutes call plus the action-item pass, normalised fields, resolved due dates, saved to disk', async () => {
     const m = await stored({ title: defaultTitle(MEETING_TS, 'Acme') });
     const { lm, calls, prompts } = fakeLM(() =>
       mapJson({
@@ -340,8 +340,8 @@ describe('generateMinutes', () => {
     );
 
     expect(ensure).toHaveBeenCalledWith('lfm2.5-1.2b-instruct');
-    expect(lm.complete).toHaveBeenCalledTimes(1);
-    expect(lm.reset).toHaveBeenCalledTimes(1);
+    expect(lm.complete).toHaveBeenCalledTimes(2); // minutes + focused action items
+    expect(lm.reset).toHaveBeenCalledTimes(2);
     expect(calls[0].messages[0].role).toBe('system');
     expect(calls[0].messages[0].content).toMatch(/single JSON object/);
     expect(calls[0].options.maxTokens).toBe(900);
@@ -378,6 +378,7 @@ describe('generateMinutes', () => {
     expect(progress.map(([s]) => s)).toEqual([
       'Loading LFM2.5-1.2B Instruct',
       'Reading part 1 of 1',
+      'Finding action items (1/1)',
       'Saving',
       'Done',
     ]);
@@ -753,6 +754,31 @@ describe('generateMinutes template echoes', () => {
       openQuestions: [],
       nextSteps: [],
     });
-    expect(out.actionItems.map(a => a.task)).toEqual(['Fix timeout handling']);
+    // The fixture's real commitment survives even when the model cannot phrase it.
+    expect(out.actionItems.map(a => a.task)).toEqual([
+      'Fix timeout handling',
+      'Send the revised proposal by Friday.',
+    ]);
+  });
+});
+
+describe('generateMinutes per-line commitments', () => {
+  it('takes owner and deadline from the committing line, overriding the summary pass', async () => {
+    const m = await stored({ title: defaultTitle(MEETING_TS, 'Acme') });
+    const { prompts } = fakeLM(user =>
+      user.includes('committed to a task in the first line')
+        ? JSON.stringify({ task: 'Send the revised proposal' })
+        : mapJson({
+            title: 'Acme review',
+            summary: 'Reviewed.',
+            action_items: [{ task: 'Send the revised proposal', owner: 'Rahul' }],
+          }),
+    );
+    const out = await generateMinutes(m.id, 'lfm2.5-1.2b-instruct');
+    expect(
+      prompts().some(p => p.includes('Line: "Priya: I will send the revised proposal by Friday."')),
+    ).toBe(true);
+    const item = out.actionItems.find(a => a.task === 'Send the revised proposal');
+    expect(item).toMatchObject({ owner: 'Priya', dueText: 'by Friday' });
   });
 });

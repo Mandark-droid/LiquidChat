@@ -16,8 +16,22 @@ export const mkdir = async (p: string) => {
 export const writeFile = async (p: string, data: string, enc = 'utf8') => {
   fs.writeFileSync(p, data, enc === 'base64' ? 'base64' : 'utf8');
 };
-export const appendFile = async (p: string, data: string) => {
-  fs.appendFileSync(p, data, 'utf8');
+export const appendFile = async (p: string, data: string, enc = 'utf8') => {
+  fs.appendFileSync(p, data, enc === 'base64' ? 'base64' : 'utf8');
+};
+export const read = async (p: string, length: number, position: number, enc = 'utf8') => {
+  const fd = fs.openSync(p, 'r');
+  try {
+    const buf = Buffer.alloc(length);
+    const n = fs.readSync(fd, buf, 0, length, position);
+    return buf.subarray(0, n).toString(enc === 'base64' ? 'base64' : 'utf8');
+  } finally {
+    fs.closeSync(fd);
+  }
+};
+export const stat = async (p: string) => {
+  const st = fs.statSync(p);
+  return { size: st.size, isFile: () => st.isFile(), isDirectory: () => st.isDirectory() };
 };
 export const readFile = async (p: string, enc = 'utf8') =>
   fs.readFileSync(p, enc === 'base64' ? 'base64' : 'utf8');

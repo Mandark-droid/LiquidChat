@@ -28,6 +28,7 @@ import com.facebook.react.modules.core.DeviceEventManagerModule
  *  MeetingRecorder:silenced {silenced}
  *  MeetingRecorder:stopRequested {}             user tapped Stop in the notification
  *  MeetingRecorder:importProgress {decodedMs, totalMs}
+ *  MeetingRecorder:shared {}                    audio was shared in; call consumeSharedAudio()
  */
 class MeetingRecorderModule(private val ctx: ReactApplicationContext) :
     ReactContextBaseJavaModule(ctx), MeetingRecorderEngine.Listener, ActivityEventListener {
@@ -37,12 +38,17 @@ class MeetingRecorderModule(private val ctx: ReactApplicationContext) :
     private var pickPromise: Promise? = null
     @Volatile private var importer: AudioFileImporter? = null
 
+    // On a JS reload the new module is created before the old one is invalidated; only
+    // the owner may clear the hook, or warm shares would stop reaching JS.
+    private val onShared: () -> Unit = { emit("MeetingRecorder:shared", Arguments.createMap()) }
+
     init {
         ctx.addActivityEventListener(this)
         MeetingRecorderEngine.addListener(this)
         MeetingRecorderService.onStopFromNotification = {
             emit("MeetingRecorder:stopRequested", Arguments.createMap())
         }
+        SharedAudio.onCaptured = onShared
     }
 
     override fun invalidate() {
@@ -50,6 +56,7 @@ class MeetingRecorderModule(private val ctx: ReactApplicationContext) :
         importer?.cancelled = true
         MeetingRecorderEngine.removeListener(this)
         MeetingRecorderService.onStopFromNotification = null
+        if (SharedAudio.onCaptured === onShared) SharedAudio.onCaptured = null
         super.invalidate()
     }
 
@@ -223,7 +230,14 @@ class MeetingRecorderModule(private val ctx: ReactApplicationContext) :
         val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
             addCategory(Intent.CATEGORY_OPENABLE)
             type = "*/*"
-            putExtra(Intent.EXTRA_MIME_TYPES, arrayOf("audio/*", "video/*"))
+            // Some providers label raw ADTS .aac as x-aac or octet-stream rather than audio/aac.
+            putExtra(
+                Intent.EXTRA_MIME_TYPES,
+                arrayOf(
+                    "audio/*", "video/*", "audio/aac", "audio/x-aac", "audio/aacp",
+                    "audio/amr", "audio/3gpp", "application/ogg", "application/octet-stream",
+                ),
+            )
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
         }
         try {
@@ -280,6 +294,22 @@ class MeetingRecorderModule(private val ctx: ReactApplicationContext) :
     }
 
     override fun onNewIntent(intent: Intent) {}
+
+    /** Files shared into the app since the last call (copied to the cache; file:// URIs). */
+    @ReactMethod
+    fun consumeSharedAudio(promise: Promise) {
+        promise.resolve(Arguments.createArray().apply {
+            SharedAudio.consume().forEach { item ->
+                pushMap(Arguments.createMap().apply {
+                    putString("uri", item.uri)
+                    putString("name", item.name)
+                    putDouble("size", item.size)
+                    putDouble("durationMs", item.durationMs)
+                    putString("mime", item.mime)
+                })
+            }
+        })
+    }
 
     /** Decodes [uri] into 16 kHz mono WAV segments in [dir]; resolves {segments, durationMs}. */
     @ReactMethod

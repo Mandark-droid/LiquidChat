@@ -18,6 +18,7 @@ module.exports = {
     '^@op-engineering/op-sqlite$': '<rootDir>/__mocks__/@op-engineering/op-sqlite.ts',
     '^@dr.pogodin/react-native-fs$': '<rootDir>/__mocks__/@dr.pogodin/react-native-fs.ts',
     '^cactus-react-native$': '<rootDir>/__mocks__/cactus-react-native.ts',
+    '^react-native-nitro-modules$': '<rootDir>/__mocks__/react-native-nitro-modules.ts',
   },
   collectCoverageFrom: [
     'src/agent/**/*.ts',

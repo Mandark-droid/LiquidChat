@@ -37,4 +37,16 @@ export class CactusSTT {
   }
   async destroy() {}
 }
+export class CactusAudio {
+  constructor(public readonly params: { model?: string } = {}) {}
+  async download() {}
+  async init() {}
+  async vad(_: unknown) {
+    return { segments: [] as { start: number; end: number }[], totalTime: 0, ramUsage: 0 };
+  }
+  async embedSpeaker(_: unknown) {
+    return { success: true, error: null, embedding: [1, 0, 0], totalTimeMs: 0, ramUsageMb: 0 };
+  }
+  async destroy() {}
+}
 export const useCactusSTT = () => ({});

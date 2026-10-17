@@ -5,6 +5,7 @@ import { modelLifecycle } from '../services/ModelLifecycleManager';
 import { listDownloadedCactusModels } from '../utils/engineMigration';
 import { resolveDue, toIsoDate } from './dateResolver';
 import { meetingStore, newActionId } from './MeetingStore';
+import { speakerLabel } from './speakers';
 import { transcriber } from './Transcriber';
 import type { ActionItem, ActionPriority, Meeting, Minutes } from './types';
 
@@ -45,6 +46,14 @@ export function transcriptLines(m: Meeting): string[] {
   const lines: { at: number; text: string }[] = [];
   m.segments.forEach((s, i) => {
     if (s.status !== 'done' || !s.text) return;
+    if (s.utterances?.length) {
+      for (const u of s.utterances)
+        lines.push({
+          at: u.startMs,
+          text: `[${formatClock(u.startMs)}] ${speakerLabel(m.speakers, u.speakerId)}: ${u.text}`,
+        });
+      return;
+    }
     // Imported transcripts without timestamps use startMs < 0; keep their order.
     if (s.startMs < 0) lines.push({ at: i, text: s.text });
     else lines.push({ at: s.startMs, text: `[${formatClock(s.startMs)}] ${s.text}` });
@@ -107,18 +116,19 @@ Transcript part ${i + 1} of ${n} (lines may start with [mm:ss] or a speaker name
 ${chunk}
 """
 
-Extract the minutes for THIS part. Return JSON with exactly these keys:
-{"title": "short meeting title (max 8 words)",
- "summary": "2-3 sentence summary of this part",
- "key_points": [one string per main discussion point],
- "decisions": [one string per decision that was agreed],
- "action_items": [{"task": "what must be done", "owner": "person responsible or empty", "due": "deadline exactly as said, or empty", "priority": "high|medium|low"}],
- "open_questions": [one string per unresolved question],
- "next_steps": [one string per next step]}
+Extract the minutes for THIS part. Return a JSON object with exactly these keys (replace every <...> with real content, or use [] / ""):
+{"title": "<short meeting title, max 8 words>",
+ "summary": "<2-3 sentence summary of this part>",
+ "key_points": ["<main discussion point>"],
+ "decisions": ["<decision that was agreed>"],
+ "action_items": [{"task": "<what must be done>", "owner": "<speaker name, or empty>", "due": "<deadline exactly as said, or empty>", "priority": "high|medium|low"}],
+ "open_questions": ["<unresolved question>"],
+ "next_steps": ["<next step>"]}
 
 Rules:
 - Use only what is said in the transcript. Never invent names, numbers or dates.
 - An action item is a concrete commitment ("I will send…", "can you share…", "let's schedule…").
+- Lines start with the speaker's name. "I", "I'll" or "main" means that line's speaker: put their name as owner, never "I". When someone answers "Sure"/"I'll do it" to a request, the person answering is the owner.
 - Use [] when there is nothing for a key. Keep every item to one short sentence.`;
 }
 
@@ -261,7 +271,7 @@ function parseHeadedText(raw: string): Partial<PartialMinutes> {
 
 // Small models echo the schema's descriptions or ellipses back as content.
 const TEMPLATE_ECHO =
-  /^(\.{2,}|…|n\/?a|none|tbd|one string per .*|main discussion point|decision that was agreed|unresolved question|what must be done)\.?$/i;
+  /^(\.{2,}|…|n\/?a|none|tbd|<[^>]*>|one string per .*|main discussion point|decision that was agreed|unresolved question|what must be done|next step)\.?$/i;
 
 const strList = (v: any): string[] =>
   Array.isArray(v)
@@ -277,7 +287,9 @@ function normalizePartial(j: any, raw: string): PartialMinutes {
     ? (src.action_items ?? src.actionItems)
     : [];
   return {
-    title: String(src.title ?? '').trim(),
+    title: String(src.title ?? '')
+      .trim()
+      .replace(TEMPLATE_ECHO, ''),
     summary: String(src.summary ?? '').trim(),
     keyPoints: strList(src.key_points ?? src.keyPoints),
     decisions: strList(src.decisions),
@@ -289,7 +301,9 @@ function normalizePartial(j: any, raw: string): PartialMinutes {
         task: String(a.task ?? a.action ?? a.item ?? '')
           .trim()
           .replace(TEMPLATE_ECHO, ''),
-        owner: cleanField(a.owner ?? a.assignee),
+        owner: ((o?: string) => (o && SELF.test(o) ? undefined : o))(
+          cleanField(a.owner ?? a.assignee),
+        ),
         due: cleanField(a.due ?? a.deadline ?? a.due_date),
         priority: (['high', 'medium', 'low'].includes(String(a.priority).toLowerCase())
           ? String(a.priority).toLowerCase()
@@ -426,7 +440,7 @@ export function chooseSummaryModel(input: {
   return null;
 }
 
-async function resolveSummaryModel(preferred: string): Promise<SummaryModelChoice> {
+export async function resolveSummaryModel(preferred: string): Promise<SummaryModelChoice> {
   const downloaded = new Set((await listDownloadedCactusModels()).map(m => m.slug));
   const choice = chooseSummaryModel({
     preferred,
@@ -477,6 +491,70 @@ async function complete(lm: CactusLM, user: string, maxTokens: number): Promise<
   return r.response ?? '';
 }
 
+// ---------------------------------------------------------------------------
+// Commitments: small models drop or merge action items buried in a long transcript, and
+// misattribute them. With speaker labels the owner is simply the line's speaker, and the
+// deadline is in the line; the model only phrases the task, one line at a time.
+
+/** The speaker commits to doing something ("I'll…", "main … kar dunga", "मैं … करूँगा"). */
+const SELF_COMMITMENT =
+  /\b(?:i'll|i will|i can take|i'm going to|i shall|will do)\b|\bmain\b.*\b(?:karunga|karungi|kar dunga|kar dungi|le lunga|le lungi|bhej dunga|bhej dungi|dekh lunga)\b|(?:करूँगा|करूँगी|कर दूँगा|कर दूँगी|लूँगा|लूँगी|भेज दूँगा|भेज दूँगी)/i;
+
+const DAYS = 'monday|tuesday|wednesday|thursday|friday|saturday|sunday';
+const MONTHS =
+  'january|february|march|april|may|june|july|august|september|october|november|december';
+const WHEN = `(?:next\\s+)?(?:${DAYS}|week|month|tomorrow|today|tonight|eod|end of (?:the )?(?:day|week|month))|\\d{1,2}(?:st|nd|rd|th)?(?: of)? (?:${MONTHS})|(?:${MONTHS}) \\d{1,2}(?:st|nd|rd|th)?`;
+const DUE = new RegExp(
+  `\\b(?:(?:by|before|till|until|on)\\s+(?:${WHEN})|(?:${WHEN})\\s+tak|next (?:${DAYS}))\\b`,
+  'i',
+);
+
+const LINE = /^\[[\d:]+\]\s+([^:]+):\s+(.*)$/;
+
+export interface Commitment {
+  owner: string;
+  text: string;
+  previous?: string;
+  due?: string;
+}
+
+/** Every line where the speaker commits to something, with the request before it. */
+export function findCommitments(lines: string[]): Commitment[] {
+  const out: Commitment[] = [];
+  lines.forEach((line, i) => {
+    const m = line.match(LINE);
+    if (!m || line.includes('★ FLAGGED BY USER') || !SELF_COMMITMENT.test(m[2])) return;
+    const prev = lines[i - 1]?.match(LINE);
+    out.push({
+      owner: m[1].trim(),
+      text: m[2].trim(),
+      previous: prev ? `${prev[1]}: ${prev[2]}` : undefined,
+      due: m[2].match(DUE)?.[0],
+    });
+  });
+  return out;
+}
+
+function taskPrompt(c: Commitment): string {
+  return `Line: "${c.owner}: ${c.text}"
+${c.previous ? `Line before it: "${c.previous}"\n` : ''}
+${c.owner} committed to a task in the first line. Reply with JSON {"task": "<what ${c.owner} will do, in the words of that line, as a short imperative, max 10 words>"}`;
+}
+
+/** The commitment itself, without lead-ins, for when the model's phrasing is unusable. */
+function plainTask(text: string): string {
+  const words = text
+    .replace(/^(?:(?:sure|okay|ok|yes|yeah|haan|ji|and|so|great|right)[,.!]?\s+)+/i, '')
+    .replace(/^(?:i'll take that[.!]?\s*)/i, '')
+    .replace(/^(?:i will|i'll|i can|i'm going to|i shall)\s+/i, '')
+    .split(/\s+/);
+  const short = words.slice(0, 12).join(' ');
+  return short.charAt(0).toUpperCase() + short.slice(1);
+}
+
+/** Owners named "Speaker N" are still useful; only pronouns are dropped. */
+const SELF = /^(i|me|myself|main|mai|मैं)$/i;
+
 export async function generateMinutes(
   meetingId: string,
   modelSlug: string,
@@ -512,14 +590,75 @@ export async function generateMinutes(
   const parts: PartialMinutes[] = [];
   for (let i = 0; i < chunks.length; i++) {
     onProgress?.(`Reading part ${i + 1} of ${chunks.length}`, 0.35 + (0.5 * i) / chunks.length);
-    const raw = await complete(lm, mapPrompt(meeting, chunks[i], i, chunks.length), 900);
-    const json = extractJson(raw);
+    const prompt = mapPrompt(meeting, chunks[i], i, chunks.length);
+    let raw = await complete(lm, prompt, 900);
+    let json = extractJson(raw);
+    if (!json) {
+      // Small models sometimes answer in prose; one firmer ask usually yields the JSON.
+      raw = await complete(
+        lm,
+        `${prompt}
+
+Reply with the JSON object only. Start with {`,
+        900,
+      );
+      json = extractJson(raw);
+    }
     if (!json)
       console.warn(`[Minutes] Part ${i + 1}: no JSON in model output, using text fallback`);
     parts.push(normalizePartial(json, raw));
   }
 
-  const merged = mergePartials(parts);
+  let merged = mergePartials(parts);
+
+  const commitments = findCommitments(lines);
+  if (commitments.length) {
+    const items: PartialMinutes['actionItems'] = [];
+    const unphrased: Commitment[] = [];
+    for (const [i, c] of commitments.entries()) {
+      onProgress?.(
+        `Finding action items (${i + 1}/${commitments.length})`,
+        0.86 + (0.1 * i) / commitments.length,
+      );
+      const j = extractJson(await complete(lm, taskPrompt(c), 80));
+      const task = String(j?.task ?? '')
+        .trim()
+        .replace(TEMPLATE_ECHO, '');
+      const owner = SELF.test(c.owner) ? undefined : c.owner;
+      // A task sharing no words with what was said is a copied template, not a summary.
+      const said = tokens(c.text);
+      const grounded = [...tokens(task)].filter(w => said.has(w)).length >= 1;
+      if (task && grounded) items.push({ task, owner, due: c.due });
+      else unphrased.push({ ...c, owner: owner ?? '' });
+    }
+    const focused: PartialMinutes = { ...mergePartials([]), actionItems: items };
+    // Per-line items first: their owners and deadlines come straight from the transcript.
+    merged = { ...merged, actionItems: mergePartials([focused, merged]).actionItems };
+    // A line the model could not phrase still fixes the owner/deadline of its closest item.
+    for (const c of unphrased) {
+      const words = tokens(c.text);
+      let best = 0;
+      let hit: PartialMinutes['actionItems'][number] | undefined;
+      for (const a of merged.actionItems) {
+        const t = tokens(a.task);
+        const overlap = [...t].filter(w => words.has(w)).length / Math.max(1, t.size);
+        if (overlap > best) {
+          best = overlap;
+          hit = a;
+        }
+      }
+      if (hit && best >= 0.5) {
+        if (c.owner) hit.owner = c.owner;
+        hit.due ??= c.due;
+      } else {
+        merged.actionItems.push({
+          task: plainTask(c.text),
+          owner: c.owner || undefined,
+          due: c.due,
+        });
+      }
+    }
+  }
   let title = merged.title;
   let summary = merged.summary;
   if (chunks.length > 1) {

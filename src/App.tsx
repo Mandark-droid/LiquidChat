@@ -13,11 +13,14 @@ import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-cont
 
 import { agentRuntime, refreshLocalModels, startAgentRuntime } from './agent/runtime';
 import type { AgentResult } from './agent/types';
+import { ActionSheetHost } from './components/ActionSheet';
 import ApprovalHost from './components/ApprovalHost';
 import { theme } from './config/theme';
 import { buildMinutesMarkdown } from './meetings/documents';
 import { meetingStore } from './meetings/MeetingStore';
 import { transcriptPlain } from './meetings/MinutesGenerator';
+import { watchSharedAudio } from './meetings/sharedAudio';
+import type { PickedAudio } from './meetings/types';
 import { platform } from './platform/android';
 import AgentDashboardScreen from './screens/AgentDashboardScreen';
 import AgentInsightsScreen from './screens/AgentInsightsScreen';
@@ -71,6 +74,24 @@ function AppContent() {
   const [activeTab, setActiveTab] = useState<Tab>('chats');
   const [screen, setScreen] = useState<Screen>({ type: 'tabs' });
   const [currentModel, setCurrentModel] = useState('lfm2.5-1.2b-instruct');
+  const [sharedFile, setSharedFile] = useState<PickedAudio | null>(null);
+
+  // Recordings shared from other apps (e.g. a recorder whose files the picker can't see).
+  useEffect(
+    () =>
+      watchSharedAudio((file, skipped) => {
+        setActiveTab('meetings');
+        setScreen({ type: 'tabs' });
+        setSharedFile(file);
+        if (skipped > 0)
+          Alert.alert(
+            'One recording at a time',
+            `Uploading "${file.name}". ${skipped} other file${skipped > 1 ? 's were' : ' was'} not uploaded; share ${skipped > 1 ? 'them' : 'it'} again after this one.`,
+          );
+      }),
+    [],
+  );
+  const clearSharedFile = useCallback(() => setSharedFile(null), []);
 
   /** Shows an agent result (routine, skill run) as a new chat the user can continue. */
   const openResultChat = useCallback(async (title: string, text: string) => {
@@ -243,8 +264,8 @@ function AppContent() {
         case 'agentSettings':
           setActiveTab('agent');
           break;
+        // meetingDetail keeps the current tab: it is opened from Meetings and from Tasks.
         case 'meetingRecorder':
-        case 'meetingDetail':
         case 'meetingSettings':
           setActiveTab('meetings');
           break;
@@ -360,6 +381,8 @@ function AppContent() {
             onOpenMeeting={meetingId => setScreen({ type: 'meetingDetail', meetingId })}
             onOpenRecorder={() => setScreen({ type: 'meetingRecorder' })}
             onOpenSettings={() => setScreen({ type: 'meetingSettings' })}
+            sharedFile={sharedFile}
+            onSharedFileHandled={clearSharedFile}
           />
         );
       case 'tasks':
@@ -413,6 +436,7 @@ export default function App() {
     <SafeAreaProvider>
       <AppContent />
       <ApprovalHost />
+      <ActionSheetHost />
     </SafeAreaProvider>
   );
 }
