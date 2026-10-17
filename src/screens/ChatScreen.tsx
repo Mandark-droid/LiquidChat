@@ -22,7 +22,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { agentRuntime } from '../agent/runtime';
-import type { AgentEvent, ExecutionState } from '../agent/types';
+import type { AgentEvent, ExecutionState, Plan } from '../agent/types';
 import ActionChainProgress from '../components/ActionChainProgress';
 import AgentStateBar from '../components/AgentStateBar';
 import MemoryChips from '../components/MemoryChips';
@@ -38,6 +38,7 @@ import { useMemory } from '../hooks/useMemory';
 import { actionLogger } from '../services/ActionLogger';
 import { memoryService } from '../services/MemoryService';
 import { modelLifecycle } from '../services/ModelLifecycleManager';
+import { planToManifest } from '../skills/SkillGenerator';
 import { executeTool, getDefaultSystemPrompt } from '../tools/registry';
 import type {
   ActionChainStep,
@@ -88,6 +89,8 @@ export default function ChatScreen({ chatId, onBack, onOpenModelSelector }: Chat
   /** The loaded instance belongs to ModelLifecycleManager (shared with the agent runtime). */
   const managedModelRef = useRef(false);
   const executionRef = useRef<string | null>(null);
+  /** A multi-step plan that just succeeded and could become a skill (PRD §21 step 12). */
+  const [savablePlan, setSavablePlan] = useState<{ plan: Plan; request: string } | null>(null);
 
   // Intent routing hook
   const { routeAndLoad } = useIntentRouter();
@@ -274,10 +277,14 @@ export default function ChatScreen({ chatId, onBack, onOpenModelSelector }: Chat
     setSelectedImage(null);
   };
 
+  // Always call the latest handleSend (it reads messages/model state).
+  const sendRef = useRef<(text?: string, opts?: { voice?: boolean }) => Promise<void>>(
+    async () => {},
+  );
   const handleVoiceTranscription = useCallback(
     (text: string) => {
       if (settings?.autoSendVoice) {
-        handleSend(text);
+        sendRef.current(text, { voice: true });
       } else {
         setInputText(text);
       }
@@ -285,7 +292,7 @@ export default function ChatScreen({ chatId, onBack, onOpenModelSelector }: Chat
     [settings?.autoSendVoice],
   );
 
-  const handleSend = async (overrideText?: string) => {
+  const handleSend = async (overrideText?: string, opts: { voice?: boolean } = {}) => {
     const text = (overrideText ?? inputText).trim();
     if (!text && !selectedImage) return;
     if (!modelLoaded || isGenerating) return;
@@ -334,7 +341,7 @@ export default function ChatScreen({ chatId, onBack, onOpenModelSelector }: Chat
       // Agent runtime: plan → per-step routing → permission-gated tools → verified reply.
       // Images still use the direct multimodal path below.
       if (settings?.agentRuntimeEnabled !== false && !userMessage.images?.length && text) {
-        await runAgent(text, updatedMessages);
+        await runAgent(text, updatedMessages, !!opts.voice);
         return;
       }
 
@@ -410,13 +417,18 @@ export default function ChatScreen({ chatId, onBack, onOpenModelSelector }: Chat
     }
   };
 
-  const runAgent = async (text: string, history: ChatMessage[]) => {
+  sendRef.current = handleSend;
+
+  const runAgent = async (text: string, history: ChatMessage[], voice: boolean) => {
     const steps = new Map<string, ActionChainStep>();
     const order: string[] = [];
+    let plan: Plan | null = null;
+    setSavablePlan(null);
     const publish = () => setActionChainSteps(order.map(id => steps.get(id)!));
     const onEvent = (e: AgentEvent) => {
       executionRef.current = e.executionId;
       if (e.type === 'plan') {
+        plan = e.plan;
         steps.clear();
         order.length = 0;
         for (const s of e.plan.steps) {
@@ -451,7 +463,8 @@ export default function ChatScreen({ chatId, onBack, onOpenModelSelector }: Chat
     const result = await agentRuntime.execute(
       {
         text,
-        source: 'chat',
+        // Voice turns get spoken approval prompts and a spoken reply.
+        source: voice ? 'voice' : 'chat',
         conversationId: chatId,
         history: history
           .filter(m => (m.role === 'user' || m.role === 'assistant') && m.content)
@@ -472,11 +485,19 @@ export default function ChatScreen({ chatId, onBack, onOpenModelSelector }: Chat
     setMessages(withReply);
     await saveMessages(withReply);
     scrollToBottom();
+    const finalPlan = plan as Plan | null;
+    if (
+      result.state === 'COMPLETED' &&
+      finalPlan?.source === 'planner' &&
+      finalPlan.steps.some(s => s.kind === 'tool')
+    ) {
+      setSavablePlan({ plan: finalPlan, request: text });
+    }
     if (order.length > 1) {
       triggerSuccessHaptic();
       setTimeout(() => setActionChainSteps([]), 2500);
     }
-    if (settings?.autoTTS && reply.content) speak(reply.content, settings.ttsRate);
+    if ((voice || settings?.autoTTS) && reply.content) speak(reply.content, settings?.ttsRate ?? 1);
   };
 
   const generateResponse = async (
@@ -955,6 +976,34 @@ export default function ChatScreen({ chatId, onBack, onOpenModelSelector }: Chat
         {actionChainSteps.length > 0 && (
           <ActionChainProgress steps={actionChainSteps} totalPlanned={actionChainSteps.length} />
         )}
+        {savablePlan && !isGenerating ? (
+          <View style={styles.saveSkillRow}>
+            <Text style={styles.saveSkillText} numberOfLines={1}>
+              Worked? Save these steps as a reusable skill.
+            </Text>
+            <TouchableOpacity onPress={() => setSavablePlan(null)}>
+              <Text style={styles.saveSkillDismiss}>Not now</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={async () => {
+                const { plan, request } = savablePlan;
+                setSavablePlan(null);
+                try {
+                  const manifest = planToManifest(plan, request, request, agentRuntime.registry);
+                  const skill = await agentRuntime.skills.install(manifest, 'generated');
+                  Alert.alert(
+                    'Saved as a skill',
+                    `"${skill.manifest.name}" is in Agent → Skills. It stays off until you review its steps and permissions.`,
+                  );
+                } catch (e) {
+                  Alert.alert('Could not save skill', e instanceof Error ? e.message : String(e));
+                }
+              }}
+            >
+              <Text style={styles.saveSkillAction}>Save</Text>
+            </TouchableOpacity>
+          </View>
+        ) : null}
         {renderInputArea()}
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -962,6 +1011,22 @@ export default function ChatScreen({ chatId, onBack, onOpenModelSelector }: Chat
 }
 
 const styles = StyleSheet.create({
+  saveSkillRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginHorizontal: theme.spacing.md,
+    marginBottom: 6,
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: 8,
+    borderRadius: theme.borderRadius.lg,
+    backgroundColor: theme.colors.surface,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  saveSkillText: { flex: 1, color: theme.colors.text, fontSize: theme.fontSize.sm },
+  saveSkillDismiss: { color: theme.colors.textSecondary, fontSize: theme.fontSize.sm },
+  saveSkillAction: { color: theme.colors.accent, fontWeight: '700', fontSize: theme.fontSize.sm },
   container: {
     flex: 1,
     backgroundColor: theme.colors.background,

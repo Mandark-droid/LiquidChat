@@ -16,6 +16,7 @@ import { setLegacyExecutor } from '../../src/tools/builtin/device';
 import { ScriptedInference } from '../helpers/harness';
 
 const NOW = new Date(2026, 9, 17, 7, 0);
+let clock = NOW.getTime();
 
 function makeRuntime(opts: { platform?: FakePlatform; responder?: ScriptedInference } = {}) {
   resetDatabaseForTests();
@@ -37,7 +38,7 @@ function makeRuntime(opts: { platform?: FakePlatform; responder?: ScriptedInfere
     platform,
     inference,
     approvals,
-    now: () => NOW,
+    now: () => new Date(clock),
     meetings: { latest: async () => null, search: async () => [] },
     tasks: {
       add: async t => {
@@ -63,6 +64,7 @@ function makeRuntime(opts: { platform?: FakePlatform; responder?: ScriptedInfere
 
 let live: AgentRuntime | null = null;
 afterEach(async () => {
+  clock = NOW.getTime();
   await live?.tracer.dispose();
   live = null;
   setDatabaseKeyProvider(null);
@@ -161,6 +163,35 @@ describe('AgentRuntime', () => {
 
     await runtime.unscheduleSkill(skill.id);
     expect(platform.alarms.list()).toHaveLength(0);
+  });
+
+  it('offers missed routines and runs or skips them', async () => {
+    const { runtime, platform } = makeRuntime();
+    await runtime.ready();
+    const skill = (await runtime.skills.getByName('morning-briefing'))!;
+    await runtime.skills.setEnabled(skill.id, true);
+    await runtime.scheduleSkill(skill.id);
+    const [alarm] = platform.alarms.list();
+    expect(await runtime.missedRoutines()).toEqual([]);
+    clock = alarm.triggerAtMs + 60 * 60_000; // the phone was off when it fired
+    const missed = await runtime.missedRoutines();
+    expect(missed).toEqual([
+      expect.objectContaining({
+        skillId: skill.id,
+        name: 'morning-briefing',
+        dueAt: alarm.triggerAtMs,
+      }),
+    ]);
+    const r = await runtime.runMissed(missed[0].scheduleId);
+    expect(r?.state).toBe('COMPLETED');
+    expect(await runtime.missedRoutines()).toEqual([]);
+
+    // Skipping moves it to the next day without running.
+    clock = alarm.triggerAtMs + 25 * 60 * 60_000;
+    const again = await runtime.missedRoutines();
+    expect(again).toHaveLength(1);
+    await runtime.skipMissed(again[0].scheduleId);
+    expect(await runtime.missedRoutines()).toEqual([]);
   });
 
   it('will not run a disabled skill', async () => {

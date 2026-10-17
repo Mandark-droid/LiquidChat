@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { AppState, StatusBar, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Alert, AppState, StatusBar, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { agentRuntime, refreshLocalModels, startAgentRuntime } from './agent/runtime';
@@ -95,10 +95,35 @@ function AppContent() {
         console.warn('[LiquidChat] agent runtime unavailable:', err);
         return;
       }
-      // A routine notification tapped while the app was closed.
+      // A routine notification tapped while the app was closed…
       agentRuntime
         .handleLaunchPayload()
         .then(showRoutine)
+        .then(() => agentRuntime.missedRoutines())
+        .then(missed => {
+          // …and routines that came due while the phone was off: ask, never run silently.
+          const m = missed[0];
+          if (!m) return;
+          Alert.alert(
+            'Missed routine',
+            `${m.name} was due at ${new Date(m.dueAt).toLocaleString()}. Run it now?`,
+            [
+              {
+                text: 'Skip',
+                style: 'cancel',
+                onPress: () => agentRuntime.skipMissed(m.scheduleId),
+              },
+              {
+                text: 'Run now',
+                onPress: () =>
+                  agentRuntime
+                    .runMissed(m.scheduleId)
+                    .then(showRoutine)
+                    .catch(() => {}),
+              },
+            ],
+          );
+        })
         .catch(() => {});
     });
     // …or while it was running.

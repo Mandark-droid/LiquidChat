@@ -116,6 +116,11 @@ describe('skill registry', () => {
     bundle.hash = hashManifest(bundle.manifest);
     const imported = await h.skills.import(JSON.stringify(bundle));
     expect(imported).toMatchObject({ enabled: false, source: 'imported' });
+    // Timed built-in routines are opt-in.
+    expect((await h.skills.get('skl_end-of-day'))!.enabled).toBe(false);
+    expect((await h.skills.get('skl_focus-mode'))!.enabled).toBe(true);
+    expect(await h.skills.match('wrap up my day')).toBeNull();
+    await h.skills.setEnabled('skl_end-of-day', true);
     expect(await h.skills.match('wrap up my day')).toMatchObject({ name: 'end-of-day' }); // copy not active
     await h.skills.setEnabled(imported.id, true);
     expect((await h.skills.get(imported.id))!.enabled).toBe(true);

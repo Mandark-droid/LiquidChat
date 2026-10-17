@@ -61,7 +61,9 @@ export class SkillRegistry {
         continue;
       }
       try {
-        await this.install(m, 'builtin', { enabled: existing?.enabled ?? true, replace: true });
+        // Routines that would raise daily notifications are opt-in: enabling one schedules it.
+        const timed = (m.triggers ?? []).some(t => t.type !== 'manual' && t.type !== 'phrase');
+        await this.install(m, 'builtin', { enabled: existing?.enabled ?? !timed, replace: true });
         installed.push(m.name);
       } catch (e) {
         skipped.push({

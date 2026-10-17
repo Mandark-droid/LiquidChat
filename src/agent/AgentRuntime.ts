@@ -124,7 +124,11 @@ export class AgentRuntime {
     this.notificationStore = new NotificationStore({ getDb: db });
     this.mcpServers = new McpServerStore(db, Date.now, p.credentials);
     this.metrics = new MetricsCollector(db);
-    this.scheduler = new TaskScheduler({ getDb: db, alarms: p.alarms });
+    this.scheduler = new TaskScheduler({
+      getDb: db,
+      alarms: p.alarms,
+      now: () => (deps.now ? deps.now().getTime() : Date.now()),
+    });
 
     if (deps.inference) {
       this.inferenceStack = null;
@@ -319,6 +323,44 @@ export class AgentRuntime {
     const skill = await this.skills.get(fired.skillId);
     if (!skill?.enabled) return null;
     return this.runSkill(fired.skillId, { source: 'schedule', onEvent });
+  }
+
+  /** Routines that came due while the phone was off or the app was killed. */
+  async missedRoutines(): Promise<
+    { scheduleId: string; skillId: string; name: string; dueAt: number }[]
+  > {
+    await this.ready();
+    const out = [];
+    for (const m of await this.scheduler.checkMissed()) {
+      const skill = await this.skills.get(m.schedule.skillId);
+      if (!skill?.enabled) {
+        await this.scheduler.skipMissed(m.schedule.id);
+        continue;
+      }
+      out.push({
+        scheduleId: m.schedule.id,
+        skillId: skill.id,
+        name: skill.manifest.name,
+        dueAt: m.dueAt,
+      });
+    }
+    return out;
+  }
+
+  /** The user chose "run now" for a missed routine. */
+  async runMissed(
+    scheduleId: string,
+    onEvent?: (e: AgentEvent) => void,
+  ): Promise<AgentResult | null> {
+    const s = await this.scheduler.get(scheduleId);
+    if (!s) return null;
+    const fired = await this.scheduler.onFired({ scheduleId, skillId: s.skillId });
+    if (!fired) return null;
+    return this.runSkill(fired.skillId, { source: 'schedule', onEvent });
+  }
+
+  skipMissed(scheduleId: string): Promise<unknown> {
+    return this.scheduler.skipMissed(scheduleId);
   }
 
   // --- notifications (PRD §11) ------------------------------------------------------
