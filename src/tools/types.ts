@@ -3,6 +3,7 @@
  * Android actions, app services, MCP tools — is an AgentTool and can only be
  * invoked through the PermissionGateway.
  */
+import type { DataClass } from '../inference/types';
 
 export type RiskLevel = 'read_only' | 'reversible' | 'sensitive';
 
@@ -98,6 +99,13 @@ export interface AgentTool<A = Record<string, unknown>> {
   verify?(args: A, result: ToolResult, ctx: ToolContext): Promise<VerifyOutcome>;
   /** One-line description of the call for approval prompts. */
   describeCall?(args: A): string;
+  /**
+   * Privacy class of this tool's output, propagated to every model step that
+   * reads it (PRD §6.6). Default: 'public' for device actions, 'personal' otherwise.
+   */
+  outputDataClass?: DataClass;
+  /** True when the output must never leave the device (e.g. notification capture with "local only" on). */
+  localOnlyOutput?: () => boolean | Promise<boolean>;
 }
 
 export function toolError(code: string, message: string, recoverable = false): ToolOutcome {

@@ -318,6 +318,7 @@ export class ModelRouter {
     opts: RouteOptions,
   ): Promise<string | null> {
     if (opts.forbidRemote) return opts.forbidRemoteReason ?? 'remote not allowed for this step';
+    if (ctx.localOnly) return 'step uses data marked on-device only';
     if (policy.mode === 'local_only') return 'routing mode is local only';
     if (!device.online) return 'device is offline';
     const cfg: RemoteProviderConfig | undefined = await this.deps.registry.provider(m.providerId);

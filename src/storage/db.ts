@@ -31,18 +31,38 @@ export interface OpenOptions {
   encryptionKey?: string;
 }
 
+let keyProvider: (() => Promise<string>) | null = null;
+
+/**
+ * Registers where the SQLCipher key comes from (the Keystore-backed
+ * CredentialStore in production). Installed at app start so that whichever
+ * module opens the database first opens it encrypted. A failing provider
+ * fails the open — the database is never silently created in plaintext.
+ */
+export function setDatabaseKeyProvider(fn: (() => Promise<string>) | null): void {
+  keyProvider = fn;
+}
+
 /** Opens (once) and migrates the app database. */
 export function getDatabase(opts: OpenOptions = {}): Promise<SqlDb> {
   if (instance) return Promise.resolve(instance);
   if (opening) return opening;
   opening = (async () => {
+    const encryptionKey = opts.encryptionKey ?? (keyProvider ? await keyProvider() : undefined);
     const raw = open({
       name: opts.name ?? 'liquidchat-agent.db',
-      encryptionKey: opts.encryptionKey,
+      encryptionKey,
     }) as unknown as SqlDb;
+    // One connection: transactions from independent writers (tracer, scheduler,
+    // repositories) are serialised so they can never nest.
+    let txQueue: Promise<unknown> = Promise.resolve();
     const db: SqlDb = {
       execute: (sql, params) => raw.execute(sql, params ?? []),
-      transaction: fn => raw.transaction(fn),
+      transaction: fn => {
+        const run = txQueue.then(() => raw.transaction(fn));
+        txQueue = run.catch(() => {});
+        return run;
+      },
       close: () => raw.close(),
     };
     await migrate(db);

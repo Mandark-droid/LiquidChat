@@ -9,7 +9,7 @@
  * otherwise the user is asked (WAITING_FOR_USER), so messages, events or
  * contacts are never duplicated silently.
  */
-import type { InferenceResult, RoutingDecision } from '../inference/types';
+import type { DataClass, InferenceResult, RoutingDecision } from '../inference/types';
 import type { Tracer } from '../observability/types';
 import { nullTracer } from '../observability/types';
 import type { PermissionChecker } from '../platform/types';
@@ -21,16 +21,28 @@ import type { Distribution, ToolError } from '../tools/types';
 import { verifyInference, verifyTool } from './AgentVerifier';
 import type { CancellationSource } from './cancellation';
 import type { InferenceRunner } from './ports';
-import { resolveArgs, resolvePrompt } from './templating';
+import { findRefs, resolveArgs, resolvePrompt } from './templating';
 import type {
   AgentEvent,
   ExecutionRecord,
   ExecutionState,
   InferStep,
   Plan,
+  PlanStep,
   StepRecord,
   ToolStep,
 } from './types';
+
+interface Taint {
+  dataClass: DataClass;
+  localOnly: boolean;
+}
+
+const CLASS_RANK: Record<DataClass, number> = { public: 0, personal: 1, sensitive: 2 };
+
+export function maxClass(classes: DataClass[]): DataClass {
+  return classes.reduce<DataClass>((a, b) => (CLASS_RANK[b] > CLASS_RANK[a] ? b : a), 'public');
+}
 
 export interface ExecutorDeps {
   registry: ToolRegistry;
@@ -89,8 +101,10 @@ export class AgentExecutor {
     const { record, plan } = ctx;
     const outputs: Record<string, unknown> = {};
     const failed: ExecutionOutcome['failed'] = [];
+    const taint = new Map<string, Taint>();
 
     for (const step of plan.steps) {
+      taint.set(step.id, await this.taintOf(step, taint, ctx));
       if (ctx.cancel.cancelled || (await this.deps.repo.isCancelRequested(record.id))) {
         ctx.cancel.cancel();
         return { ok: false, cancelled: true, outputs, failed };
@@ -129,8 +143,8 @@ export class AgentExecutor {
 
       const res =
         step.kind === 'tool'
-          ? await this.runTool(ctx, step, rec, outputs)
-          : await this.runInfer(ctx, step, rec, outputs);
+          ? await this.runTool(ctx, step, rec, outputs, taint)
+          : await this.runInfer(ctx, step, rec, outputs, taint.get(step.id)!);
 
       if (ctx.cancel.cancelled) return { ok: false, cancelled: true, outputs, failed };
       rec.endedAt = Date.now();
@@ -158,11 +172,49 @@ export class AgentExecutor {
 
   // ---------------------------------------------------------------------------
 
+  /**
+   * Privacy taint (PRD §6.6): a step's output carries the highest data class of
+   * everything that flowed into it, so a model step summarising notifications is
+   * routed as personal even if the plan labelled it public, and data captured as
+   * "on-device only" can never reach a remote model or a network tool.
+   */
+  private async taintOf(
+    step: PlanStep,
+    taint: Map<string, Taint>,
+    ctx: RunContext,
+  ): Promise<Taint> {
+    const upstream = findRefs(step.kind === 'tool' ? step.args : step.prompt)
+      .map(id => taint.get(id))
+      .filter((t): t is Taint => !!t);
+    if (step.kind === 'tool') {
+      const tool = this.deps.registry.get(step.tool);
+      const own: DataClass =
+        tool?.outputDataClass ?? (tool?.category === 'device' ? 'public' : 'personal');
+      let localOnly = false;
+      try {
+        localOnly = !!(await tool?.localOnlyOutput?.());
+      } catch {
+        localOnly = true; // fail closed
+      }
+      return {
+        dataClass: maxClass([own, ...upstream.map(t => t.dataClass)]),
+        localOnly: localOnly || upstream.some(t => t.localOnly),
+      };
+    }
+    const fromMemory: DataClass[] =
+      ctx.memoryContext && step.dataClass !== 'public' ? ['personal'] : [];
+    return {
+      dataClass: maxClass([step.dataClass, ...fromMemory, ...upstream.map(t => t.dataClass)]),
+      localOnly: upstream.some(t => t.localOnly),
+    };
+  }
+
   private async runTool(
     ctx: RunContext,
     step: ToolStep,
     rec: StepRecord,
     outputs: Record<string, unknown>,
+    taint: Map<string, Taint>,
   ): Promise<{ ok: boolean; output?: unknown; display?: string; error?: ToolError }> {
     const { record } = ctx;
     const tool = this.deps.registry.get(step.tool);
@@ -171,6 +223,21 @@ export class AgentExecutor {
         ok: false,
         error: { code: 'UNKNOWN_TOOL', message: `Unknown tool ${step.tool}`, recoverable: false },
       };
+    const leaks = findRefs(step.args).filter(id => taint.get(id)?.localOnly);
+    if (leaks.length && tool.requiredPermissions.includes('special:network')) {
+      this.tracer.record(record.id, 'policy.violation_blocked', {
+        stepId: step.id,
+        code: 'LOCAL_ONLY_DATA',
+      });
+      return {
+        ok: false,
+        error: {
+          code: 'LOCAL_ONLY_DATA',
+          message: `${tool.name} would send on-device-only data (from ${leaks.join(', ')}) over the network`,
+          recoverable: false,
+        },
+      };
+    }
 
     const toolCallId = `${record.id}:${step.id}`;
     const existing = await this.deps.repo.toolCall(toolCallId);
@@ -287,6 +354,7 @@ export class AgentExecutor {
     step: InferStep,
     rec: StepRecord,
     outputs: Record<string, unknown>,
+    taint: Taint,
   ): Promise<{ ok: boolean; output?: unknown; display?: string; error?: ToolError }> {
     const { record } = ctx;
     const prompt = resolvePrompt(step.prompt, outputs);
@@ -315,7 +383,8 @@ export class AgentExecutor {
             executionId: record.id,
             stepId: step.id,
             requirements: { operation: step.operation, ...step.needs },
-            dataClass: step.dataClass,
+            dataClass: taint.dataClass,
+            localOnly: taint.localOnly || undefined,
             estimatedInputTokens: Math.ceil(messages.reduce((n, m) => n + m.content.length, 0) / 4),
             estimatedOutputTokens: step.maxTokens ?? 600,
             excludeModels: tried,
@@ -331,7 +400,7 @@ export class AgentExecutor {
           },
           {
             signal: ctx.cancel.signal,
-            approve: d => this.approveRemote(ctx, step, d),
+            approve: d => this.approveRemote(ctx, step, d, taint.dataClass),
             onToken: token =>
               ctx.emit({ type: 'token', executionId: record.id, stepId: step.id, token }),
           },
@@ -412,6 +481,7 @@ export class AgentExecutor {
     ctx: RunContext,
     step: InferStep,
     d: RoutingDecision,
+    dataClass: DataClass,
   ): Promise<boolean> {
     const decision: ApprovalDecision = await this.withState(
       ctx,
@@ -421,9 +491,9 @@ export class AgentExecutor {
         this.deps.approvals.request({
           kind: 'remote_inference',
           title: `Use ${d.selectedModelId} in the cloud?`,
-          detail: `One ${step.operation} step with ${step.dataClass} data would be sent to ${d.providerId}. ${d.reason}`,
-          risk: step.dataClass === 'sensitive' ? 'high' : 'medium',
-          allowAlways: step.dataClass !== 'sensitive',
+          detail: `One ${step.operation} step with ${dataClass} data would be sent to ${d.providerId}. ${d.reason}`,
+          risk: dataClass === 'sensitive' ? 'high' : 'medium',
+          allowAlways: dataClass !== 'sensitive',
           executionId: ctx.record.id,
         }),
     );

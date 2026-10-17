@@ -102,6 +102,8 @@ export interface RoutingContext {
   escalationReason?: string;
   remoteCallsSoFar: number;
   spendSoFarUsd: number;
+  /** The prompt carries data that must never leave the device (hard local-only). */
+  localOnly?: boolean;
 }
 
 /** PRD §6.4 */

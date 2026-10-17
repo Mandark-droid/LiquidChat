@@ -78,7 +78,7 @@ export function createTracer(
         }
       });
     } catch (err) {
-      console.warn('[AgentTracer] dropping trace batch:', err);
+      console.warn('[AgentTracer] dropping trace batch:', (err as Error)?.message ?? err);
     }
   };
 

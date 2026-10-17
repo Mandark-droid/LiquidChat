@@ -250,6 +250,22 @@ describe('budgets, caps, breaker, keys', () => {
     });
   });
 
+  test('a step carrying on-device-only data never routes remote, even cloud-preferred', async () => {
+    const h = await makeHarness({
+      policy: {
+        mode: 'cloud_preferred',
+        allowRemoteDataClasses: ['public', 'personal', 'sensitive'],
+      },
+    });
+    const d = await h.router.route(ctx({ localOnly: true }));
+    expect(d.executionMode).toBe('local');
+    expect(d.rejected).toContainEqual({
+      modelId: REMOTE,
+      stage: 'policy',
+      reason: 'step uses data marked on-device only',
+    });
+  });
+
   test('forbidRemote option (user declined) keeps the step local', async () => {
     const h = await makeHarness({ policy: { mode: 'cloud_preferred' } });
     const d = await h.router.route(ctx(), { forbidRemote: true, forbidRemoteReason: 'declined' });

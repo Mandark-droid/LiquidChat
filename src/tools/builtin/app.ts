@@ -68,6 +68,7 @@ export function createAppTools(deps: AppToolDeps): AgentTool[] {
   const tools: AgentTool[] = [
     {
       name: 'time.now',
+      outputDataClass: 'public',
       description: 'Returns the current local date, time, weekday and timezone.',
       category: 'context',
       inputSchema: obj({}),
@@ -89,6 +90,7 @@ export function createAppTools(deps: AppToolDeps): AgentTool[] {
     },
     {
       name: 'dates.resolve',
+      outputDataClass: 'public',
       description:
         'Resolves a spoken date ("next Thursday", "24 Oct", "end of month") to YYYY-MM-DD.',
       category: 'context',
