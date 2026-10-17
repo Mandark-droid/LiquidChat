@@ -168,7 +168,20 @@ export class ModelRouter {
     // ---- stage 3: rank ----------------------------------------------------
     const threshold = policy.localQualityThreshold[complexity];
     const preferred = this.deps.preferredLocalModel?.();
-    const rankedLocal = rankLocal(local, op, threshold, policy, energy, loaded, preferred);
+    // Planning and structured output need the stronger model when quality is not yet measured;
+    // the smallest resident one copies examples and drops fields.
+    const demanding =
+      complexity !== 'low' && (op === 'plan' || op === 'reason' || !!req.structuredOutput);
+    const rankedLocal = rankLocal(
+      local,
+      op,
+      threshold,
+      policy,
+      energy,
+      loaded,
+      preferred,
+      demanding,
+    );
     const rankedRemote = rankRemote(remote, op, ctx, policy);
     const { pick, reason } = choose(
       rankedLocal,
@@ -382,6 +395,8 @@ const by =
     return 0;
   };
 
+const DEMANDING_MIN_MEMORY_MB = 1000;
+
 function rankLocal(
   models: ModelEntry[],
   op: InferOperation,
@@ -390,6 +405,7 @@ function rankLocal(
   energy: EnergyState,
   loaded: Set<string>,
   preferred: string | undefined,
+  demanding = false,
 ): ModelEntry[] {
   const q = (m: ModelEntry) => m.qualityScores?.[op] ?? -1;
   const mem = (m: ModelEntry) => m.estimatedMemoryMB ?? 0;
@@ -411,6 +427,17 @@ function rankLocal(
       (a, b) => q(b) - q(a),
       (a, b) => isPreferred(b) - isPreferred(a),
       (a, b) => mem(b) - mem(a),
+    );
+  } else if (demanding) {
+    // Sub-1 GB models (350M class) are kept for quick replies; planning goes to a bigger one.
+    const capable = (m: ModelEntry) => (mem(m) >= DEMANDING_MIN_MEMORY_MB ? 1 : 0);
+    cmp = by(
+      (a, b) => bucket(b, op, threshold) - bucket(a, op, threshold),
+      (a, b) => q(b) - q(a),
+      (a, b) => capable(b) - capable(a),
+      (a, b) => isLoaded(b) - isLoaded(a),
+      (a, b) => isPreferred(b) - isPreferred(a),
+      (a, b) => mem(a) - mem(b),
     );
   } else {
     // Among models that clear the bar, a resident one beats a reload for a marginal quality gain.

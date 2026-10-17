@@ -28,8 +28,57 @@ export function validate<T = unknown>(schema: JsonSchema, input: unknown): Valid
   return issues.length ? { ok: false, issues } : { ok: true, issues, value: value as T };
 }
 
+/**
+ * Small models often send a single value where a list is expected ("model" for ["model"]) or a
+ * JSON array as text. Accept those unambiguous shapes; anything else stays a validation error.
+ */
+function liftToArray(v: unknown, s: JsonSchema): unknown[] | null {
+  const itemType = s.items?.type;
+  const scalar = (x: unknown) =>
+    (itemType === 'string' && typeof x === 'string') ||
+    ((itemType === 'number' || itemType === 'integer') && typeof x === 'number') ||
+    (itemType === 'boolean' && typeof x === 'boolean');
+  if (typeof v === 'string') {
+    const t = v.trim();
+    if (t.startsWith('[')) {
+      try {
+        const parsed = JSON.parse(t);
+        if (Array.isArray(parsed)) return parsed;
+      } catch {
+        /* not strict JSON: ['model'  "a", "b"]  [model] — read the items leniently */
+      }
+      const parts = t
+        .replace(/^\[|\]$/g, '')
+        .split(',')
+        .map(x => x.trim().replace(/^['"`]+|['"`]+$/g, ''))
+        .filter(Boolean);
+      if (parts.length) return parts;
+    }
+    if (!t) return null;
+    // Comma-separated only when the items are an enum, where a comma cannot be part of a value.
+    if (s.items?.enum && t.includes(','))
+      return t
+        .split(',')
+        .map(x => x.trim())
+        .filter(Boolean);
+    return scalar(t) ? [t] : null;
+  }
+  return scalar(v) ? [v] : null;
+}
+
 function walk(s: JsonSchema, v: unknown, path: string, issues: SchemaIssue[]): unknown {
   if (v === undefined && s.default !== undefined) v = structuredCloneSafe(s.default);
+  if (s.enum && typeof v === 'string' && !s.enum.includes(v as never)) {
+    // "Models" / "models" for "model": same word, different case or plural.
+    const lower = v.trim().toLowerCase();
+    const snapped = s.enum.find(
+      e =>
+        typeof e === 'string' &&
+        (e.toLowerCase() === lower ||
+          (lower.endsWith('s') && e.toLowerCase() === lower.slice(0, -1))),
+    );
+    if (snapped !== undefined) v = snapped;
+  }
   if (s.enum && !s.enum.includes(v as never)) {
     issues.push({
       path,
@@ -85,11 +134,12 @@ function walk(s: JsonSchema, v: unknown, path: string, issues: SchemaIssue[]): u
       return v;
     }
     case 'array': {
-      if (!Array.isArray(v)) {
+      const list = Array.isArray(v) ? v : liftToArray(v, s);
+      if (!list) {
         issues.push({ path, message: 'must be an array' });
         return v;
       }
-      return s.items ? v.map((x, i) => walk(s.items!, x, `${path}[${i}]`, issues)) : v;
+      return s.items ? list.map((x, i) => walk(s.items!, x, `${path}[${i}]`, issues)) : list;
     }
     case 'object': {
       if (typeof v !== 'object' || v === null || Array.isArray(v)) {

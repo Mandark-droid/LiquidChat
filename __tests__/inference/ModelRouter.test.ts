@@ -394,3 +394,23 @@ describe('audit trail', () => {
     );
   });
 });
+
+describe('demanding steps avoid the tiny model', () => {
+  test('a planning step goes to the loaded 1.2B even when the 350M is loaded and preferred', async () => {
+    const h = await makeHarness({ preferred: 'lfm2.5-350m' });
+    h.loaded.push('lfm2.5-350m', 'lfm2.5-1.2b-instruct');
+    const plan = await h.router.route(
+      ctx({ requirements: { operation: 'plan', structuredOutput: true, complexity: 'medium' } }),
+    );
+    expect(plan.selectedModelId).toBe('lfm2.5-1.2b-instruct');
+  });
+
+  test('a quick reply still uses the small resident model', async () => {
+    const h = await makeHarness({ preferred: 'lfm2.5-350m' });
+    h.loaded.push('lfm2.5-350m', 'lfm2.5-1.2b-instruct');
+    const quick = await h.router.route(
+      ctx({ requirements: { operation: 'respond', complexity: 'low' } }),
+    );
+    expect(quick.selectedModelId).toBe('lfm2.5-350m');
+  });
+});

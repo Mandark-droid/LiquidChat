@@ -8,6 +8,43 @@ import type { InferenceTool } from '../inference/types';
 import { toMobileActionsSchema } from './schema';
 import type { AgentTool, Distribution } from './types';
 
+// Words that appear in nearly every request and tool description and so say nothing about which
+// tool is wanted.
+const STOP_WORDS = new Set([
+  'the',
+  'and',
+  'for',
+  'with',
+  'you',
+  'your',
+  'this',
+  'that',
+  'from',
+  'into',
+  'what',
+  'how',
+  'can',
+  'please',
+  'are',
+  'was',
+  'not',
+  'has',
+  'have',
+  'about',
+  'tell',
+  'give',
+  'just',
+  'some',
+  'would',
+  'could',
+  'should',
+  'any',
+  'all',
+  'now',
+  'out',
+  'get',
+]);
+
 export class ToolRegistry {
   private tools = new Map<string, AgentTool>();
   private aliases = new Map<string, string>();
@@ -54,12 +91,19 @@ export class ToolRegistry {
       query
         .toLowerCase()
         .split(/[^a-z0-9]+/)
-        .filter(w => w.length > 2),
+        .filter(w => w.length > 2 && !STOP_WORDS.has(w)),
     );
     const scored = this.list({ distribution }).map(t => {
-      const hay = `${t.name} ${t.description}`.toLowerCase();
+      const name = t.name.toLowerCase();
+      const nameParts = new Set(name.split(/[^a-z0-9]+/));
+      const desc = ` ${t.description.toLowerCase()} `;
       let score = 0;
-      for (const w of words) if (hay.includes(w)) score += hay.includes(` ${w}`) ? 2 : 1;
+      for (const w of words) {
+        if (nameParts.has(w)) score += 4;
+        else if (name.includes(w)) score += 2;
+        else if (desc.includes(` ${w} `) || desc.includes(` ${w}s `)) score += 2;
+        else if (desc.includes(w)) score += 1;
+      }
       return { t, score };
     });
     return scored

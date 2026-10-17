@@ -7,6 +7,7 @@
  */
 import type { AgentTool, JsonSchema, RiskLevel, ToolContext, ToolOutcome } from '../tools/types';
 import { toolError } from '../tools/types';
+import { formatMcpResult, hasMcpFormatter } from './formatters';
 import {
   type McpClient,
   type McpContent,
@@ -76,6 +77,7 @@ export function adaptMcpTool(
     .trim()
     .slice(0, 300);
   const risk = riskFor(tool);
+  const answersDirectly = hasMcpFormatter(server.id, tool.name);
   const inputSchema = (
     tool.inputSchema && typeof tool.inputSchema === 'object'
       ? tool.inputSchema
@@ -85,6 +87,7 @@ export function adaptMcpTool(
     name: mcpToolName(server.name, tool.name),
     description: `[MCP: ${server.name}] ${desc}`,
     category: 'mcp',
+    answersDirectly,
     inputSchema,
     requiredPermissions: ['special:network'],
     riskLevel: risk,
@@ -111,10 +114,13 @@ export function adaptMcpTool(
         const data: McpToolOutput = { untrusted: true, server: server.name, content };
         if (truncated) data.truncated = true;
         if (res.structuredContent !== undefined) data.structuredContent = res.structuredContent;
+        const formatted = answersDirectly
+          ? (formatMcpResult(server.id, tool.name, content) ?? content.slice(0, 1500))
+          : null;
         return {
           success: true,
           data,
-          display: `${server.name}: ${tool.name} returned ${content.length} chars`,
+          display: formatted ?? `${server.name}: ${tool.name} returned ${content.length} chars`,
         };
       } catch (e) {
         if (ctx.cancel.cancelled) return toolError('CANCELLED', 'Cancelled', true);

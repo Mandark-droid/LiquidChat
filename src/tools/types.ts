@@ -90,6 +90,8 @@ export interface AgentTool<A = Record<string, unknown>> {
   idempotent: boolean;
   /** Never eligible for a standing "always allow" grant (e.g. sending messages). */
   alwaysAsk?: boolean;
+  /** `display` is already the answer for the user, so no model step needs to rewrite the output. */
+  answersDirectly?: boolean;
   /** Restrict to a distribution flavor (Accessibility automation is 'full' only). */
   distributions?: Distribution[];
   /** Name in the google/mobile-actions schema the fine-tuned model emits, if different. */

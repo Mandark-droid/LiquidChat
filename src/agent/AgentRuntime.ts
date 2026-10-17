@@ -83,6 +83,20 @@ export interface AgentRuntimeDeps {
   mcpTokenFallback?: (serverId: string) => Promise<string | undefined>;
 }
 
+/**
+ * Tools of built-in servers an on-device model can actually drive. Hugging Face's `hf_fs` takes a
+ * required list of filesystem-style commands and has a 3 KB description; small models call it with
+ * no arguments, so it stays out unless a server has no entry here (all its tools are offered).
+ */
+const MCP_TOOL_ALLOWLIST: Record<string, string[]> = {
+  huggingface: ['hf_whoami', 'hub_repo_search', 'hub_repo_details'],
+};
+
+export function mcpToolAllowed(serverId: string, registeredName: string): boolean {
+  const allow = MCP_TOOL_ALLOWLIST[serverId];
+  return !allow || allow.includes(registeredName.slice(registeredName.lastIndexOf('.') + 1));
+}
+
 export interface ReadyReport {
   builtinSkills: { installed: string[]; skipped: { name: string; reason: string }[] };
   mcpTools: number;
@@ -422,7 +436,9 @@ export class AgentRuntime {
     tools: Parameters<typeof adaptMcpTools>[1],
   ): number {
     for (const old of this.mcpToolNames.get(id) ?? []) this.registry.unregister(old);
-    const adapted = adaptMcpTools(this.client(id, name, url), tools);
+    const adapted = adaptMcpTools(this.client(id, name, url), tools).filter(t =>
+      mcpToolAllowed(id, t.name),
+    );
     for (const t of adapted) this.registry.register(t);
     this.mcpToolNames.set(
       id,
@@ -438,7 +454,9 @@ export class AgentRuntime {
     this.removeMcpTools(id);
     if (!s.enabled) return 0;
     const client = this.client(s.id, s.name, s.url);
-    const adapted = await discoverMcpTools(client, t => this.mcpServers.setTools(s.id, t), signal);
+    const adapted = (
+      await discoverMcpTools(client, t => this.mcpServers.setTools(s.id, t), signal)
+    ).filter(t => mcpToolAllowed(id, t.name));
     for (const t of adapted) this.registry.register(t);
     this.mcpToolNames.set(
       id,

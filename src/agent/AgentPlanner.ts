@@ -15,7 +15,7 @@ import type { Distribution } from '../tools/types';
 import { parseCactusFunctionCalls, parseToolCalls } from '../utils/toolParser';
 import { type PlanIssue, validatePlan } from './PlanValidator';
 import type { InferenceRunner, InferenceRunOptions, SkillPort } from './ports';
-import type { AgentRequest, Plan, PlanStep, ToolStep } from './types';
+import type { AgentRequest, Plan, PlanStep } from './types';
 
 export type PlannerOutcome =
   | { kind: 'plan'; plan: Plan }
@@ -54,6 +54,9 @@ export function looksMultiStep(text: string): boolean {
   );
 }
 
+const FAST_PATH_TOOLS = 8;
+const NEWLINE = String.fromCharCode(10);
+
 export class AgentPlanner {
   constructor(private readonly deps: PlannerDeps) {}
 
@@ -78,15 +81,10 @@ export class AgentPlanner {
   /** One turn; tool schemas go only in `tools` (the chat template renders them), not the prompt too. */
   async fastPath(request: AgentRequest, ctx: PlanContext): Promise<PlannerOutcome> {
     const distribution = this.deps.distribution();
-    const all = this.deps.registry.list({ distribution });
-    // Built-in device tools always; remote (MCP) tools only when the request looks related.
-    // Their long dotted names confuse a small model and their schemas inflate every prompt.
-    const tools = all.some(isMcpTool)
-      ? [
-          ...all.filter(t => !isMcpTool(t)),
-          ...this.deps.registry.relevant(request.text, 4, distribution).filter(isMcpTool),
-        ]
-      : all;
+    // The model reads every tool schema on every turn (~100 tokens each, ~14 s of prefill for all
+    // ~40 on a phone), so offer only the tools that look related. With no hint, offer them all.
+    const hits = this.deps.registry.relevant(request.text, FAST_PATH_TOOLS, distribution);
+    const tools = hits.length ? hits : this.deps.registry.list({ distribution });
     const system =
       (this.deps.systemPrompt?.() ??
         'You are a helpful assistant with access to device functions. Call one only when the request needs it; otherwise answer directly.') +
@@ -123,7 +121,7 @@ export class AgentPlanner {
     const known = tools.map(t => t.name);
     calls = calls.map(c => ({ ...c, name: repairToolName(c.name, known) }));
 
-    const steps: ToolStep[] = calls.map((c, i) => ({
+    const steps: PlanStep[] = calls.map((c, i) => ({
       id: `s${i + 1}`,
       kind: 'tool',
       tool: c.name,
@@ -132,7 +130,36 @@ export class AgentPlanner {
     }));
     const question = missingDetails(steps, request, this.deps.registry, ctx.memoryContext);
     if (question) return { kind: 'answer', text: question };
-    return this.checked({ goal: request.text, steps, source: 'fastpath' }, result.text);
+    // A remote tool returns data, not a status: have the model answer from it (bounded).
+    const remote = steps.filter(
+      st =>
+        st.kind === 'tool' &&
+        st.tool.startsWith('mcp.') &&
+        !this.deps.registry.get(st.tool)?.answersDirectly,
+    );
+    let responseStep: string | undefined;
+    if (remote.length) {
+      responseStep = `s${steps.length + 1}`;
+      steps.push({
+        id: responseStep,
+        kind: 'infer',
+        operation: 'respond',
+        dependsOn: steps.map(st => st.id),
+        prompt: [
+          `The user asked: "${request.text.replace(/"/g, "'")}"`,
+          'Answer using only the tool results below. List the relevant items briefly ' +
+            '(name plus one useful detail each). If the results do not answer the question, say so.',
+          ...remote.map(st => `{{steps.${st.id}.output.content}}`),
+        ].join(NEWLINE),
+        dataClass: 'personal',
+        maxTokens: 300,
+        maxDataChars: 3500,
+      });
+    }
+    return this.checked(
+      { goal: request.text, steps, source: 'fastpath', responseStep },
+      result.text,
+    );
   }
 
   /** JSON plan from the model, validated; one repair round with the validator's issues. */
@@ -217,8 +244,6 @@ export class AgentPlanner {
     return v.ok ? { kind: 'plan', plan: v.plan! } : { kind: 'invalid', issues: v.issues, raw };
   }
 }
-
-const isMcpTool = (t: { name: string }): boolean => t.name.startsWith('mcp.');
 
 function editDistance(a: string, b: string): number {
   const d = Array.from({ length: a.length + 1 }, (_, i) => [i, ...Array(b.length).fill(0)]);

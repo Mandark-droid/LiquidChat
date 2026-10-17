@@ -411,3 +411,16 @@ describe('McpServerStore', () => {
     expect(await credentials.has(`mcp:${a.id}`)).toBe(false);
   });
 });
+
+describe('built-in server tool allowlist', () => {
+  const { mcpToolAllowed } = require('../../src/agent/AgentRuntime');
+
+  it('offers only the simple Hugging Face tools', () => {
+    expect(mcpToolAllowed('huggingface', 'mcp.hugging_face.hub_repo_search')).toBe(true);
+    expect(mcpToolAllowed('huggingface', 'mcp.hugging_face.hub_repo_details')).toBe(true);
+    expect(mcpToolAllowed('huggingface', 'mcp.hugging_face.hf_fs')).toBe(false);
+  });
+  it('does not filter servers the user adds', () => {
+    expect(mcpToolAllowed('mcp_abc', 'mcp.acme.anything')).toBe(true);
+  });
+});

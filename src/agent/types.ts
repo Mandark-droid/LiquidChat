@@ -59,6 +59,8 @@ export interface InferStep extends BaseStep {
   dataClass: DataClass;
   outputSchema?: JsonSchema;
   maxTokens?: number;
+  /** Upper bound on each referenced step output inserted into the prompt (keeps prefill short). */
+  maxDataChars?: number;
 }
 
 export type PlanStep = ToolStep | InferStep;

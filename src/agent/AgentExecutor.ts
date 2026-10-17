@@ -380,7 +380,7 @@ export class AgentExecutor {
     taint: Taint,
   ): Promise<{ ok: boolean; output?: unknown; display?: string; error?: ToolError }> {
     const { record } = ctx;
-    const prompt = resolvePrompt(step.prompt, outputs);
+    const prompt = resolvePrompt(step.prompt, outputs, step.maxDataChars);
     const messages = [
       {
         role: 'system' as const,

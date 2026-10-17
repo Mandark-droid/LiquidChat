@@ -68,6 +68,12 @@ async function resolveSuperseded(slug: string): Promise<string> {
   return downloaded.some(m => m.slug === next) ? next : slug;
 }
 
+function decodeTokensPerSecond(tokens: number, firstTokenAt: number | null, now: number): number {
+  return firstTokenAt && tokens > 1 && now > firstTokenAt
+    ? ((tokens - 1) / (now - firstTokenAt)) * 1000
+    : 0;
+}
+
 const PLAIN_CHAT_PROMPT =
   'You are LiquidChat, a helpful on-device assistant. Reply naturally and concisely.';
 
@@ -491,8 +497,11 @@ export default function ChatScreen({ chatId, onBack, onOpenModelSelector }: Chat
         tokenCount++;
         firstTokenAt ??= Date.now();
         setLiveTokenCount(tokenCount);
-        const elapsed = Date.now() - startedAt;
-        if (elapsed > 0) setLiveTokensPerSecond(Math.round((tokenCount / elapsed) * 10000) / 10);
+        // Decode speed: tokens after the first, over the time since the first (the wait for
+        // the first token is prefill and shows separately as TTFT).
+        const decodeMs = Date.now() - firstTokenAt;
+        if (tokenCount > 1 && decodeMs > 0)
+          setLiveTokensPerSecond(Math.round(((tokenCount - 1) / decodeMs) * 10000) / 10);
         // A tool call streams as markup or JSON; show progress, not raw syntax.
         if (!/^\s*(<\|tool_call|\[|\{)/.test(streamed)) setStreamingText(streamed);
       }
@@ -527,7 +536,7 @@ export default function ChatScreen({ chatId, onBack, onOpenModelSelector }: Chat
         totalTokens: tokenCount,
         timeToFirstTokenMs: firstTokenAt ? firstTokenAt - startedAt : 0,
         totalTimeMs,
-        tokensPerSecond: (tokenCount / totalTimeMs) * 1000,
+        tokensPerSecond: decodeTokensPerSecond(tokenCount, firstTokenAt, Date.now()),
         prefillTokens: 0,
         decodeTokens: tokenCount,
       });
