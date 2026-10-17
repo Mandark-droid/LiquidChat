@@ -7,6 +7,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { Alert, ScrollView, Share, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { showActionSheet } from '../components/ActionSheet';
 import {
   Button,
   Card,
@@ -246,29 +247,31 @@ export default function MemoryScreen({ onBack }: { onBack: () => void }) {
 }
 
 function memoryActions(m: Memory, reload: () => void) {
-  Alert.alert(m.title, undefined, [
-    {
-      text: m.pinned ? 'Unpin' : 'Pin (always use)',
-      onPress: async () => {
-        await memoryManager.update(m.id, { pinned: !m.pinned });
-        reload();
+  showActionSheet({
+    title: m.title,
+    options: [
+      {
+        text: m.pinned ? 'Unpin' : 'Pin (always use)',
+        onPress: async () => {
+          await memoryManager.update(m.id, { pinned: !m.pinned });
+          reload();
+        },
       },
-    },
-    {
-      text: m.sensitive ? 'Mark not sensitive' : 'Mark sensitive',
-      onPress: async () => {
-        await memoryManager.update(m.id, { sensitive: !m.sensitive });
-        reload();
+      {
+        text: m.sensitive ? 'Mark not sensitive' : 'Mark sensitive',
+        onPress: async () => {
+          await memoryManager.update(m.id, { sensitive: !m.sensitive });
+          reload();
+        },
       },
-    },
-    {
-      text: 'Delete',
-      style: 'destructive',
-      onPress: async () => {
-        await memoryManager.delete(m.id);
-        reload();
+      {
+        text: 'Delete',
+        destructive: true,
+        onPress: async () => {
+          await memoryManager.delete(m.id);
+          reload();
+        },
       },
-    },
-    { text: 'Cancel', style: 'cancel' },
-  ]);
+    ],
+  });
 }

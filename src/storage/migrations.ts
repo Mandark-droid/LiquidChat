@@ -216,4 +216,13 @@ export const MIGRATIONS: Migration[] = [
       )`,
     ],
   },
+  {
+    version: 5,
+    description: 'Hugging Face MCP server as a default (read-only Hub tools; removable)',
+    statements: [
+      `INSERT OR IGNORE INTO mcp_servers (id, name, url, enabled, tools_json, created_at)
+       VALUES ('huggingface', 'Hugging Face', 'https://huggingface.co/mcp', 1, NULL,
+               CAST(strftime('%s', 'now') AS INTEGER) * 1000)`,
+    ],
+  },
 ];

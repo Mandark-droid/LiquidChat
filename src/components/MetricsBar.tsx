@@ -24,14 +24,18 @@ const MetricsBar: React.FC<MetricsBarProps> = ({
     <View style={styles.container}>
       <PrivacyBadge />
       <View style={styles.metric}>
-        <Text style={styles.label}>Tokens</Text>
-        <Text style={styles.value}>
+        <Text style={styles.label} numberOfLines={1}>
+          Tokens
+        </Text>
+        <Text style={styles.value} numberOfLines={1}>
           {isGenerating ? liveTokenCount : metrics?.totalTokens || 0}
         </Text>
       </View>
       <View style={styles.metric}>
-        <Text style={styles.label}>Speed</Text>
-        <Text style={styles.value}>
+        <Text style={styles.label} numberOfLines={1}>
+          Speed
+        </Text>
+        <Text style={styles.value} numberOfLines={1}>
           {isGenerating
             ? liveTokensPerSecond > 0
               ? `${liveTokensPerSecond.toFixed(1)} t/s`
@@ -42,8 +46,10 @@ const MetricsBar: React.FC<MetricsBarProps> = ({
         </Text>
       </View>
       <View style={styles.metric}>
-        <Text style={styles.label}>TTFT</Text>
-        <Text style={styles.value}>
+        <Text style={styles.label} numberOfLines={1}>
+          TTFT
+        </Text>
+        <Text style={styles.value} numberOfLines={1}>
           {metrics?.timeToFirstTokenMs ? `${metrics.timeToFirstTokenMs}ms` : '-'}
         </Text>
       </View>
@@ -67,9 +73,12 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.surface,
     borderBottomWidth: 1,
     borderBottomColor: theme.colors.border,
-    gap: 16,
+    columnGap: 14,
+    rowGap: 6,
+    // The model badge drops to its own line instead of squeezing the numbers into wrapping.
+    flexWrap: 'wrap',
   },
-  metric: { alignItems: 'center', flexShrink: 1 },
+  metric: { alignItems: 'center', flexShrink: 0 },
   label: { fontSize: 10, color: theme.colors.textMuted, textTransform: 'uppercase' },
   value: { fontSize: 13, fontWeight: '700', color: theme.colors.text, marginTop: 2 },
   modelBadge: {
@@ -78,7 +87,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 12,
-    maxWidth: 140,
+    maxWidth: '100%',
     flexShrink: 1,
   },
   modelText: { fontSize: 11, fontWeight: '600', color: '#FFF' },

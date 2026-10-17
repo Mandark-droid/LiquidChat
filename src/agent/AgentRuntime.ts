@@ -11,7 +11,7 @@
 import { createInferenceStack, type InferenceStack } from '../inference/InferenceService';
 import type { FetchLike } from '../inference/providers/http';
 import { McpClient } from '../mcp/McpClient';
-import { McpServerStore } from '../mcp/McpServerStore';
+import { McpServerStore, mcpTokenKey } from '../mcp/McpServerStore';
 import { adaptMcpTools, discoverMcpTools } from '../mcp/McpToolAdapter';
 import { MemoryManager, type MemoryProposal } from '../memory/MemoryManager';
 import { NotificationStore } from '../notifications/NotificationStore';
@@ -79,6 +79,8 @@ export interface AgentRuntimeDeps {
   onMemoryProposal?: (p: MemoryProposal, executionId: string) => void;
   now?: () => Date;
   systemPrompt?: () => string;
+  /** Bearer token for a server with none stored (e.g. the app's Hugging Face token). */
+  mcpTokenFallback?: (serverId: string) => Promise<string | undefined>;
 }
 
 export interface ReadyReport {
@@ -239,6 +241,11 @@ export class AgentRuntime {
     let mcpTools = 0;
     for (const s of await this.mcpServers.list({ enabledOnly: true })) {
       if (s.tools?.length) mcpTools += this.registerMcpTools(s.id, s.name, s.url, s.tools);
+      // A server added by a migration (or never reachable) has no cached tools yet.
+      else
+        this.refreshMcpServer(s.id).catch(e =>
+          console.warn(`[MCP] ${s.name}: tool discovery failed: ${(e as Error).message}`),
+        );
     }
     const n = this.deps.platform.notifications;
     let notificationsIngested = 0;
@@ -392,10 +399,20 @@ export class AgentRuntime {
   // --- MCP (PRD §16) ----------------------------------------------------------------
 
   private client(id: string, name: string, url: string): McpClient {
-    return new McpClient(
-      { id, name, url },
-      { credentials: this.deps.platform.credentials, fetch: this.deps.fetch },
-    );
+    const store = this.deps.platform.credentials;
+    const fallback = this.deps.mcpTokenFallback;
+    const credentials: CredentialStore = fallback
+      ? {
+          get: async key =>
+            (await store.get(key)) ??
+            (key === mcpTokenKey(id) ? ((await fallback(id)) ?? null) : null),
+          set: (key, value) => store.set(key, value),
+          delete: key => store.delete(key),
+          has: key => store.has(key),
+          databaseKey: () => store.databaseKey(),
+        }
+      : store;
+    return new McpClient({ id, name, url }, { credentials, fetch: this.deps.fetch });
   }
 
   private registerMcpTools(

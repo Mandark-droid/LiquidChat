@@ -124,6 +124,11 @@ export const agentRuntime = new AgentRuntime({
     return !!downloaded?.has(id) || !getModelBySlug(id);
   },
   onMemoryProposal: (p, executionId) => memoryProposals.add(p, executionId),
+  // The Hugging Face server works anonymously; a saved HF token unlocks the user's own repos.
+  mcpTokenFallback: async id =>
+    id === 'huggingface'
+      ? (await storage.getSettings().catch(() => null))?.hfToken?.trim() || undefined
+      : undefined,
 });
 
 /** Starts the runtime once at app launch; failures are reported, not thrown. */

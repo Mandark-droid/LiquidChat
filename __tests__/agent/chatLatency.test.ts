@@ -104,3 +104,31 @@ describe('device RAM profile', () => {
     [3.6, 'low'],
   ])('%s GiB reported -> %s', (g, name) => expect(getDeviceProfile(gib(g)).name).toBe(name));
 });
+
+describe('repairToolName', () => {
+  const { repairToolName } = require('../../src/agent/AgentPlanner');
+  const known = [
+    'set_alarm',
+    'turn_on_flashlight',
+    'mcp.hugging_face.hub_repo_search',
+    'mcp.hugging_face.hub_repo_details',
+    'mcp.hugging_face.hf_whoami',
+  ];
+
+  it('keeps exact names', () => {
+    expect(repairToolName('set_alarm', known)).toBe('set_alarm');
+  });
+  it('restores a dropped namespace', () => {
+    expect(repairToolName('hub_repo_search', known)).toBe('mcp.hugging_face.hub_repo_search');
+  });
+  it('maps a garbled MCP name by its distinctive word', () => {
+    expect(repairToolName('liap_search', known)).toBe('mcp.hugging_face.hub_repo_search');
+  });
+  it('fixes a one-letter slip in a built-in name', () => {
+    expect(repairToolName('turn_on_flashlite', known)).toBe('turn_on_flashlight');
+  });
+  it('leaves invented or ambiguous names for the validator to reject', () => {
+    expect(repairToolName('delete_all_files', known)).toBe('delete_all_files');
+    expect(repairToolName('hub_repo', known)).toBe('hub_repo');
+  });
+});

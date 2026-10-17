@@ -373,10 +373,23 @@ describe('McpToolAdapter', () => {
 });
 
 describe('McpServerStore', () => {
+  test('ships the Hugging Face MCP server enabled by default, and it can be removed', async () => {
+    const store = new McpServerStore();
+    const hf = await store.get('huggingface');
+    expect(hf).toMatchObject({
+      name: 'Hugging Face',
+      url: 'https://huggingface.co/mcp',
+      enabled: true,
+    });
+    await store.remove('huggingface');
+    expect(await store.get('huggingface')).toBeUndefined();
+  });
+
   test('CRUD, token in credential store, URL validation', async () => {
     const credentials = new MemoryCredentials();
     let now = 1000;
     const store = new McpServerStore(undefined, () => now++, credentials);
+    await store.remove('huggingface');
     const a = await store.add({ name: 'A', url: 'https://a.example/mcp', token: 'secret-token' });
     await store.add({ id: 'b', name: 'B', url: 'http://localhost:3000/mcp', enabled: false });
     expect(await credentials.get(`mcp:${a.id}`)).toBe('secret-token');

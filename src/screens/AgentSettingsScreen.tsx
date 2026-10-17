@@ -340,6 +340,16 @@ export default function AgentSettingsScreen({ onBack }: { onBack: () => void }) 
               onValueChange={async v => {
                 await agentRuntime.mcpServers.update(s.id, { enabled: v });
                 if (!v) agentRuntime.removeMcpTools(s.id);
+                // Re-enabling must bring the tools back now, not after the next app start.
+                else
+                  await agentRuntime
+                    .refreshMcpServer(s.id)
+                    .catch(e =>
+                      Alert.alert(
+                        s.name,
+                        `Enabled, but connecting failed: ${e instanceof Error ? e.message : e}`,
+                      ),
+                    );
                 load();
               }}
             />
@@ -362,11 +372,20 @@ export default function AgentSettingsScreen({ onBack }: { onBack: () => void }) 
                 label="Remove"
                 small
                 kind="danger"
-                onPress={async () => {
-                  agentRuntime.removeMcpTools(s.id);
-                  await agentRuntime.mcpServers.remove(s.id);
-                  load();
-                }}
+                onPress={() =>
+                  Alert.alert('Remove MCP server', `Remove ${s.name} and its tools?`, [
+                    { text: 'Cancel', style: 'cancel' },
+                    {
+                      text: 'Remove',
+                      style: 'destructive',
+                      onPress: async () => {
+                        agentRuntime.removeMcpTools(s.id);
+                        await agentRuntime.mcpServers.remove(s.id);
+                        load();
+                      },
+                    },
+                  ])
+                }
               />
             </View>
           </Card>

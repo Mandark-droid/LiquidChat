@@ -77,7 +77,16 @@ export class AgentPlanner {
 
   /** One turn; tool schemas go only in `tools` (the chat template renders them), not the prompt too. */
   async fastPath(request: AgentRequest, ctx: PlanContext): Promise<PlannerOutcome> {
-    const tools = this.deps.registry.list({ distribution: this.deps.distribution() });
+    const distribution = this.deps.distribution();
+    const all = this.deps.registry.list({ distribution });
+    // Built-in device tools always; remote (MCP) tools only when the request looks related.
+    // Their long dotted names confuse a small model and their schemas inflate every prompt.
+    const tools = all.some(isMcpTool)
+      ? [
+          ...all.filter(t => !isMcpTool(t)),
+          ...this.deps.registry.relevant(request.text, 4, distribution).filter(isMcpTool),
+        ]
+      : all;
     const system =
       (this.deps.systemPrompt?.() ??
         'You are a helpful assistant with access to device functions. Call one only when the request needs it; otherwise answer directly.') +
@@ -111,6 +120,8 @@ export class AgentPlanner {
     if (!calls.length && result.functionCalls?.length)
       calls = parseCactusFunctionCalls(result.functionCalls);
     if (!calls.length) return { kind: 'answer', text: result.text.trim() };
+    const known = tools.map(t => t.name);
+    calls = calls.map(c => ({ ...c, name: repairToolName(c.name, known) }));
 
     const steps: ToolStep[] = calls.map((c, i) => ({
       id: `s${i + 1}`,
@@ -205,6 +216,53 @@ export class AgentPlanner {
     const v = validatePlan(plan, this.deps.registry, this.deps.distribution());
     return v.ok ? { kind: 'plan', plan: v.plan! } : { kind: 'invalid', issues: v.issues, raw };
   }
+}
+
+const isMcpTool = (t: { name: string }): boolean => t.name.startsWith('mcp.');
+
+function editDistance(a: string, b: string): number {
+  const d = Array.from({ length: a.length + 1 }, (_, i) => [i, ...Array(b.length).fill(0)]);
+  for (let j = 1; j <= b.length; j++) d[0][j] = j;
+  for (let i = 1; i <= a.length; i++)
+    for (let j = 1; j <= b.length; j++)
+      d[i][j] = Math.min(
+        d[i - 1][j] + 1,
+        d[i][j - 1] + 1,
+        d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1),
+      );
+  return d[a.length][b.length];
+}
+
+/**
+ * Small models drop or garble parts of a long tool name ("mcp.hugging_face.hub_repo_search" →
+ * "hub_repo_search" or "liap_search"). Map a near miss to the single closest offered tool; leave
+ * anything ambiguous or far off alone so the validator still rejects invented tools.
+ */
+export function repairToolName(name: string, known: string[]): string {
+  if (known.includes(name)) return name;
+  const tail = (n: string) => n.slice(n.lastIndexOf('.') + 1);
+  const wanted = tail(name).toLowerCase();
+  const exactTail = known.filter(k => tail(k).toLowerCase() === wanted);
+  if (exactTail.length === 1) return exactTail[0];
+  // Remote tools only: a shared word ("search") with exactly one offered MCP tool is enough.
+  const words = (n: string) =>
+    tail(n)
+      .toLowerCase()
+      .split(/[^a-z0-9]+/)
+      .filter(w => w.length >= 4);
+  const wantedWords = words(name);
+  const byWord = known
+    .filter(k => k.startsWith('mcp.'))
+    .map(k => ({ k, n: words(k).filter(w => wantedWords.includes(w)).length }))
+    .filter(x => x.n > 0)
+    .sort((a, b) => b.n - a.n);
+  if (byWord.length && (byWord.length === 1 || byWord[1].n < byWord[0].n)) return byWord[0].k;
+  const scored = known
+    .map(k => ({ k, d: editDistance(wanted, tail(k).toLowerCase()), len: tail(k).length }))
+    .filter(x => x.d <= Math.max(2, Math.floor(x.len * 0.3)))
+    .sort((a, b) => a.d - b.d);
+  if (scored.length && (scored.length === 1 || scored[1].d > scored[0].d)) return scored[0].k;
+  return name;
 }
 
 const PLACEHOLDER_RE =

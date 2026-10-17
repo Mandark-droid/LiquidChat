@@ -1,13 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import {
-  NativeModules,
-  Platform,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-} from 'react-native';
+import { Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import DeviceInfo from 'react-native-device-info';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import RamUsageBar from '../components/RamUsageBar';
@@ -22,6 +15,14 @@ interface DeviceMetrics {
   usedRamMb: string;
   arch: string;
   platform: string;
+}
+
+/** Time for today's entries; older ones need the date or they read as today. */
+function formatWhen(ts: number): string {
+  const d = new Date(ts);
+  const time = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  if (d.toDateString() === new Date().toDateString()) return time;
+  return `${d.toLocaleDateString([], { day: 'numeric', month: 'short' })} ${time}`;
 }
 
 export type AgentSection = 'insights' | 'skills' | 'memory' | 'agentSettings';
@@ -69,13 +70,15 @@ export default function AgentDashboardScreen({ onOpen }: { onOpen?: (s: AgentSec
 
     // Device metrics
     try {
-      if (Platform.OS === 'android' && NativeModules.DeviceInfoModule) {
-        const totalMem = await NativeModules.DeviceInfoModule.getTotalMemory();
-        setDeviceMetrics(prev => ({
-          ...prev,
-          totalRamGb: (totalMem / (1024 * 1024 * 1024)).toFixed(1),
-        }));
-      }
+      const [totalMem, usedMem] = await Promise.all([
+        DeviceInfo.getTotalMemory(),
+        DeviceInfo.getUsedMemory(),
+      ]);
+      setDeviceMetrics(prev => ({
+        ...prev,
+        totalRamGb: (totalMem / 1024 ** 3).toFixed(1),
+        usedRamMb: String(Math.round(usedMem / 1024 ** 2)),
+      }));
     } catch {}
   }, []);
 
@@ -94,7 +97,7 @@ export default function AgentDashboardScreen({ onOpen }: { onOpen?: (s: AgentSec
     if (loadedModels.length === 0) {
       return (
         <Text style={styles.emptyText}>
-          No models currently loaded. Enable orchestration in Settings to manage models.
+          No models loaded right now. They load automatically when you chat or run a task.
         </Text>
       );
     }
@@ -145,7 +148,7 @@ export default function AgentDashboardScreen({ onOpen }: { onOpen?: (s: AgentSec
                 {entry.modelSlug} - {entry.durationMs}ms
               </Text>
             </View>
-            <Text style={styles.actionTime}>{new Date(entry.timestamp).toLocaleTimeString()}</Text>
+            <Text style={styles.actionTime}>{formatWhen(entry.timestamp)}</Text>
           </View>
         ))}
       </>
@@ -184,6 +187,10 @@ export default function AgentDashboardScreen({ onOpen }: { onOpen?: (s: AgentSec
       <View style={styles.metricRow}>
         <Text style={styles.metricLabel}>Total RAM</Text>
         <Text style={styles.metricValue}>{deviceMetrics.totalRamGb} GB</Text>
+      </View>
+      <View style={styles.metricRow}>
+        <Text style={styles.metricLabel}>LiquidChat RAM in use</Text>
+        <Text style={styles.metricValue}>{deviceMetrics.usedRamMb} MB</Text>
       </View>
       <View style={styles.metricRow}>
         <Text style={styles.metricLabel}>Device Profile</Text>

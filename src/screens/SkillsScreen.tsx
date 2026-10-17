@@ -273,10 +273,23 @@ function SkillDetail({
           <Button
             label="Delete"
             kind="danger"
-            onPress={async () => {
-              await agentRuntime.removeSkill(skill.id);
-              onDeleted();
-            }}
+            onPress={() =>
+              Alert.alert(
+                'Delete skill',
+                `Delete "${skill.manifest.name}"? This cannot be undone.`,
+                [
+                  { text: 'Cancel', style: 'cancel' },
+                  {
+                    text: 'Delete',
+                    style: 'destructive',
+                    onPress: async () => {
+                      await agentRuntime.removeSkill(skill.id);
+                      onDeleted();
+                    },
+                  },
+                ],
+              )
+            }
           />
         ) : null}
       </View>
