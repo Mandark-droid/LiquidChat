@@ -21,6 +21,8 @@ import type { AgentTool, Distribution, ToolContext, ToolError, ToolResult } from
 export interface InvokeOptions {
   /** Plan/skill asked for confirmation even if the tool's risk wouldn't require it. */
   requireApproval?: boolean;
+  /** Personal data would leave the device: ask every time, a standing "always allow" does not cover it. */
+  requireFreshApproval?: boolean;
   timeoutMs?: number;
   /** Voice sessions get a spoken prompt. */
   voice?: boolean;
@@ -112,12 +114,16 @@ export class PermissionGateway {
 
     // 4. Risk policy + approval.
     let approvedBy: string | undefined;
-    const needsApproval = opts.requireApproval || tool.riskLevel === 'sensitive' || tool.alwaysAsk;
+    const needsApproval =
+      opts.requireApproval ||
+      opts.requireFreshApproval ||
+      tool.riskLevel === 'sensitive' ||
+      tool.alwaysAsk;
+    const grantable =
+      !opts.requireFreshApproval && !tool.alwaysAsk && tool.riskLevel !== 'sensitive';
     if (needsApproval) {
       const granted =
-        !tool.alwaysAsk &&
-        tool.riskLevel !== 'sensitive' &&
-        (await this.deps.repo.hasGrant(tool.name));
+        grantable && tool.riskLevel !== 'sensitive' && (await this.deps.repo.hasGrant(tool.name));
       if (granted) {
         approvedBy = 'grant';
       } else {
@@ -130,7 +136,7 @@ export class PermissionGateway {
           title: tool.riskLevel === 'sensitive' ? 'Allow sensitive action?' : 'Allow this action?',
           detail: summary,
           risk: tool.riskLevel === 'sensitive' ? 'high' : 'medium',
-          allowAlways: !tool.alwaysAsk && tool.riskLevel !== 'sensitive',
+          allowAlways: grantable,
           executionId: ctx.executionId,
           speak: opts.voice ? `Should I ${summary}?` : undefined,
         });

@@ -302,7 +302,8 @@ export class AgentExecutor {
         distribution: this.deps.distribution(),
       };
       const result = await this.deps.gateway.invoke(tool.name, args, toolCtx, {
-        requireApproval: step.requiresApproval || sendsPersonal,
+        requireApproval: step.requiresApproval,
+        requireFreshApproval: sendsPersonal,
         timeoutMs: step.timeoutMs,
         voice: ctx.voice,
         approver: async req =>

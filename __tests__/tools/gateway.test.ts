@@ -77,6 +77,21 @@ describe('PermissionGateway', () => {
     expect(await h.repo.grants()).toEqual(['set_timer']);
   });
 
+  it('personal data leaving the device asks every time, despite an earlier "always allow"', async () => {
+    const h = makeHarness();
+    await h.repo.create('exe1', { text: 't', source: 'chat' });
+    h.setApproval(() => 'approve_always');
+    await h.gateway.invoke('set_timer', { seconds: 60 }, ctx('exe1', 's1'), {
+      requireApproval: true,
+    });
+    expect(await h.repo.grants()).toEqual(['set_timer']);
+    await h.gateway.invoke('set_timer', { seconds: 60 }, ctx('exe1', 's2'), {
+      requireFreshApproval: true,
+    });
+    expect(h.approvalLog).toHaveLength(2);
+    expect(h.approvalLog[1]).toMatchObject({ allowAlways: false });
+  });
+
   it('blocks Accessibility automation in the Play flavor', async () => {
     const h = makeHarness({ distribution: 'play' });
     h.permissions.granted.add('special:accessibility');
