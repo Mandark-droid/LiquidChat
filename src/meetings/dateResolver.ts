@@ -83,6 +83,11 @@ export function resolveDue(phrase: string | undefined, meetingDate: Date): strin
 
   if (/\b(today|tonight|eod|end of (the )?day|asap|immediately)\b/.test(p)) return toIsoDate(base);
   if (/\bday after tomorrow\b/.test(p)) return toIsoDate(addDays(base, 2));
+  if (/\bnext (business|working|work) day\b/.test(p)) {
+    let d = addDays(base, 1);
+    while (d.getDay() === 0 || d.getDay() === 6) d = addDays(d, 1);
+    return toIsoDate(d);
+  }
   if (/\btomorrow\b/.test(p)) return toIsoDate(addDays(base, 1));
 
   if ((m = p.match(/\bin (\d+|a|one|two|three|four) (day|week|month)s?\b/))) {

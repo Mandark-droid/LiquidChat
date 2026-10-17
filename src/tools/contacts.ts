@@ -1,6 +1,7 @@
 import { Linking, Platform } from 'react-native';
 
 import type { ToolResult } from '../types';
+import { launchIntent } from './launchIntent';
 
 export async function createContact(
   firstName: string,
@@ -10,14 +11,15 @@ export async function createContact(
 ): Promise<ToolResult> {
   try {
     if (Platform.OS === 'android') {
-      const extras = [{ key: 'name', value: `${firstName} ${lastName}` }];
-      if (phoneNumber) {
-        extras.push({ key: 'phone', value: phoneNumber });
-      }
-      if (email) {
-        extras.push({ key: 'email', value: email });
-      }
-      await Linking.sendIntent('android.intent.action.INSERT', extras);
+      // Without the raw-contact type the INSERT action matches no app.
+      await launchIntent('android.intent.action.INSERT', {
+        type: 'vnd.android.cursor.dir/raw_contact',
+        extras: {
+          name: `${firstName} ${lastName}`.trim(),
+          ...(phoneNumber ? { phone: phoneNumber } : {}),
+          ...(email ? { email } : {}),
+        },
+      });
     } else {
       // iOS - no direct contact creation via URL, open contacts app
       await Linking.openURL('contacts://');

@@ -1,6 +1,7 @@
 import { Linking, Platform } from 'react-native';
 
 import type { ToolResult } from '../types';
+import { launchIntent } from './launchIntent';
 
 const SETTINGS_PAGES: Record<string, string> = {
   wifi: 'android.settings.WIFI_SETTINGS',
@@ -39,10 +40,10 @@ export async function openSettingsPage(page: string): Promise<ToolResult> {
 
     if (Platform.OS === 'android') {
       if (action) {
-        await Linking.sendIntent(action);
+        await launchIntent(action);
       } else {
         // Fall back to main settings
-        await Linking.sendIntent('android.settings.SETTINGS');
+        await launchIntent('android.settings.SETTINGS');
         return {
           success: true,
           message: `Unknown page "${page}", opened main settings. Available: ${Object.keys(SETTINGS_PAGES).join(', ')}`,

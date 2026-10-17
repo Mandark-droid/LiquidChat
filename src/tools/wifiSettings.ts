@@ -1,11 +1,12 @@
 import { Linking, Platform } from 'react-native';
 
 import type { ToolResult } from '../types';
+import { launchIntent } from './launchIntent';
 
 export async function openWifiSettings(): Promise<ToolResult> {
   try {
     if (Platform.OS === 'android') {
-      await Linking.sendIntent('android.settings.WIFI_SETTINGS');
+      await launchIntent('android.settings.WIFI_SETTINGS');
     } else {
       await Linking.openURL('App-Prefs:WIFI');
     }

@@ -166,3 +166,12 @@ describe('resolveDue — explicit dates', () => {
     expect(resolveDue('2026-02-30', FRI)).toBeUndefined();
   });
 });
+
+describe('resolveDue — business days', () => {
+  it('skips the weekend for "next business day"', () => {
+    // Friday 16 Oct 2026 → Monday 19 Oct; Saturday 17 Oct → Monday 19 Oct.
+    expect(resolveDue('next business day', new Date(2026, 9, 16))).toBe('2026-10-19');
+    expect(resolveDue('by the next working day', new Date(2026, 9, 17))).toBe('2026-10-19');
+    expect(resolveDue('next work day', new Date(2026, 9, 14))).toBe('2026-10-15');
+  });
+});

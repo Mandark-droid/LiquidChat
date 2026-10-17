@@ -88,7 +88,9 @@ class TaskStoreImpl {
 
   private persist() {
     const snap = JSON.stringify(this.tasks ?? []);
-    this.chain = this.chain.then(() => AsyncStorage.setItem(KEY, snap)).catch(() => {});
+    this.chain = this.chain
+      .then(() => AsyncStorage.setItem(KEY, snap))
+      .catch(e => console.warn('[TaskStore] could not save tasks:', e));
     this.notify();
     return this.chain;
   }
@@ -152,7 +154,8 @@ class TaskStoreImpl {
         const a = m.actionItems.find(x => x.id === task.id);
         if (a) {
           a.dueDate = dueDate;
-          a.dueText = dueText ?? a.dueText;
+          // An emptied Due field clears the date; keeping the old phrase left it showing.
+          a.dueText = dueText;
           a.manual = true;
         }
       });
@@ -260,7 +263,9 @@ export function parseQuickAdd(
   let priority: ActionPriority | undefined;
   let client: string | undefined;
 
-  const pm = t.match(/\s!(high|h|medium|med|m|low|l|!{1,2})\s/i);
+  // Keyboards with smart punctuation turn "tomorrow !high" into "tomorrow! high".
+  const pm =
+    t.match(/\s!(high|h|medium|med|m|low|l|!{1,2})\s/i) ?? t.match(/!\s+(high|medium|med|low)\s/i);
   if (pm) {
     const v = pm[1].toLowerCase();
     priority =
@@ -273,6 +278,7 @@ export function parseQuickAdd(
             : 'medium';
     t = t.replace(pm[0], ' ');
   }
+  t = t.replace(/[!.,;:]+(?=\s*$)/, ' ');
   const cm = t.match(/\s@([\w&.-]+(?:\s[A-Z][\w&.-]*)?)/);
   if (cm) {
     client = cm[1];

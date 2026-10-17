@@ -6,6 +6,7 @@ import android.content.Intent
 import android.media.AudioManager
 import android.net.Uri
 import android.os.Build
+import android.provider.CalendarContract
 import android.provider.Settings
 import android.app.NotificationManager
 import android.bluetooth.BluetoothAdapter
@@ -161,6 +162,95 @@ class SystemControlsModule(reactContext: ReactApplicationContext) :
             promise.resolve(if (enable) "Rotation lock enabled" else "Rotation lock disabled")
         } catch (e: Exception) {
             promise.reject("ROTATION_ERROR", e.message, e)
+        }
+    }
+
+    /**
+     * Opens the calendar app's "new event" screen prefilled; the user saves it. Linking.sendIntent
+     * cannot do this: it sets no data URI (so no calendar app matches ACTION_INSERT) and sends
+     * times as doubles, which calendar apps read as 0.
+     */
+    @ReactMethod
+    fun insertCalendarEvent(
+        title: String,
+        beginMs: Double,
+        endMs: Double,
+        allDay: Boolean,
+        description: String?,
+        promise: Promise,
+    ) {
+        try {
+            val intent = Intent(Intent.ACTION_INSERT).apply {
+                data = CalendarContract.Events.CONTENT_URI
+                putExtra(CalendarContract.Events.TITLE, title)
+                putExtra(CalendarContract.EXTRA_EVENT_BEGIN_TIME, beginMs.toLong())
+                putExtra(CalendarContract.EXTRA_EVENT_END_TIME, endMs.toLong())
+                putExtra(CalendarContract.EXTRA_EVENT_ALL_DAY, allDay)
+                if (!description.isNullOrBlank()) putExtra(CalendarContract.Events.DESCRIPTION, description)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            // No resolveActivity() pre-check: without a <queries> entry, Android 11+ package
+            // visibility hides the calendar app from it even though startActivity works.
+            val activity = reactApplicationContext.currentActivity
+            if (activity != null) {
+                intent.removeFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                activity.startActivity(intent)
+            } else {
+                reactApplicationContext.startActivity(intent)
+            }
+            promise.resolve(true)
+        } catch (e: android.content.ActivityNotFoundException) {
+            promise.reject("NO_CALENDAR", "No calendar app is installed.")
+        } catch (e: Exception) {
+            promise.reject("CALENDAR_ERROR", e.message, e)
+        }
+    }
+
+    /**
+     * Starts an activity for [action]. Unlike Linking.sendIntent there is no resolveActivity()
+     * pre-check (Android 11+ package visibility makes it fail for apps that do exist), and extras
+     * keep their JS types: AlarmClock ignores HOUR/MINUTES sent as strings.
+     */
+    @ReactMethod
+    fun launchIntent(
+        action: String,
+        data: String?,
+        type: String?,
+        extras: ReadableMap?,
+        promise: Promise,
+    ) {
+        try {
+            val intent = Intent(action)
+            when {
+                data != null && type != null -> intent.setDataAndType(Uri.parse(data), type)
+                data != null -> intent.data = Uri.parse(data)
+                type != null -> intent.type = type
+            }
+            extras?.let { map ->
+                val it = map.keySetIterator()
+                while (it.hasNextKey()) {
+                    val key = it.nextKey()
+                    when (map.getType(key)) {
+                        ReadableType.Boolean -> intent.putExtra(key, map.getBoolean(key))
+                        ReadableType.Number -> {
+                            val n = map.getDouble(key)
+                            if (n == Math.floor(n) && n <= Int.MAX_VALUE && n >= Int.MIN_VALUE)
+                                intent.putExtra(key, n.toInt())
+                            else intent.putExtra(key, n)
+                        }
+                        ReadableType.String -> intent.putExtra(key, map.getString(key))
+                        else -> {}
+                    }
+                }
+            }
+            val activity = reactApplicationContext.currentActivity
+            if (activity != null) activity.startActivity(intent)
+            else reactApplicationContext.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            promise.resolve(true)
+        } catch (e: android.content.ActivityNotFoundException) {
+            promise.reject("NO_APP", "No app on this phone can handle $action.")
+        } catch (e: Exception) {
+            promise.reject("INTENT_ERROR", e.message, e)
         }
     }
 }

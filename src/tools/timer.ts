@@ -1,18 +1,18 @@
 import { Linking, Platform } from 'react-native';
 
 import type { ToolResult } from '../types';
+import { launchIntent } from './launchIntent';
 
 export async function setTimer(seconds: number, message?: string): Promise<ToolResult> {
   try {
     if (Platform.OS === 'android') {
-      const extras: Array<{ key: string; value: string }> = [
-        { key: 'android.intent.extra.alarm.LENGTH', value: String(seconds) },
-        { key: 'android.intent.extra.alarm.SKIP_UI', value: 'false' },
-      ];
-      if (message) {
-        extras.push({ key: 'android.intent.extra.alarm.MESSAGE', value: message });
-      }
-      await Linking.sendIntent('android.intent.action.SET_TIMER', extras);
+      await launchIntent('android.intent.action.SET_TIMER', {
+        extras: {
+          'android.intent.extra.alarm.LENGTH': seconds,
+          'android.intent.extra.alarm.SKIP_UI': false,
+          ...(message ? { 'android.intent.extra.alarm.MESSAGE': message } : {}),
+        },
+      });
     } else {
       await Linking.openURL('clock-timer://');
     }

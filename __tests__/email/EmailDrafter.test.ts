@@ -16,8 +16,12 @@ import {
 import { modelLifecycle } from '../../src/services/ModelLifecycleManager';
 import { action, makeMeeting } from '../meetings/fixtures';
 
+let mockDownloaded = ['lfm2.5-1.2b-instruct', 'lfm2.5-350m', 'big'];
+jest.mock('../../src/utils/engineMigration', () => ({
+  listDownloadedCactusModels: async () => mockDownloaded.map(slug => ({ slug })),
+}));
 jest.mock('../../src/services/ModelLifecycleManager', () => ({
-  modelLifecycle: { ensure: jest.fn() },
+  modelLifecycle: { ensure: jest.fn(), getLoadedModels: () => [], getRamBudgetMb: () => 0 },
 }));
 
 const ensure = modelLifecycle.ensure as jest.Mock;
@@ -310,5 +314,38 @@ describe('openInMailApp', () => {
       'mailto:a%40x.com,b%2Btag%40y.com?cc=c%40z.com&subject=Q%26A%3F&body=Line%201%0ALine%202',
     );
     spy.mockRestore();
+  });
+});
+
+describe('draft hygiene', () => {
+  const { stripPlaceholders } = require('../../src/email/EmailDrafter');
+
+  it('removes bracket placeholders without leaving blank gaps', () => {
+    expect(
+      stripPlaceholders(
+        'Hi [Recipient Name],\n\nThanks for today.\n\nBest regards,\n[Your Name]\n[Your Position]',
+      ),
+    ).toBe('Hi,\n\nThanks for today.\n\nBest regards,');
+  });
+
+  it('keeps ordinary bracketed text', () => {
+    expect(stripPlaceholders('Budget [approved] for Q3')).toBe('Budget [approved] for Q3');
+  });
+
+  it('falls back to a downloaded model instead of downloading the chosen one', async () => {
+    mockDownloaded = ['lfm2.5-350m'];
+    const lm = {
+      reset: jest.fn(async () => {}),
+      complete: jest.fn(async () => ({ response: '{"subject":"S","body":"B"}' })),
+    };
+    ensure.mockResolvedValue({ instance: lm });
+    await draftEmail({
+      mode: 'compose',
+      tone: 'professional',
+      intent: 'say hi',
+      model: 'lfm2.5-1.2b-instruct',
+    });
+    expect(ensure).toHaveBeenLastCalledWith('lfm2.5-350m');
+    mockDownloaded = ['lfm2.5-1.2b-instruct', 'lfm2.5-350m', 'big'];
   });
 });

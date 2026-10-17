@@ -1,6 +1,7 @@
 import { Linking, Platform } from 'react-native';
 
 import type { ToolResult } from '../types';
+import { launchIntent } from './launchIntent';
 
 export async function setAlarm(
   hour: number,
@@ -9,15 +10,14 @@ export async function setAlarm(
 ): Promise<ToolResult> {
   try {
     if (Platform.OS === 'android') {
-      const extras: Array<{ key: string; value: string }> = [
-        { key: 'android.intent.extra.alarm.HOUR', value: String(hour) },
-        { key: 'android.intent.extra.alarm.MINUTES', value: String(minutes) },
-        { key: 'android.intent.extra.alarm.SKIP_UI', value: 'false' },
-      ];
-      if (message) {
-        extras.push({ key: 'android.intent.extra.alarm.MESSAGE', value: message });
-      }
-      await Linking.sendIntent('android.intent.action.SET_ALARM', extras);
+      await launchIntent('android.intent.action.SET_ALARM', {
+        extras: {
+          'android.intent.extra.alarm.HOUR': hour,
+          'android.intent.extra.alarm.MINUTES': minutes,
+          'android.intent.extra.alarm.SKIP_UI': false,
+          ...(message ? { 'android.intent.extra.alarm.MESSAGE': message } : {}),
+        },
+      });
     } else {
       await Linking.openURL('clock-alarm://');
     }

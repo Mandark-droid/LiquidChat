@@ -2,7 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Linking } from 'react-native';
 
 import { fmtDue } from '../meetings/documents';
-import { extractJson } from '../meetings/MinutesGenerator';
+import { extractJson, resolveSummaryModel } from '../meetings/MinutesGenerator';
 import type { Meeting } from '../meetings/types';
 import { modelLifecycle } from '../services/ModelLifecycleManager';
 
@@ -65,7 +65,9 @@ const SYSTEM =
   'You are an expert email writer. You write clear, natural emails that sound like a real person, ' +
   'never robotic. You never invent facts, numbers, dates or commitments that were not given. ' +
   'You reply with a single JSON object: {"subject": "...", "body": "..."}. ' +
-  'The body is plain text with line breaks, a greeting, and a sign-off.';
+  'The body is plain text with line breaks, a greeting, and a sign-off. ' +
+  'Never write placeholders such as [Your Name], [Date] or [Company]: if a detail is unknown, ' +
+  'leave it out (sign off with just "Best regards" when no sender name is given).';
 
 function toneGuide(t: EmailTone): string {
   switch (t) {
@@ -164,11 +166,37 @@ function parseDraft(raw: string): { subject: string; body: string } {
   return m ? { subject: m[1].trim(), body: m[2].trim() } : { subject: '', body: cleaned };
 }
 
+const PLACEHOLDER =
+  /\[(?:your|recipient'?s?|sender'?s?|client'?s?|company|name|date|time|position|title|phone|email|contact)[^\]\n]{0,30}\]/gi;
+
+/** Drops "[Your Name]"-style placeholders a small model adds despite the instruction. */
+export function stripPlaceholders(text: string): string {
+  return text
+    .split('\n')
+    .map(line =>
+      line
+        .replace(PLACEHOLDER, '')
+        .replace(/[ \t]{2,}/g, ' ')
+        .replace(/[ \t]+([,.!?;:])/g, '$1')
+        .trimEnd(),
+    )
+    .filter((line, i, all) => line.trim() !== '' || (i > 0 && all[i - 1].trim() !== ''))
+    .join('\n')
+    .trim();
+}
+
+function cleanDraft(raw: string): { subject: string; body: string } {
+  const d = parseDraft(raw);
+  return { subject: stripPlaceholders(d.subject), body: stripPlaceholders(d.body) };
+}
+
 async function run(
   model: string,
   messages: { role: 'system' | 'user' | 'assistant'; content: string }[],
 ) {
-  const managed = await modelLifecycle.ensure(model);
+  // Same choice as minutes: a downloaded model that fits in RAM beats a surprise 1 GB download.
+  const { slug } = await resolveSummaryModel(model);
+  const managed = await modelLifecycle.ensure(slug);
   const lm = managed.instance;
   if (!lm) throw new Error(`Model ${model} failed to load`);
   try {
@@ -186,7 +214,7 @@ export async function draftEmail(r: DraftRequest): Promise<EmailDraft> {
     { role: 'system', content: SYSTEM },
     { role: 'user', content: buildPrompt(r) },
   ]);
-  const { subject, body } = parseDraft(raw);
+  const { subject, body } = cleanDraft(raw);
   const now = Date.now();
   let fallbackSubject = '';
   if (!subject && r.meeting) fallbackSubject = `Follow-up: ${r.meeting.title}`;
@@ -229,7 +257,7 @@ ${history.map((h, i) => `${i + 1}. ${h}`).join('\n')}
 Keep every fact unchanged unless an instruction says otherwise. Return JSON {"subject": "...", "body": "..."}.`,
     },
   ]);
-  const { subject, body } = parseDraft(raw);
+  const { subject, body } = cleanDraft(raw);
   return {
     ...d,
     subject: subject || d.subject,

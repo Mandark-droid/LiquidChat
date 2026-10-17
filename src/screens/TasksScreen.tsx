@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Alert,
+  Keyboard,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -12,7 +13,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import {
   Button,
@@ -45,6 +46,13 @@ interface Props {
 }
 
 type View_ = 'focus' | 'upcoming' | 'open' | 'done';
+
+// Android 15+ draws apps edge-to-edge, where adjustResize no longer shrinks the window for
+// the keyboard; the sheet has to move itself or the Due/Notes fields end up underneath it.
+const KEYBOARD_BEHAVIOR =
+  Platform.OS === 'ios' || (Platform.OS === 'android' && Platform.Version >= 35)
+    ? 'padding'
+    : undefined;
 type Scope = 'all' | 'mine' | 'personal' | 'meetings';
 
 function dueLabel(t: UnifiedTask): string {
@@ -55,7 +63,10 @@ function dueLabel(t: UnifiedTask): string {
   if (t.dueDate === tomorrow) return 'Tomorrow';
   const [y, m, d] = t.dueDate.split('-').map(Number);
   const dt = new Date(y, m - 1, d);
-  const days = Math.round((dt.getTime() - new Date(today).getTime()) / 86400000);
+  const now = new Date();
+  // new Date('YYYY-MM-DD') is UTC midnight; compare local midnights instead.
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const days = Math.round((dt.getTime() - startOfToday.getTime()) / 86400000);
   if (days < 0) return `${-days}d overdue`;
   if (days < 7) return dt.toLocaleDateString('en-IN', { weekday: 'short' });
   return dt.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
@@ -114,8 +125,9 @@ export default function TasksScreen({ onOpenMeeting, onDraftEmail }: Props) {
 
   const addQuick = async (text = quick) => {
     if (!text.trim()) return;
-    await taskStore.quickAdd(text);
-    setQuick('');
+    const created = await taskStore.quickAdd(text);
+    if (created) setQuick('');
+    else Alert.alert('Add a task', 'Type what needs doing, not just a date or priority.');
   };
 
   const preview = quick.trim() ? parseQuickAdd(quick) : null;
@@ -131,8 +143,9 @@ export default function TasksScreen({ onOpenMeeting, onDraftEmail }: Props) {
       <View style={styles.quickWrap}>
         <TextInput
           value={quick}
-          onChangeText={setQuick}
-          placeholder="Add a task… “send Acme proposal by Friday !high”"
+          // Keyboards re-insert an auto-space after the field is cleared, hiding the hint.
+          onChangeText={t => setQuick(t.trim() ? t : '')}
+          placeholder="Add a task… “call Acme Friday !high”"
           placeholderTextColor={theme.colors.textMuted}
           style={styles.quickInput}
           onSubmitEditing={() => addQuick()}
@@ -176,7 +189,7 @@ export default function TasksScreen({ onOpenMeeting, onDraftEmail }: Props) {
         horizontal
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.chips}
-        style={{ flexGrow: 0 }}
+        style={styles.chipBar}
       >
         {(
           [
@@ -284,6 +297,9 @@ function TaskRow({
       <TouchableOpacity
         onPress={onToggle}
         hitSlop={10}
+        accessibilityRole="checkbox"
+        accessibilityState={{ checked: t.status === 'done' }}
+        accessibilityLabel={`${t.status === 'done' ? 'Reopen' : 'Complete'}: ${t.title}`}
         style={[
           styles.check,
           t.status === 'done' && styles.checkDone,
@@ -334,6 +350,7 @@ function TaskEditor({
   const [priority, setPriority] = useState<ActionPriority>('medium');
   const [client, setClient] = useState('');
   const [notes, setNotes] = useState('');
+  const insets = useSafeAreaInsets();
 
   useEffect(() => {
     if (!task) return;
@@ -370,89 +387,101 @@ function TaskEditor({
       Alert.alert('No due date', 'Set a due date first.');
       return;
     }
-    const r = await createCalendarEvent(task.title, `${date}T09:30:00`);
+    const r = await createCalendarEvent(task.title, date, task.notes);
     if (r.success) await taskStore.markCalendarAdded(task);
     else Alert.alert('Calendar', r.message);
   };
 
+  // The dialog gets Back before the keyboard does; closing here would drop unsaved edits.
+  const onBack = () => (Keyboard.isVisible() ? Keyboard.dismiss() : onClose());
+
+  const confirmDelete = () =>
+    Alert.alert('Delete task', `Delete "${task.title}"?`, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: async () => {
+          await taskStore.deletePersonal(task.id);
+          onClose();
+        },
+      },
+    ]);
+
   return (
-    <Modal visible transparent animationType="slide" onRequestClose={onClose}>
-      <KeyboardAvoidingView
-        style={styles.backdrop}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      >
-        <View style={styles.sheet}>
-          <Text style={styles.sheetTitle}>{personal ? 'Task' : 'Meeting action item'}</Text>
-          {!personal ? (
-            <TouchableOpacity
-              onPress={() => {
-                onClose();
-                if (task.meetingId) onOpenMeeting(task.meetingId);
-              }}
-            >
-              <Text style={[ui.muted, { marginBottom: 12, color: theme.colors.accent }]}>
-                From “{task.meetingTitle}” — open meeting ›
-              </Text>
-            </TouchableOpacity>
-          ) : (
-            <View style={{ height: 12 }} />
-          )}
-          {personal ? (
-            <Field
-              label="Task"
-              value={title}
-              onChangeText={setTitle}
-              multiline
-              style={{ minHeight: 56 }}
-            />
-          ) : (
-            <Text style={[ui.body, { marginBottom: 12 }]}>{task.title}</Text>
-          )}
-          <Field
-            label="Due"
-            value={due}
-            onChangeText={setDue}
-            placeholder="tomorrow · Friday · 24 Oct"
-            hint={due ? `→ ${resolved ?? 'not recognised'}` : undefined}
-          />
-          {personal ? (
-            <>
-              <Segmented
-                options={[
-                  { key: 'high', label: 'High' },
-                  { key: 'medium', label: 'Medium' },
-                  { key: 'low', label: 'Low' },
-                ]}
-                value={priority}
-                onChange={setPriority}
-              />
-              <View style={{ height: 12 }} />
-              <Field
-                label="Client / project"
-                value={client}
-                onChangeText={setClient}
-                placeholder="optional"
-              />
-              <Field label="Notes" value={notes} onChangeText={setNotes} multiline />
-            </>
-          ) : null}
-          <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
-            {personal ? (
-              <Button
-                label="Delete"
-                kind="danger"
-                small
-                onPress={async () => {
-                  await taskStore.deletePersonal(task.id);
+    <Modal visible transparent animationType="slide" onRequestClose={onBack}>
+      <KeyboardAvoidingView style={styles.backdrop} behavior={KEYBOARD_BEHAVIOR}>
+        <View style={[styles.sheet, { paddingBottom: 16 + insets.bottom }]}>
+          <ScrollView keyboardShouldPersistTaps="handled" bounces={false}>
+            <View style={[ui.row, { justifyContent: 'space-between' }]}>
+              <Text style={styles.sheetTitle}>{personal ? 'Task' : 'Meeting action item'}</Text>
+              <TouchableOpacity onPress={onClose} hitSlop={12} accessibilityLabel="Close">
+                <Text style={styles.close}>✕</Text>
+              </TouchableOpacity>
+            </View>
+            {!personal ? (
+              <TouchableOpacity
+                onPress={() => {
                   onClose();
+                  if (task.meetingId) onOpenMeeting(task.meetingId);
                 }}
+              >
+                <Text style={[ui.muted, { marginBottom: 12, color: theme.colors.accent }]}>
+                  From “{task.meetingTitle}” — open meeting ›
+                </Text>
+              </TouchableOpacity>
+            ) : (
+              <View style={{ height: 12 }} />
+            )}
+            {personal ? (
+              <Field
+                label="Task"
+                value={title}
+                onChangeText={setTitle}
+                multiline
+                style={{ minHeight: 56 }}
               />
+            ) : (
+              <Text style={[ui.body, { marginBottom: 12 }]}>{task.title}</Text>
+            )}
+            <Field
+              label="Due"
+              value={due}
+              onChangeText={setDue}
+              placeholder="tomorrow · Friday · 24 Oct"
+              hint={due ? `→ ${resolved ?? 'not recognised'}` : undefined}
+            />
+            {personal ? (
+              <>
+                <Segmented
+                  options={[
+                    { key: 'high', label: 'High' },
+                    { key: 'medium', label: 'Medium' },
+                    { key: 'low', label: 'Low' },
+                  ]}
+                  value={priority}
+                  onChange={setPriority}
+                />
+                <View style={{ height: 12 }} />
+                <Field
+                  label="Client / project"
+                  value={client}
+                  onChangeText={setClient}
+                  placeholder="optional"
+                />
+                <Field label="Notes" value={notes} onChangeText={setNotes} multiline />
+              </>
             ) : null}
-            <Button label="📅 Calendar" kind="secondary" small onPress={toCalendar} />
-            <View style={{ flex: 1 }} />
-            <Button label="Cancel" kind="ghost" small onPress={onClose} />
-            <Button label="Save" small onPress={save} />
-          </View>
+            <View style={styles.actions}>
+              {personal ? (
+                <Button label="Delete" kind="danger" small onPress={confirmDelete} />
+              ) : null}
+              <Button label="📅 Calendar" kind="secondary" small onPress={toCalendar} />
+              <View style={{ flex: 1 }} />
+              <Button label="Cancel" kind="ghost" small onPress={onClose} />
+              <Button label="Save" small onPress={save} />
+            </View>
+          </ScrollView>
         </View>
       </KeyboardAvoidingView>
     </Modal>
@@ -489,6 +518,8 @@ const styles = StyleSheet.create({
   micBtn: { backgroundColor: theme.colors.accent },
   addText: { color: theme.colors.textLight, fontSize: 24, fontWeight: '600', marginTop: -2 },
   chips: { paddingHorizontal: theme.spacing.lg, paddingVertical: 12, gap: 6 },
+  // A long task list must not squeeze the filter row down to empty pills.
+  chipBar: { flexGrow: 0, flexShrink: 0 },
   row: {
     flexDirection: 'row',
     gap: 12,
@@ -519,8 +550,9 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: theme.borderRadius.xl,
     borderTopRightRadius: theme.borderRadius.xl,
     padding: theme.spacing.lg,
-    paddingBottom: 28,
     maxHeight: '92%',
   },
   sheetTitle: { fontSize: theme.fontSize.xl, fontWeight: '700', color: theme.colors.text },
+  close: { fontSize: 20, color: theme.colors.textSecondary, paddingHorizontal: 4 },
+  actions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8 },
 });

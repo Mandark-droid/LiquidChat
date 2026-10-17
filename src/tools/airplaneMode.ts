@@ -1,11 +1,12 @@
 import { Linking, Platform } from 'react-native';
 
 import type { ToolResult } from '../types';
+import { launchIntent } from './launchIntent';
 
 export async function toggleAirplaneMode(): Promise<ToolResult> {
   try {
     if (Platform.OS === 'android') {
-      await Linking.sendIntent('android.settings.AIRPLANE_MODE_SETTINGS');
+      await launchIntent('android.settings.AIRPLANE_MODE_SETTINGS');
     } else {
       await Linking.openURL('App-Prefs:AIRPLANE_MODE');
     }

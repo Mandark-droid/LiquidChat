@@ -304,6 +304,11 @@ describe('taskStore (AsyncStorage + meetingStore integration)', () => {
       dueText: '1 Nov',
       manual: true,
     });
+    // Emptying the Due field clears both the date and the spoken phrase.
+    await taskStore.setDue(fromMeeting, undefined, undefined);
+    const cleared = (await meetingStore.get(m.id))!.actionItems[0];
+    expect(cleared.dueDate).toBeUndefined();
+    expect(cleared.dueText).toBeUndefined();
 
     await taskStore.setStatus(mine, 'done');
     const after = (await taskStore.all()).find(t => t.id === created!.id)!;
@@ -312,5 +317,28 @@ describe('taskStore (AsyncStorage + meetingStore integration)', () => {
 
     await taskStore.deletePersonal(created!.id);
     expect((await taskStore.all()).some(t => t.id === created!.id)).toBe(false);
+  });
+});
+
+describe('parseQuickAdd with keyboard smart punctuation', () => {
+  it('reads "tomorrow! high" as a priority and a date', () => {
+    expect(parseQuickAdd('Call bank tomorrow! high', NOW)).toMatchObject({
+      title: 'Call bank',
+      priority: 'high',
+      dueDate: d(10, 17),
+    });
+  });
+
+  it('drops trailing punctuation that hid the date word', () => {
+    expect(parseQuickAdd('Pay rent tomorrow!', NOW)).toMatchObject({
+      title: 'Pay rent',
+      dueDate: d(10, 17),
+    });
+  });
+
+  it('keeps a question mark that belongs to the title', () => {
+    expect(parseQuickAdd('Ask Rahul about the budget?', NOW).title).toBe(
+      'Ask Rahul about the budget?',
+    );
   });
 });
