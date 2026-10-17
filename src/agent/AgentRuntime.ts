@@ -219,6 +219,7 @@ export class AgentRuntime {
       memory: this.memory,
       tracer: this.tracer,
       onMemoryProposal: deps.onMemoryProposal,
+      approvals: this.approvals,
     });
   }
 
@@ -301,8 +302,20 @@ export class AgentRuntime {
         n++;
       }
     }
+    // Routines announce themselves with a notification (runtime permission on Android 13+).
+    if (n > 0) {
+      const perm = 'android.permission.POST_NOTIFICATIONS' as const;
+      const p = this.deps.platform.permissions;
+      if (!(await p.check(perm).catch(() => true))) await p.request(perm).catch(() => false);
+    }
     await this.scheduler.sync(this.deps.platform.alarms);
     return n;
+  }
+
+  /** Deletes a skill and cancels its OS alarms first (no orphan routines). */
+  async removeSkill(skillId: string): Promise<void> {
+    await this.unscheduleSkill(skillId);
+    await this.skills.remove(skillId);
   }
 
   async unscheduleSkill(skillId: string): Promise<void> {

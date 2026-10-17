@@ -7,6 +7,7 @@
 import { MemoryManager, type MemoryProposal } from '../memory/MemoryManager';
 import type { Tracer } from '../observability/types';
 import { nullTracer } from '../observability/types';
+import type { ApprovalManager } from '../security/ApprovalManager';
 import type { ExecutionRepository } from '../storage/ExecutionRepository';
 import type { AgentExecutor } from './AgentExecutor';
 import { composeResponse } from './AgentExecutor';
@@ -33,6 +34,7 @@ export interface ControllerDeps {
   tracer?: Tracer;
   /** Called with proposals the user may approve; nothing is stored automatically. */
   onMemoryProposal?: (p: MemoryProposal, executionId: string) => void;
+  approvals?: Pick<ApprovalManager, 'denyAllFor'>;
   newId?: () => string;
 }
 
@@ -64,6 +66,8 @@ export class AgentControllerImpl implements IAgentController {
   async cancel(executionId: string): Promise<void> {
     await this.deps.repo.requestCancel(executionId);
     this.active.get(executionId)?.cancel();
+    // Close any approval sheet still open for it (a late "allow" must not act).
+    this.deps.approvals?.denyAllFor(executionId);
     const record = await this.deps.repo.get(executionId);
     if (record && !isTerminal(record.state) && !this.active.has(executionId)) {
       await this.deps.repo.transition(

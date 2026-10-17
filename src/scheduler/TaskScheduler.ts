@@ -18,6 +18,9 @@ import {
   type Trigger,
 } from './triggers';
 
+/** Occurrences armed ahead per recurring schedule (a week of daily routines). */
+export const ALARM_LOOKAHEAD = 7;
+
 export interface Schedule {
   id: string;
   skillId: string;
@@ -196,10 +199,12 @@ export class TaskScheduler {
         next = nextRunAt(s.trigger, s.lastRunAt ?? now, this.offsetFn);
         if (next !== null && next !== s.nextRunAt) await this.save({ ...s, nextRunAt: next });
       }
-      if (next !== null && next > now) {
-        await this.register({ ...s, nextRunAt: next });
-      } else if (next === null) {
+      if (next === null) {
         await this.cancelAlarm(s.id);
+      } else {
+        // Overdue schedules keep their nextRunAt (checkMissed reports them) but
+        // future occurrences are armed so the routine keeps firing meanwhile.
+        await this.register({ ...s, nextRunAt: next });
       }
     }
   }
@@ -284,32 +289,49 @@ export class TaskScheduler {
     );
   }
 
+  /**
+   * Arms the next occurrence plus a few after it. Android alarms are one-shot and
+   * only re-armed from JS, so without look-ahead a routine whose notification is
+   * swiped away (never opening the app) would stop for good. Extra occurrences use
+   * ids `<id>#k`; their payload is the same schedule, so onFired re-arms the chain.
+   */
   private async register(s: Schedule): Promise<void> {
     if (!this.alarms) return;
-    if (!s.enabled || s.nextRunAt === null || s.nextRunAt <= this.now()) {
-      await this.cancelAlarm(s.id);
-      return;
-    }
+    await this.cancelAlarm(s.id);
+    if (!s.enabled) return;
+    const now = this.now();
+    let at: number | null =
+      s.nextRunAt !== null && s.nextRunAt > now
+        ? s.nextRunAt
+        : nextRunAt(s.trigger, now, this.offsetFn);
+    if (at === null) return;
     const { title, body } = this.describeFn(s, await this.skillName(s.skillId));
     const payload: AlarmPayload = { scheduleId: s.id, skillId: s.skillId };
-    try {
-      await this.alarms.schedule({
-        id: s.id,
-        triggerAtMs: s.nextRunAt,
-        title,
-        body,
-        payload: JSON.stringify(payload),
-      });
-    } catch (err) {
-      console.warn('[TaskScheduler] alarm registration failed', s.id, err);
+    const count = s.trigger.type === 'once' ? 1 : ALARM_LOOKAHEAD;
+    for (let k = 0; k < count && at !== null; k++) {
+      try {
+        await this.alarms.schedule({
+          id: k === 0 ? s.id : `${s.id}#${k}`,
+          triggerAtMs: at,
+          title,
+          body,
+          payload: JSON.stringify(payload),
+        });
+      } catch (err) {
+        console.warn('[TaskScheduler] alarm registration failed', s.id, err);
+        return;
+      }
+      at = nextRunAt(s.trigger, at, this.offsetFn);
     }
   }
 
   private async cancelAlarm(id: string): Promise<void> {
     if (!this.alarms) return;
-    try {
-      await this.alarms.cancel(id);
-    } catch {}
+    for (let k = 0; k < ALARM_LOOKAHEAD; k++) {
+      try {
+        await this.alarms.cancel(k === 0 ? id : `${id}#${k}`);
+      } catch {}
+    }
   }
 
   private async skillName(skillId: string): Promise<string | null> {

@@ -51,27 +51,33 @@ describe('privacy taint', () => {
     expect(call.ctx.localOnly).toBeUndefined();
   });
 
-  it('public inputs stay public', async () => {
+  it('public inputs stay public in a reviewed skill; a model-written plan cannot claim public', async () => {
+    const steps: Plan['steps'] = [
+      { id: 't', kind: 'tool', tool: 'time.now', args: {} },
+      {
+        id: 's',
+        kind: 'infer',
+        operation: 'respond',
+        dataClass: 'public',
+        prompt: 'It is {{steps.t.output.time}}',
+        dependsOn: ['t'],
+      },
+    ];
     const h = makeHarness({ responder: () => ({ text: 'ok' }) });
     await h.controller.execute({
       text: 'x',
-      source: 'chat',
-      plan: plan(
-        [
-          { id: 't', kind: 'tool', tool: 'time.now', args: {} },
-          {
-            id: 's',
-            kind: 'infer',
-            operation: 'respond',
-            dataClass: 'public',
-            prompt: 'It is {{steps.t.output.time}}',
-            dependsOn: ['t'],
-          },
-        ],
-        's',
-      ),
+      source: 'skill',
+      plan: { goal: 'g', source: 'skill', steps, responseStep: 's' },
     });
     expect(h.inference.calls.find(c => c.ctx.stepId === 's')!.ctx.dataClass).toBe('public');
+
+    const h2 = makeHarness({ responder: () => ({ text: 'ok' }) });
+    await h2.controller.execute({
+      text: 'x',
+      source: 'chat',
+      plan: { goal: 'g', source: 'planner', steps, responseStep: 's' },
+    });
+    expect(h2.inference.calls.find(c => c.ctx.stepId === 's')!.ctx.dataClass).toBe('personal');
   });
 
   it('on-device-only output marks downstream model steps local-only and blocks network tools', async () => {
@@ -121,6 +127,43 @@ describe('privacy taint', () => {
     expect(r.state).not.toBe('COMPLETED');
     const rec = await h.repo.get(r.executionId);
     expect(rec?.steps.u?.error?.code).toBe('LOCAL_ONLY_DATA');
+  });
+
+  it('personal data sent through a network tool is always shown for approval', async () => {
+    const h = makeHarness({ responder: () => ({ text: 'ok' }) });
+    h.permissions.granted.add('special:network');
+    const calls: unknown[] = [];
+    h.registry.register({
+      name: 'mcp.notes.save',
+      description: 'Save a note',
+      category: 'mcp',
+      inputSchema: { type: 'object', properties: { text: { type: 'string' } }, required: ['text'] },
+      requiredPermissions: ['special:network'],
+      riskLevel: 'read_only',
+      idempotent: true,
+      execute: async args => {
+        calls.push(args);
+        return { success: true };
+      },
+    });
+    h.setApproval(() => 'deny');
+    const r = await h.controller.execute({
+      text: 'x',
+      source: 'chat',
+      plan: plan([
+        { id: 't', kind: 'tool', tool: 'tasks.list', args: { view: 'open', limit: 5 } },
+        {
+          id: 'u',
+          kind: 'tool',
+          tool: 'mcp.notes.save',
+          args: { text: 'Open tasks: {{steps.t.output}}' },
+          dependsOn: ['t'],
+        },
+      ]),
+    });
+    expect(h.approvalLog.some(a => a.detail.includes('mcp.notes.save'))).toBe(true);
+    expect(calls).toEqual([]);
+    expect((await h.repo.get(r.executionId))?.steps.u?.error?.code).toBe('USER_DENIED');
   });
 
   it('fails closed when the local-only check itself errors', async () => {

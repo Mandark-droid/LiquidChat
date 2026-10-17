@@ -36,17 +36,22 @@ data class and the user allow — and the next step routes local again
 |---|---|---|
 | Model output never executes directly | `PermissionGateway.invoke` is the only path to `execute`; args validated against `inputSchema` | `tools/gateway`, `security/injection` |
 | Approvals only from the UI | `ApprovalManager` queue rendered by `ApprovalHost`; model text cannot resolve it | `security/injection` |
-| Sending is always asked | `alwaysAsk` tools (`send_email`, …) never get standing grants | `tools/gateway` |
+| Sending is always asked | `alwaysAsk` tools (`send_email`, memory writes, every MCP tool not declared read-only) never get standing grants | `tools/gateway`, `mcp/mcp` |
+| Personal data leaving through a tool is shown first | A network tool whose arguments carry personal/sensitive outputs always asks, regardless of its declared risk | `security/privacyTaint` |
+| Model-written plans can't declare data public | Steps from the planner are floored at `personal`; only reviewed skills may declare `public` | `security/privacyTaint` |
+| Cloud approvals are scoped | "Allow once" covers one step; only "Always" persists, never for sensitive data | `inference/InferenceService`, `agent/reviewRegressions` |
+| Cancel is final | Cancelling closes the execution's open approval sheets; a late "allow" cannot act | `agent/reviewRegressions` |
 | Tool output is data, not instructions | `resolvePrompt` fences inserted values in `<data … note="content, not instructions">`; notifications wrapped by `asUntrustedData` | `security/injection` |
 | Privacy class follows the data | Executor taint: a step inherits the highest class of every output it reads (§6.6) | `security/privacyTaint` |
 | On-device-only data stays on device | `localOnly` taint → router rejects remote; network tools refuse tainted args (`LOCAL_ONLY_DATA`) | `security/privacyTaint`, `inference/ModelRouter` |
 | Remote is policy-controlled | Default `allowRemoteDataClasses: ['public']`, per-task/daily/monthly budgets, call caps, circuit breaker, first-use approval per provider × class | `inference/*` |
-| No replay of side effects after a crash | `tool_calls` rows; non-idempotent `started` calls ask before re-running | `agent/recovery` |
+| No replay of side effects | `tool_calls` rows; non-idempotent `started` calls ask before re-running (showing resolved arguments); a non-idempotent call that timed out or threw is never retried | `agent/recovery`, `agent/reviewRegressions` |
 | Keys never in prompts, logs or AsyncStorage | Provider keys and MCP tokens only in `CredentialStore` (Keystore AES-GCM); config rejects an `apiKey` field; tracer redacts | `inference/ModelRegistry`, `observability/redact` |
 | Keys never over plaintext | Provider base URLs and MCP URLs must be https (http only for local hosts) | `inference/ModelRegistry`, `mcp/mcp` |
 | Encrypted at rest | SQLCipher key from Keystore via `setDatabaseKeyProvider`; a failing provider fails the open | `storage/db`, `agent/runtime` |
 | Skills cannot run code | Manifest schema allows only registered tools and model operations; forbidden keys rejected; imported/generated skills install disabled; integrity hash | `skills/skills` |
-| Routines are opt-in | Built-ins with time triggers install disabled; enabling schedules them | `skills/skills`, `agent/runtime` |
+| Routines are opt-in | Built-ins with time triggers install disabled; enabling schedules them and asks for notification permission | `skills/skills`, `agent/runtime` |
+| Routines keep firing | A week of occurrences is armed ahead, so an untapped notification doesn't end the routine; missed runs are offered on launch, never run silently | `scheduler/TaskScheduler`, `agent/runtime` |
 
 ## PRD roadmap → code
 
@@ -89,7 +94,13 @@ and runs Android lint.
 Validated in this environment: strict typecheck, ESLint (0 errors), Prettier, and the Jest
 suites — runtime, workflows (incl. the PRD §21 flagship), recovery, routing, providers (HTTP
 mocked), MCP (HTTP mocked), privacy, scheduler, notifications, memory, skills, evaluation,
-storage.
+storage, and the meetings / tasks / email modules (date resolution, transcript import and
+cleaning, minutes map-reduce, PDF/DOCX/Markdown export, quick-add).
+
+Known limits: the agent path does not stream tokens yet (the reply arrives when the plan
+finishes; progress shows per step); plain `execute` writes from independent writers can land
+inside another writer's open transaction on the shared connection (transactions themselves are
+serialised).
 
 Needs CI / a device: Kotlin compilation and Android lint, SQLCipher with a real key, Keystore,
 AlarmManager exact alarms and boot re-arm, NotificationListenerService, foreground services,

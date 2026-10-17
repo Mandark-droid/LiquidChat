@@ -59,12 +59,20 @@ export function parseTranscript(raw: string): TranscriptSegment[] {
       pendingStart = toMs(tsOnly[2] ?? '0', tsOnly[3], tsOnly[4]);
       continue;
     }
-    buf.push(line.replace(/<\/?v[^>]*>/g, '')); // strip VTT voice tags
+    // VTT voice tag → "Speaker: text" so the summariser can attribute it.
+    const text = line
+      .replace(/^<v(?:\.[\w.-]+)?\s+([^>]+)>\s*/, (_m, who: string) => `${who.trim()}: `)
+      .replace(/<\/?v[^>]*>/g, '');
+    // A new "Name: …" turn starts a new segment even without a blank line.
+    if (SPEAKER_TURN.test(text)) flush();
+    buf.push(text);
     if (/[.?!]$/.test(line) && buf.join(' ').length > 400) flush();
   }
   flush();
   return out;
 }
+
+const SPEAKER_TURN = /^[A-Z][\p{L}.'-]*(?: [A-Z][\p{L}.'-]*){0,3}:\s/u;
 
 function toMs(h: string, m: string, s: string): number {
   return ((+h * 60 + +m) * 60 + +s) * 1000;

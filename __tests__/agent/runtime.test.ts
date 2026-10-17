@@ -9,7 +9,7 @@ import type { AgentEvent } from '../../src/agent/types';
 import { evalCases } from '../../src/observability/evalset';
 import { listEvalRuns } from '../../src/observability/EvaluationRunner';
 import { createFakePlatform, type FakePlatform } from '../../src/platform/fakes';
-import { parseAlarmPayload } from '../../src/scheduler/TaskScheduler';
+import { ALARM_LOOKAHEAD, parseAlarmPayload } from '../../src/scheduler/TaskScheduler';
 import { ApprovalManager } from '../../src/security/ApprovalManager';
 import { getDatabase, resetDatabaseForTests, setDatabaseKeyProvider } from '../../src/storage/db';
 import { setLegacyExecutor } from '../../src/tools/builtin/device';
@@ -148,6 +148,7 @@ describe('AgentRuntime', () => {
     expect(alarm).toBeDefined();
     expect(parseAlarmPayload(alarm.payload)?.skillId).toBe(skill.id);
 
+    clock = alarm.triggerAtMs + 5_000;
     platform.alarms.advanceTo(alarm.triggerAtMs, true);
     const events: AgentEvent[] = [];
     const result = await runtime.handleLaunchPayload(e => events.push(e));
@@ -156,8 +157,9 @@ describe('AgentRuntime', () => {
     expect(events.some(e => e.type === 'plan')).toBe(true);
     const rec = await runtime.repo.get(result!.executionId);
     expect(rec?.request.source).toBe('schedule');
-    // re-armed for the next day
-    expect(platform.alarms.list()).toHaveLength(1);
+    // re-armed: the next week of occurrences, starting tomorrow
+    expect(platform.alarms.list()).toHaveLength(ALARM_LOOKAHEAD);
+    expect(platform.alarms.list()[0].triggerAtMs).toBe(alarm.triggerAtMs + 24 * 3600_000);
     // consumed: a second launch does nothing
     expect(await runtime.handleLaunchPayload()).toBeNull();
 

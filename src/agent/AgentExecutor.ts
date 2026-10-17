@@ -203,8 +203,16 @@ export class AgentExecutor {
     }
     const fromMemory: DataClass[] =
       ctx.memoryContext && step.dataClass !== 'public' ? ['personal'] : [];
+    // A model-written plan sees the user's request and memory; it may not label its
+    // own steps "public". Only reviewed skills can declare public steps.
+    const floor: DataClass[] = ctx.plan.source === 'skill' ? [] : ['personal'];
     return {
-      dataClass: maxClass([step.dataClass, ...fromMemory, ...upstream.map(t => t.dataClass)]),
+      dataClass: maxClass([
+        step.dataClass,
+        ...floor,
+        ...fromMemory,
+        ...upstream.map(t => t.dataClass),
+      ]),
       localOnly: upstream.some(t => t.localOnly),
     };
   }
@@ -223,8 +231,18 @@ export class AgentExecutor {
         ok: false,
         error: { code: 'UNKNOWN_TOOL', message: `Unknown tool ${step.tool}`, recoverable: false },
       };
-    const leaks = findRefs(step.args).filter(id => taint.get(id)?.localOnly);
-    if (leaks.length && tool.requiredPermissions.includes('special:network')) {
+    const argRefs = findRefs(step.args);
+    const leaks = argRefs.filter(id => taint.get(id)?.localOnly);
+    // Personal data leaving the phone through a network tool is always shown to the user first.
+    const sendsPersonal =
+      tool.requiredPermissions.includes('special:network') &&
+      argRefs.some(id => (taint.get(id)?.dataClass ?? 'public') !== 'public');
+    // On-device-only data may not leave through the network, nor be laundered into
+    // memory (which is injected into later prompts without that restriction).
+    if (
+      leaks.length &&
+      (tool.requiredPermissions.includes('special:network') || tool.category === 'memory')
+    ) {
       this.tracer.record(record.id, 'policy.violation_blocked', {
         stepId: step.id,
         code: 'LOCAL_ONLY_DATA',
@@ -251,7 +269,8 @@ export class AgentExecutor {
       const decision = await this.deps.approvals.request({
         kind: 'tool',
         title: 'Run this step again?',
-        detail: `${tool.describeCall?.(step.args as never) ?? tool.name} was interrupted and may already have happened.`,
+        // Show the real arguments (resolved), not {{step}} templates.
+        detail: `${tool.describeCall?.(resolveArgs(step.args, outputs) as never) ?? tool.name} was interrupted and may already have happened.`,
         risk: 'high',
         allowAlways: false,
         executionId: record.id,
@@ -283,7 +302,7 @@ export class AgentExecutor {
         distribution: this.deps.distribution(),
       };
       const result = await this.deps.gateway.invoke(tool.name, args, toolCtx, {
-        requireApproval: step.requiresApproval,
+        requireApproval: step.requiresApproval || sendsPersonal,
         timeoutMs: step.timeoutMs,
         voice: ctx.voice,
         approver: async req =>
@@ -331,6 +350,10 @@ export class AgentExecutor {
           ['USER_DENIED', 'CANCELLED', 'INVALID_ARGS', 'NOT_AVAILABLE'].includes(result.error.code)
         )
           break;
+        // A timeout or crash mid-call may still have taken effect (an alarm set, a
+        // message sent): never repeat a non-idempotent action whose outcome is unknown.
+        // A clean failure reported by the tool itself means nothing happened.
+        if (!tool.idempotent && ['TIMEOUT', 'TOOL_EXCEPTION'].includes(result.error.code)) break;
       }
       if (rec.attempts < retry.maxAttempts) {
         await ctx.setState('RECOVERING', lastError?.code);
@@ -377,8 +400,10 @@ export class AgentExecutor {
       await ctx.setState('ROUTING');
       let result: InferenceResult;
       let decision: RoutingDecision;
+      let remoteCalls: number | undefined;
+      let spendUsd: number | undefined;
       try {
-        ({ result, decision } = await this.deps.inference.run(
+        ({ result, decision, remoteCalls, spendUsd } = await this.deps.inference.run(
           {
             executionId: record.id,
             stepId: step.id,
@@ -419,10 +444,14 @@ export class AgentExecutor {
       await ctx.setState('EXECUTING');
       rec.routing = [...(rec.routing ?? []), decision];
       ctx.emit({ type: 'routing', executionId: record.id, stepId: step.id, decision });
-      if (result.mode === 'remote' || result.costUsd) {
-        record.remoteCalls += result.mode === 'remote' ? 1 : 0;
-        record.spendUsd += result.costUsd ?? 0;
-        await this.deps.repo.addSpend(record.id, result.costUsd ?? 0, result.mode === 'remote');
+      // Count every dispatched remote call (failed attempts and fallbacks too) so
+      // per-task call and spend caps hold.
+      const calls = remoteCalls ?? (result.mode === 'remote' ? 1 : 0);
+      const spent = spendUsd ?? result.costUsd ?? 0;
+      if (calls || spent) {
+        record.remoteCalls += calls;
+        record.spendUsd += spent;
+        await this.deps.repo.addSpend(record.id, spent, calls);
       }
       this.tracer.record(record.id, 'inference', {
         stepId: step.id,
@@ -482,7 +511,7 @@ export class AgentExecutor {
     step: InferStep,
     d: RoutingDecision,
     dataClass: DataClass,
-  ): Promise<boolean> {
+  ): Promise<false | 'once' | 'always'> {
     const decision: ApprovalDecision = await this.withState(
       ctx,
       'WAITING_FOR_PERMISSION',
@@ -497,7 +526,12 @@ export class AgentExecutor {
           executionId: ctx.record.id,
         }),
     );
-    return decision !== 'deny';
+    // Only an explicit "always" may become a standing grant (and never for sensitive data).
+    return decision === 'deny'
+      ? false
+      : decision === 'approve_always' && dataClass !== 'sensitive'
+        ? 'always'
+        : 'once';
   }
 
   private async withState<T>(

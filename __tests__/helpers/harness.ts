@@ -186,7 +186,7 @@ export function makeHarness(
     distribution,
     now: () => new Date(2026, 9, 17, 9, 0),
   });
-  const controller = new AgentControllerImpl({ planner, executor, repo, memory });
+  const controller = new AgentControllerImpl({ planner, executor, repo, memory, approvals });
 
   return {
     registry,

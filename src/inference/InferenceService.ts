@@ -38,14 +38,16 @@ export interface RunOptions {
   signal?: AbortSignal;
   /**
    * Asked when a step would send personal/sensitive data to a provider for the
-   * first time. true ⇒ grant is persisted; false ⇒ step is re-routed on-device.
-   * Absent ⇒ treated as "deny".
+   * first time. 'always' (or true) ⇒ grant is persisted (never for sensitive data);
+   * 'once' ⇒ this step only; false ⇒ step is re-routed on-device. Absent ⇒ "deny".
    */
-  approve?: (decision: RoutingDecision) => Promise<boolean>;
+  approve?: (decision: RoutingDecision) => Promise<RemoteApproval>;
   /** Hard cap for the whole step including local generation (remote calls also use policy timeout). */
   timeoutMs?: number;
   onDecision?: (decision: RoutingDecision) => void;
 }
+
+export type RemoteApproval = boolean | 'once' | 'always';
 
 export interface AttemptRecord {
   modelId: string;
@@ -158,7 +160,8 @@ export class InferenceService {
 
         // ---- privacy approval (first send of this data class to this provider)
         if (decision.requiresUserApproval) {
-          const ok = opts.approve ? await opts.approve(publicDecision(decision)) : false;
+          const answer = opts.approve ? await opts.approve(publicDecision(decision)) : false;
+          const ok = answer !== false;
           this.tracer.record(ctx.executionId, 'approval', {
             kind: 'remote_data',
             stepId: ctx.stepId,
@@ -178,7 +181,8 @@ export class InferenceService {
             routeOpts.forbidRemoteReason = `you declined sending ${ctx.dataClass} data off-device`;
             continue;
           }
-          await this.deps.grants.grant(decision.providerId, ctx.dataClass);
+          if ((answer === true || answer === 'always') && ctx.dataClass !== 'sensitive')
+            await this.deps.grants.grant(decision.providerId, ctx.dataClass);
         }
         route++;
 

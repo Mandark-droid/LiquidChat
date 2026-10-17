@@ -143,6 +143,8 @@ export class PermissionGateway {
             recoverable: false,
           });
         }
+        if (ctx.cancel.cancelled)
+          return fail({ code: 'CANCELLED', message: 'Cancelled', recoverable: false });
         // A standing grant is only honoured where offering one was allowed.
         if (decision === 'approve_always' && !tool.alwaysAsk && tool.riskLevel !== 'sensitive') {
           await this.deps.repo.addGrant(tool.name);

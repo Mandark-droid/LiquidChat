@@ -15,7 +15,7 @@ import type { Plan } from './types';
 export interface InferenceRunOptions {
   signal?: AbortSignal;
   /** Asked when a decision requires user approval (e.g. first cloud send of personal data). */
-  approve?: (decision: RoutingDecision) => Promise<boolean>;
+  approve?: (decision: RoutingDecision) => Promise<boolean | 'once' | 'always'>;
   onToken?: (token: string) => void;
 }
 
@@ -24,7 +24,13 @@ export interface InferenceRunner {
     ctx: RoutingContext,
     req: InferenceRequest,
     opts?: InferenceRunOptions,
-  ): Promise<{ result: InferenceResult; decision: RoutingDecision }>;
+  ): Promise<{
+    result: InferenceResult;
+    decision: RoutingDecision;
+    /** Every remote call this step dispatched, including failed/retried ones. */
+    remoteCalls?: number;
+    spendUsd?: number;
+  }>;
 }
 
 export interface MemoryPort {

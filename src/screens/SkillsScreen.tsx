@@ -274,7 +274,7 @@ function SkillDetail({
             label="Delete"
             kind="danger"
             onPress={async () => {
-              await agentRuntime.skills.remove(skill.id);
+              await agentRuntime.removeSkill(skill.id);
               onDeleted();
             }}
           />

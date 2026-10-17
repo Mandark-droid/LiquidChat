@@ -1,7 +1,7 @@
 import type { CactusLM } from 'cactus-react-native';
 
 import { modelLifecycle } from '../services/ModelLifecycleManager';
-import { resolveDue } from './dateResolver';
+import { resolveDue, toIsoDate } from './dateResolver';
 import { meetingStore, newActionId } from './MeetingStore';
 import { transcriber } from './Transcriber';
 import type { ActionItem, ActionPriority, Meeting, Minutes } from './types';
@@ -82,7 +82,7 @@ function contextBlock(m: Meeting): string {
   const d = new Date(m.startedAt);
   const day = d.toLocaleDateString('en-US', { weekday: 'long' });
   const parts = [
-    `Date: ${d.toISOString().slice(0, 10)} (${day})`,
+    `Date: ${toIsoDate(d)} (${day})`, // local calendar date, not UTC
     m.client ? `Client: ${m.client}` : '',
     m.project ? `Project: ${m.project}` : '',
     m.attendees.length ? `Attendees: ${m.attendees.map(a => a.name).join(', ')}` : '',
@@ -307,7 +307,12 @@ function tokens(s: string): Set<string> {
       .filter(w => w.length > 2),
   );
 }
+function numbers(s: string): string {
+  return (s.match(/\d+(?:[.,]\d+)?/g) ?? []).join(' ');
+}
 function similar(a: string, b: string): boolean {
+  // "20 lakh" vs "50 lakh" are different commitments even if the words match.
+  if (numbers(a) !== numbers(b)) return false;
   const ta = tokens(a),
     tb = tokens(b);
   if (!ta.size || !tb.size) return a.trim().toLowerCase() === b.trim().toLowerCase();

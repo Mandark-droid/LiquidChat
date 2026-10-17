@@ -5,6 +5,7 @@
  */
 import type { CredentialStore } from '../platform/types';
 import { fromJson, getDatabase, type Row, type SqlDb, toJson } from '../storage/db';
+import { isLocalHost } from '../utils/net';
 import type { McpTool } from './McpClient';
 
 export interface McpServerRecord {
@@ -37,7 +38,7 @@ export function validateServerUrl(url: string): void {
   if (!m) throw new Error(`Invalid MCP server URL: ${url}`);
   const protocol = m[1].toLowerCase();
   const host = m[2].toLowerCase();
-  const local = /^(localhost|127\.|10\.|192\.168\.|\[::1\])/.test(host);
+  const local = isLocalHost(host);
   if (protocol !== 'https' && !(protocol === 'http' && local))
     throw new Error('MCP servers must use https (http is only allowed for local addresses)');
 }

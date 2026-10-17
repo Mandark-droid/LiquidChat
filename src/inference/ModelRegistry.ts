@@ -16,6 +16,7 @@ import { LIQUID_MODELS } from '../config/models';
 import type { CredentialStore } from '../platform/types';
 import { fromJson, getDatabase, type SqlDb, toJson } from '../storage/db';
 import type { LiquidModel } from '../types';
+import { isLocalHost } from '../utils/net';
 import type { InferOperation, ModelCapabilities } from './types';
 
 export const REMOTE_PROVIDERS_KEY = '@liquid_remote_providers';
@@ -191,7 +192,7 @@ export function isSafeBaseUrl(url: string): boolean {
   const m = /^(https?):\/\/(\[[^\]]+\]|[^:/?#\s@]+)/i.exec(url.trim());
   if (!m) return false;
   if (m[1].toLowerCase() === 'https') return true;
-  return /^(localhost|127\.|10\.|192\.168\.|\[::1\])/i.test(m[2]);
+  return isLocalHost(m[2]);
 }
 
 export class ModelRegistry {

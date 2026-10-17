@@ -426,6 +426,11 @@ export default function ChatScreen({ chatId, onBack, onOpenModelSelector }: Chat
     setSavablePlan(null);
     const publish = () => setActionChainSteps(order.map(id => steps.get(id)!));
     const onEvent = (e: AgentEvent) => {
+      // Stop pressed before the first event: cancel as soon as the id is known.
+      if (abortRef.current) {
+        agentRuntime.cancel(e.executionId).catch(() => {});
+        return;
+      }
       executionRef.current = e.executionId;
       if (e.type === 'plan') {
         plan = e.plan;

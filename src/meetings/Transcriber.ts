@@ -46,8 +46,11 @@ const HALLUCINATIONS = [
 export function cleanTranscript(raw: string): string {
   let t = (raw ?? '')
     .replace(/<\|[^|>]*\|>/g, ' ') // stray special tokens
+    .replace(/\[(?:BLANK_AUDIO|MUSIC|NOISE|SILENCE|INAUDIBLE)\]/gi, ' ') // non-speech markers
+    .replace(/\((?:music|applause|laughter|noise|silence|inaudible)\)/gi, ' ')
     .replace(/\s+/g, ' ')
     .trim();
+  if (!t) return '';
   t = collapseRepeats(t);
   if (HALLUCINATIONS.some(r => r.test(t))) return '';
   return t;
@@ -66,7 +69,9 @@ function collapseRepeats(text: string): string {
         .toLowerCase();
       let reps = 1;
       if (i + n <= words.length) {
+        // Bounded: past the end slice() yields '' which would equal an empty gram forever.
         while (
+          i + (reps + 1) * n <= words.length &&
           words
             .slice(i + reps * n, i + (reps + 1) * n)
             .join(' ')

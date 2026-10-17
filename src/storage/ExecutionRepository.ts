@@ -106,11 +106,12 @@ export class ExecutionRepository {
     );
   }
 
-  async addSpend(id: string, usd: number, remoteCall: boolean): Promise<void> {
+  async addSpend(id: string, usd: number, remoteCalls: boolean | number): Promise<void> {
     const db = await this.db();
+    const n = typeof remoteCalls === 'number' ? remoteCalls : remoteCalls ? 1 : 0;
     await db.execute(
       'UPDATE executions SET spend_usd = spend_usd + ?, remote_calls = remote_calls + ? WHERE id = ?',
-      [usd, remoteCall ? 1 : 0, id],
+      [usd, n, id],
     );
   }
 

@@ -1,5 +1,9 @@
 import type { AlarmScheduler, AlarmSpec } from '../../src/platform/types';
-import { parseAlarmPayload, TaskScheduler } from '../../src/scheduler/TaskScheduler';
+import {
+  ALARM_LOOKAHEAD,
+  parseAlarmPayload,
+  TaskScheduler,
+} from '../../src/scheduler/TaskScheduler';
 import { offsetFnForZone } from '../../src/scheduler/triggers';
 import { getDatabase, resetDatabaseForTests } from '../../src/storage/db';
 
@@ -70,7 +74,8 @@ describe('TaskScheduler CRUD', () => {
     await s.sync(alarms);
     const a = await s.create({ skillId: 'sk_brief', trigger: { type: 'interval', minutes: 60 } });
     const b = await s.create({ skillId: 'sk_other', trigger: { type: 'daily', time: '21:00' } });
-    expect(alarms.alarms.size).toBe(2);
+    // Each recurring schedule arms a week of occurrences.
+    expect(alarms.alarms.size).toBe(2 * ALARM_LOOKAHEAD);
 
     const upd = await s.update(a.id, { trigger: { type: 'interval', minutes: 30 } });
     expect(upd.nextRunAt).toBe(clock + 30 * MIN);
@@ -78,13 +83,13 @@ describe('TaskScheduler CRUD', () => {
 
     const off = await s.setEnabled(b.id, false);
     expect(off.nextRunAt).toBeNull();
-    expect(alarms.alarms.has(b.id)).toBe(false);
+    expect([...alarms.alarms.keys()].some(k => k.startsWith(b.id))).toBe(false);
     expect((await s.list({ enabledOnly: true })).map(x => x.id)).toEqual([a.id]);
     expect((await s.list({ skillId: 'sk_other' })).map(x => x.id)).toEqual([b.id]);
 
     expect(await s.remove(a.id)).toBe(true);
     expect(await s.remove(a.id)).toBe(false);
-    expect(alarms.alarms.has(a.id)).toBe(false);
+    expect(alarms.alarms.size).toBe(0);
     expect(await s.removeForSkill('sk_other')).toBe(1);
     expect(await s.list()).toEqual([]);
     await expect(s.update('nope', { enabled: true })).rejects.toThrow(/not found/);
@@ -112,7 +117,13 @@ describe('alarms', () => {
       enabled: false,
     });
     await s.sync(alarms);
-    expect([...alarms.alarms.keys()]).toEqual([sch.id]);
+    expect([...alarms.alarms.keys()]).toEqual([
+      sch.id,
+      ...Array.from({ length: ALARM_LOOKAHEAD - 1 }, (_, k) => `${sch.id}#${k + 1}`),
+    ]);
+    // Look-ahead occurrences are consecutive days with the same payload.
+    expect(alarms.alarms.get(`${sch.id}#1`)?.triggerAtMs).toBe(at('2026-10-18T07:30:00+05:30'));
+    expect(alarms.alarms.get(`${sch.id}#1`)?.payload).toBe(alarms.alarms.get(sch.id)?.payload);
     const spec = alarms.alarms.get(sch.id) as AlarmSpec;
     expect(spec.triggerAtMs).toBe(at('2026-10-17T07:30:00+05:30'));
     expect(spec.title).toBe('Morning briefing');
@@ -185,7 +196,7 @@ describe('alarms', () => {
 });
 
 describe('missed runs and time changes', () => {
-  test('checkMissed reports schedules due while the device was off; sync leaves them pending', async () => {
+  test('checkMissed reports schedules due while the device was off; sync keeps them pending but armed', async () => {
     const s = make();
     const daily = await s.create({
       skillId: 'sk_brief',
@@ -195,8 +206,10 @@ describe('missed runs and time changes', () => {
     // Device off for 3 days; it's now 08:00 on the 20th.
     clock = at('2026-10-20T08:00:00+05:30');
     await s.sync(alarms);
-    expect(alarms.alarms.has(daily.id)).toBe(false); // overdue → prompt, not alarm
-    expect(alarms.alarms.has(future.id)).toBe(false); // 22:00 on the 17th also overdue
+    // Overdue → still reported for a prompt, but future occurrences stay armed.
+    expect(alarms.alarms.get(daily.id)?.triggerAtMs).toBe(at('2026-10-21T07:30:00+05:30'));
+    expect(alarms.alarms.get(future.id)?.triggerAtMs).toBe(at('2026-10-20T22:00:00+05:30'));
+    expect((await s.get(daily.id))!.nextRunAt).toBe(at('2026-10-17T07:30:00+05:30'));
 
     const missed = await s.checkMissed();
     expect(missed.map(m => m.schedule.id)).toEqual([daily.id, future.id]);

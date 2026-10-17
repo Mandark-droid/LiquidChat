@@ -133,16 +133,33 @@ describe('run', () => {
     );
   });
 
-  test('approval: first sensitive send asks; approve persists grant', async () => {
+  test('approval: "always" persists a grant for personal data; "once" does not', async () => {
+    const h = await makeHarness({ policy: { allowRemoteDataClasses: ['public', 'personal'] } });
+    const { service } = makeService(h);
+    const once = jest.fn(async () => 'once' as const);
+    expect(
+      (await service.run(high({ dataClass: 'personal' }), REQ, { approve: once })).result.mode,
+    ).toBe('remote');
+    expect(await h.grants.has('oai', 'personal')).toBe(false);
+    await service.run(high({ dataClass: 'personal', stepId: 's2' }), REQ, { approve: once });
+    expect(once).toHaveBeenCalledTimes(2); // asked again
+
+    const always = jest.fn(async () => 'always' as const);
+    await service.run(high({ dataClass: 'personal', stepId: 's3' }), REQ, { approve: always });
+    expect(await h.grants.has('oai', 'personal')).toBe(true);
+    await service.run(high({ dataClass: 'personal', stepId: 's4' }), REQ, { approve: always });
+    expect(always).toHaveBeenCalledTimes(1); // not asked again
+  });
+
+  test('approval: sensitive data is never granted permanently', async () => {
     const h = await makeHarness({ policy: { allowRemoteDataClasses: ['public', 'sensitive'] } });
     const { service } = makeService(h);
-    const approve = jest.fn(async () => true);
+    const approve = jest.fn(async () => 'always' as const);
     const out = await service.run(high({ dataClass: 'sensitive' }), REQ, { approve });
-    expect(approve).toHaveBeenCalledTimes(1);
     expect(out.result.mode).toBe('remote');
-    expect(await h.grants.has('oai', 'sensitive')).toBe(true);
+    expect(await h.grants.has('oai', 'sensitive')).toBe(false);
     await service.run(high({ dataClass: 'sensitive', stepId: 's2' }), REQ, { approve });
-    expect(approve).toHaveBeenCalledTimes(1); // not asked again
+    expect(approve).toHaveBeenCalledTimes(2);
   });
 
   test('approval denied ⇒ re-routed on-device; missing approve callback counts as deny', async () => {

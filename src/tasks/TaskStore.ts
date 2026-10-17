@@ -242,7 +242,13 @@ export function isMine(t: UnifiedTask, myNames: string[]): boolean {
   if (!o) return false;
   return (
     ['me', 'i', 'myself', 'us', 'we'].includes(o) ||
-    myNames.some(n => n && o.includes(n.toLowerCase()))
+    myNames.some(n => {
+      const name = n.trim().toLowerCase();
+      if (!name) return false;
+      // Whole-word match: "Al" must not claim "Sally"'s tasks.
+      const esc = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      return new RegExp(`(^|[^\\p{L}])${esc}($|[^\\p{L}])`, 'u').test(o);
+    })
   );
 }
 
@@ -282,11 +288,15 @@ export function parseQuickAdd(
     t.match(
       /\s((?:tomorrow|today|tonight|next week|(?:next |this )?(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)))\s*$/i,
     );
+  let dueDate: string | undefined;
   if (dm) {
-    dueText = dm[1].trim();
-    t = t.replace(dm[0], ' ');
+    // Only strip the phrase if it really is a date ("on page 5" stays in the title).
+    dueDate = resolveDue(dm[1].trim(), now);
+    if (dueDate) {
+      dueText = dm[1].trim();
+      t = t.replace(dm[0], ' ');
+    }
   }
-  const dueDate = resolveDue(dueText, now);
   return {
     title: t.replace(/\s+/g, ' ').trim(),
     dueText: dueDate ? dueText : undefined,

@@ -69,10 +69,13 @@ export function adaptMcpTool(
 ): AgentTool {
   const server = client.server;
   const max = opts.maxOutputChars ?? MCP_MAX_OUTPUT_CHARS;
-  const desc = (tool.description ?? tool.title ?? tool.annotations?.title ?? tool.name).slice(
-    0,
-    1000,
-  );
+  // Server-supplied text reaches the planner prompt: flatten and bound it.
+  const desc = (tool.description ?? tool.title ?? tool.annotations?.title ?? tool.name)
+    .replace(/[<>`]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 300);
+  const risk = riskFor(tool);
   const inputSchema = (
     tool.inputSchema && typeof tool.inputSchema === 'object'
       ? tool.inputSchema
@@ -84,8 +87,11 @@ export function adaptMcpTool(
     category: 'mcp',
     inputSchema,
     requiredPermissions: ['special:network'],
-    riskLevel: riskFor(tool),
-    idempotent: !!tool.annotations?.idempotentHint,
+    riskLevel: risk,
+    // Annotations are the server's own claims. Anything not declared read-only may
+    // write or send to a third party, so every call asks and can't be "always allowed".
+    alwaysAsk: risk !== 'read_only',
+    idempotent: risk === 'read_only' || !!tool.annotations?.idempotentHint,
     describeCall: args => `${server.name} → ${tool.name}(${JSON.stringify(args).slice(0, 120)})`,
     async execute(args: Record<string, unknown>, ctx: ToolContext): Promise<ToolOutcome> {
       const ctrl = new AbortController();

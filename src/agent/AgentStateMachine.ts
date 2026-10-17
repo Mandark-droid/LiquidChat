@@ -22,7 +22,9 @@ export const TRANSITIONS: Record<ExecutionState, readonly ExecutionState[]> = {
     'CANCELLED',
     'FAILED',
   ],
-  ROUTING: ['EXECUTING', 'WAITING_FOR_USER', 'WAITING_FOR_NETWORK', 'CANCELLED', 'FAILED'],
+  // ROUTING spans the model call: it can pause for a cloud-data approval, and a
+  // process death during generation is recovered from it.
+  ROUTING: ['EXECUTING', ...WAITING, 'RECOVERING', 'CANCELLED', 'FAILED'],
   EXECUTING: [
     'ROUTING',
     'VERIFYING',

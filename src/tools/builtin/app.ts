@@ -221,8 +221,10 @@ export function createAppTools(deps: AppToolDeps): AgentTool[] {
       inputSchema: obj({ content: { type: 'string', minLength: 3, maxLength: 1000 } }, ['content']),
       requiredPermissions: [],
       riskLevel: 'reversible',
+      // Memory feeds every later prompt, so each write is confirmed by the user (PRD §8.3).
+      alwaysAsk: true,
       idempotent: false,
-      describeCall: a => `Remember: "${String(a.content).slice(0, 60)}"`,
+      describeCall: a => `Remember: "${String(a.content).slice(0, 160)}"`,
       execute: async a => {
         const m = await deps.memory.create({
           kind: 'profile',
