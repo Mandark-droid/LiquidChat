@@ -41,7 +41,7 @@ export default function MeetingSettingsScreen({ onBack }: { onBack: () => void }
   const whisper = isWhisperModel(s.sttModel);
 
   return (
-    <SafeAreaView style={ui.screen} edges={['top']}>
+    <SafeAreaView style={ui.screen} edges={['top', 'bottom']}>
       <ScreenHeader title="Meeting settings" onBack={onBack} />
       <ScrollView
         contentContainerStyle={{ padding: theme.spacing.lg, paddingBottom: 48 }}
@@ -67,6 +67,11 @@ export default function MeetingSettingsScreen({ onBack }: { onBack: () => void }
 
           <Text style={[ui.muted, { marginTop: 16 }]}>
             Language {whisper ? '' : '(Whisper only)'}
+          </Text>
+          <Text style={[ui.muted, { marginTop: 4 }]}>
+            {whisper
+              ? 'Auto-detect with "Translate to English" works for any spoken language; minutes are always written in English.'
+              : 'This model detects the language itself and transcribes it as spoken; minutes are still written in English. Pick a Whisper model to translate the transcript.'}
           </Text>
           <View style={[ui.wrap, { marginTop: 8, opacity: whisper ? 1 : 0.4 }]}>
             {LANGUAGE_OPTIONS.map(l => (

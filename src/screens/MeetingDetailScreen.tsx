@@ -75,7 +75,7 @@ export default function MeetingDetailScreen({
 
   if (!meeting) {
     return (
-      <SafeAreaView style={ui.screen} edges={['top']}>
+      <SafeAreaView style={ui.screen} edges={['top', 'bottom']}>
         <ScreenHeader title="Meeting" onBack={onBack} />
         <ActivityIndicator style={{ marginTop: 40 }} color={theme.colors.accent} />
       </SafeAreaView>
@@ -152,7 +152,7 @@ export default function MeetingDetailScreen({
   };
 
   return (
-    <SafeAreaView style={ui.screen} edges={['top']}>
+    <SafeAreaView style={ui.screen} edges={['top', 'bottom']}>
       <ScreenHeader
         title={meeting.title}
         subtitle={[
@@ -202,7 +202,7 @@ export default function MeetingDetailScreen({
       />
 
       <ScrollView
-        contentContainerStyle={{ padding: theme.spacing.lg, paddingBottom: 120 }}
+        contentContainerStyle={{ padding: theme.spacing.lg, paddingBottom: theme.spacing.lg }}
         keyboardShouldPersistTaps="handled"
       >
         {tab === 'minutes' ? (
@@ -551,7 +551,7 @@ export function ActionRow({
           {a.calendarAdded ? <Chip label="In calendar" tone="ok" /> : null}
         </View>
         {subtitle ? (
-          <Text style={[ui.muted, { marginTop: 4 }]} numberOfLines={1}>
+          <Text style={[ui.muted, { marginTop: 4 }]} numberOfLines={2}>
             {subtitle}
           </Text>
         ) : null}
@@ -870,10 +870,6 @@ const styles = StyleSheet.create({
     marginBottom: 2,
   },
   footer: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
     flexDirection: 'row',
     gap: 8,
     padding: theme.spacing.lg,

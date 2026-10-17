@@ -3,6 +3,7 @@ import * as RNFS from '@dr.pogodin/react-native-fs';
 import { toIsoDate } from '../../src/meetings/dateResolver';
 import { meetingStore } from '../../src/meetings/MeetingStore';
 import {
+  chooseSummaryModel,
   defaultTitle,
   extractJson,
   formatClock,
@@ -17,7 +18,11 @@ import { modelLifecycle } from '../../src/services/ModelLifecycleManager';
 import { action, makeMeeting, MEETING_DATE, MEETING_TS, runSourceInChild, seg } from './fixtures';
 
 jest.mock('../../src/services/ModelLifecycleManager', () => ({
-  modelLifecycle: { ensure: jest.fn() },
+  modelLifecycle: { ensure: jest.fn(), getLoadedModels: () => [], getRamBudgetMb: () => 0 },
+}));
+jest.mock('../../src/utils/engineMigration', () => ({
+  listDownloadedCactusModels: async () =>
+    ['lfm', 'lfm2.5-1.2b-instruct', 'broken-model'].map(slug => ({ slug })),
 }));
 
 const ensure = modelLifecycle.ensure as jest.Mock;
@@ -369,9 +374,9 @@ describe('generateMinutes', () => {
     expect(out.actionItems.every(a => a.status === 'open' && /^act_/.test(a.id))).toBe(true);
     expect(new Set(out.actionItems.map(a => a.id)).size).toBe(3);
 
-    expect(progress[0]).toEqual(['Loading model', 0.02]);
+    expect(progress[0]).toEqual(['Loading LFM2.5-1.2B Instruct', 0.33]);
     expect(progress.map(([s]) => s)).toEqual([
-      'Loading model',
+      'Loading LFM2.5-1.2B Instruct',
       'Reading part 1 of 1',
       'Saving',
       'Done',
@@ -459,7 +464,7 @@ describe('generateMinutes', () => {
 
   it('map-reduce keeps the merged title/summary when the reduce output is unusable', async () => {
     const segments = Array.from({ length: 40 }, (_, i) =>
-      seg(i, 'x'.repeat(200) + ` ${i}`, i * 1000),
+      seg(i, `${WORDS[i % WORDS.length]} ` + 'x'.repeat(200) + ` ${i}`, i * 1000),
     );
     const m = await stored({ title: '', segments });
     fakeLM(user =>
@@ -598,6 +603,8 @@ describe('generateMinutes', () => {
         './dateResolver':
           "{ resolveDue: () => undefined, toIsoDate: d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` }",
         './Transcriber': '{ transcriber: { release: async () => {} } }',
+        '../utils/engineMigration': "{ listDownloadedCactusModels: async () => [{ slug: 'lfm' }] }",
+        'cactus-react-native': '{ CactusLM: class {} }',
         './MeetingStore': `{
           meetingStore: {
             get: async () => globalThis.M,
@@ -606,7 +613,7 @@ describe('generateMinutes', () => {
           newActionId: () => 'act_1',
         }`,
         '../services/ModelLifecycleManager': `{
-          modelLifecycle: { ensure: async () => ({ instance: {
+          modelLifecycle: { getLoadedModels: () => [], getRamBudgetMb: () => 0, ensure: async () => ({ instance: {
             reset: async () => {},
             complete: async ({ messages }) => {
               globalThis.prompts.push(messages[1].content);
@@ -620,7 +627,7 @@ describe('generateMinutes', () => {
         globalThis.M = {
           id: 'm1', title: 'x', attendees: [], markers: [], actionItems: [],
           startedAt: new Date(2026, 9, 16, 1, 0).getTime(),
-          segments: [{ index: 0, startMs: 0, status: 'done', text: 'Hello.' }],
+          segments: [{ index: 0, startMs: 0, status: 'done', text: 'Hello everyone, today we review the budget and the launch plan.' }],
         };
         await mod.generateMinutes('m1', 'lfm');
         return globalThis.prompts[0].match(/Date: (.*)/)[1];`,
@@ -642,5 +649,110 @@ describe('fixture sanity', () => {
   it('meeting date is Friday 16 Oct 2026 local', () => {
     expect(MEETING_DATE.getDay()).toBe(5);
     expect(toIsoDate(MEETING_DATE)).toBe('2026-10-16');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Summary model selection
+
+describe('chooseSummaryModel', () => {
+  const hot350 = { slug: 'lfm2.5-350m', tier: 'hot', ramMb: 441 };
+
+  it('uses the configured model when it is downloaded and fits', () => {
+    expect(
+      chooseSummaryModel({
+        preferred: 'lfm2.5-1.2b-instruct',
+        downloaded: new Set(['lfm2.5-1.2b-instruct']),
+        loaded: [],
+        budgetMb: 3000,
+      }),
+    ).toMatchObject({ slug: 'lfm2.5-1.2b-instruct', downloaded: true });
+  });
+
+  it('falls back to a downloaded model instead of loading one that does not fit in RAM', () => {
+    // Device log: budget ~1059 MB, hot 350M pinned -> ~618 MB free, 1.2B needs ~1455 MB.
+    expect(
+      chooseSummaryModel({
+        preferred: 'lfm2.5-1.2b-instruct',
+        downloaded: new Set(['lfm2.5-350m', 'lfm2-350m']),
+        loaded: [hot350],
+        budgetMb: 1059,
+      }),
+    ).toMatchObject({ slug: 'lfm2.5-350m', downloaded: true });
+  });
+
+  it('prefers a downloaded model over downloading the configured one', () => {
+    expect(
+      chooseSummaryModel({
+        preferred: 'lfm2.5-1.2b-instruct',
+        downloaded: new Set(['lfm2-700m', 'lfm2-350m']),
+        loaded: [],
+        budgetMb: 4000,
+      }),
+    ).toMatchObject({ slug: 'lfm2-700m', downloaded: true });
+  });
+
+  it('downloads the configured model only when nothing usable is on the device', () => {
+    expect(
+      chooseSummaryModel({
+        preferred: 'lfm2.5-1.2b-instruct',
+        downloaded: new Set(['whisper-small', 'qwen3-embedding-0.6b']),
+        loaded: [],
+        budgetMb: 4000,
+      }),
+    ).toMatchObject({ slug: 'lfm2.5-1.2b-instruct', downloaded: false });
+  });
+
+  it('returns null when nothing fits', () => {
+    expect(
+      chooseSummaryModel({
+        preferred: 'lfm2.5-1.2b-instruct',
+        downloaded: new Set(),
+        loaded: [],
+        budgetMb: 300,
+      }),
+    ).toBeNull();
+  });
+});
+
+describe('generateMinutes guards', () => {
+  it('refuses to summarise a transcript with almost no distinct words', async () => {
+    const m = makeMeeting({
+      minutes: undefined,
+      actionItems: [],
+      segments: [seg(0, 'spea-courge-courge-courge-courge')],
+    });
+    await meetingStore.create(m);
+    ensure.mockReset();
+    await expect(generateMinutes(m.id, 'lfm')).rejects.toThrow(/Too little clear speech/);
+    expect(ensure).not.toHaveBeenCalled();
+  });
+});
+
+describe('generateMinutes template echoes', () => {
+  it('drops placeholder items the model copied from the schema', async () => {
+    const m = await stored({ title: defaultTitle(MEETING_TS, 'Acme') });
+    fakeLM(() =>
+      mapJson({
+        title: 'Acme sync',
+        summary: 'Payments status reviewed.',
+        key_points: ['UPI integration complete', '...', 'main discussion point'],
+        decisions: ['…'],
+        action_items: [
+          { task: 'what must be done' },
+          { task: 'Fix timeout handling', owner: 'Rahul' },
+        ],
+        open_questions: ['one string per unresolved question', 'N/A'],
+        next_steps: ['...'],
+      }),
+    );
+    const out = await generateMinutes(m.id, 'lfm2.5-1.2b-instruct');
+    expect(out.minutes).toMatchObject({
+      keyPoints: ['UPI integration complete'],
+      decisions: [],
+      openQuestions: [],
+      nextSteps: [],
+    });
+    expect(out.actionItems.map(a => a.task)).toEqual(['Fix timeout handling']);
   });
 });

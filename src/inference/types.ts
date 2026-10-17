@@ -32,6 +32,8 @@ export interface InferenceRequest {
   /** Ask the provider for a JSON object (best effort; output is still validated). */
   json?: boolean;
   stop?: string[];
+  /** Streamed tokens; providers that cannot stream ignore it. */
+  onToken?: (token: string) => void;
 }
 
 export interface InferenceResult {

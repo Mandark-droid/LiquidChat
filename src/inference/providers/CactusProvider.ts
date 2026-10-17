@@ -130,6 +130,7 @@ export class CactusProvider implements InferenceProvider {
           maxTokens: req.maxTokens,
           stopSequences: req.stop,
         },
+        onToken: req.onToken,
       });
       if (signal?.aborted) throw new ProviderError('aborted', 'Request cancelled', this.id);
       if (r.success === false)

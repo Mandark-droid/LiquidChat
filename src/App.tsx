@@ -1,5 +1,14 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Alert, AppState, StatusBar, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import {
+  Alert,
+  AppState,
+  BackHandler,
+  StatusBar,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { agentRuntime, refreshLocalModels, startAgentRuntime } from './agent/runtime';
@@ -218,6 +227,33 @@ function AppContent() {
     setActiveTab('chats');
     setScreen({ type: 'tabs' });
   }, []);
+
+  // Android Back mirrors each screen's own back button instead of leaving the app.
+  useEffect(() => {
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      switch (screen.type) {
+        case 'tabs':
+          return false;
+        case 'emailDraft':
+          setScreen(screen.back);
+          return true;
+        case 'skills':
+        case 'memory':
+        case 'insights':
+        case 'agentSettings':
+          setActiveTab('agent');
+          break;
+        case 'meetingRecorder':
+        case 'meetingDetail':
+        case 'meetingSettings':
+          setActiveTab('meetings');
+          break;
+      }
+      setScreen({ type: 'tabs' });
+      return true;
+    });
+    return () => sub.remove();
+  }, [screen]);
 
   // Render current screen
   const backToAgent = () => {

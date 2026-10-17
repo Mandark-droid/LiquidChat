@@ -30,9 +30,9 @@ import { detectSpeakers, parseAttendees, parseTranscript } from '../meetings/imp
 import { meetingSession } from '../meetings/MeetingSession';
 import { meetingStore } from '../meetings/MeetingStore';
 import { defaultTitle, formatClock } from '../meetings/MinutesGenerator';
-import { isRecorderAvailable } from '../meetings/native';
+import { isAudioImportAvailable, isRecorderAvailable, Recorder } from '../meetings/native';
 import { getMeetingSettings } from '../meetings/settings';
-import type { MeetingIndexEntry, MeetingStatus } from '../meetings/types';
+import type { MeetingIndexEntry, MeetingStatus, PickedAudio } from '../meetings/types';
 
 interface Props {
   onOpenMeeting: (id: string) => void;
@@ -247,7 +247,8 @@ function NewMeetingSheet({
   onStarted: () => void;
   onImported: (id: string) => void;
 }) {
-  const [mode, setMode] = useState<'record' | 'import'>('record');
+  const [mode, setMode] = useState<'record' | 'upload' | 'import'>('record');
+  const [file, setFile] = useState<PickedAudio | null>(null);
   const [title, setTitle] = useState('');
   const [client, setClient] = useState('');
   const [attendees, setAttendees] = useState('');
@@ -260,6 +261,7 @@ function NewMeetingSheet({
       setTitle('');
       setAgenda('');
       setPasted('');
+      setFile(null);
       setBusy(false);
     }
   }, [visible]);
@@ -283,6 +285,41 @@ function NewMeetingSheet({
       onStarted();
     } catch (e) {
       Alert.alert('Could not start', e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const pickFile = async () => {
+    if (!isAudioImportAvailable()) {
+      Alert.alert('Rebuild required', 'Audio upload needs the latest app build.');
+      return;
+    }
+    try {
+      const picked = await Recorder.pickAudio();
+      if (picked) setFile(picked);
+    } catch (e) {
+      Alert.alert('Could not open file', e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  const uploadNow = async () => {
+    if (!file) {
+      await pickFile();
+      return;
+    }
+    setBusy(true);
+    try {
+      const id = await meetingSession.importRecording({
+        file,
+        title,
+        client,
+        attendees: parseAttendees(attendees),
+        agenda,
+      });
+      onImported(id);
+    } catch (e) {
+      Alert.alert('Upload failed', e instanceof Error ? e.message : String(e));
     } finally {
       setBusy(false);
     }
@@ -348,7 +385,8 @@ function NewMeetingSheet({
           <Segmented
             options={[
               { key: 'record', label: 'Record' },
-              { key: 'import', label: 'Paste transcript' },
+              { key: 'upload', label: 'Upload' },
+              { key: 'import', label: 'Paste text' },
             ]}
             value={mode}
             onChange={setMode}
@@ -387,7 +425,31 @@ function NewMeetingSheet({
               multiline
               placeholder="What should this meeting decide?"
             />
-            {mode === 'import' ? (
+            {mode === 'upload' ? (
+              <View style={{ marginBottom: 12 }}>
+                <Text style={styles.fieldLabel}>Recording</Text>
+                <TouchableOpacity style={styles.filePick} onPress={pickFile} activeOpacity={0.75}>
+                  <Text style={styles.fileName}>
+                    {file ? file.name : 'Choose an audio or video file'}
+                  </Text>
+                  <Text style={ui.muted}>
+                    {file
+                      ? [
+                          file.durationMs > 0 ? formatClock(file.durationMs) : null,
+                          file.size > 0 ? `${(file.size / 1048576).toFixed(1)} MB` : null,
+                          'tap to change',
+                        ]
+                          .filter(Boolean)
+                          .join(' · ')
+                      : 'm4a, mp3, wav, ogg, opus, amr, mp4 — from Files, Drive, WhatsApp, Recorder'}
+                  </Text>
+                </TouchableOpacity>
+                <Text style={[ui.muted, { marginTop: 8 }]}>
+                  Transcribed and summarised on this phone. Long recordings take a while; you can
+                  leave the screen.
+                </Text>
+              </View>
+            ) : mode === 'import' ? (
               <Field
                 label="Transcript"
                 value={pasted}
@@ -403,10 +465,18 @@ function NewMeetingSheet({
             )}
           </ScrollView>
           <Button
-            label={mode === 'record' ? '●  Start recording' : 'Import & write minutes'}
+            label={
+              mode === 'record'
+                ? '●  Start recording'
+                : mode === 'upload'
+                  ? file
+                    ? 'Transcribe & write minutes'
+                    : 'Choose file'
+                  : 'Import & write minutes'
+            }
             kind={mode === 'record' ? 'record' : 'primary'}
             loading={busy}
-            onPress={mode === 'record' ? start : importNow}
+            onPress={mode === 'record' ? start : mode === 'upload' ? uploadNow : importNow}
           />
         </View>
       </KeyboardAvoidingView>
@@ -448,4 +518,25 @@ const styles = StyleSheet.create({
   },
   sheetTitle: { fontSize: theme.fontSize.xl, fontWeight: '700', color: theme.colors.text },
   close: { fontSize: 20, color: theme.colors.textSecondary },
+  fieldLabel: {
+    fontSize: theme.fontSize.sm,
+    fontWeight: '600',
+    color: theme.colors.textSecondary,
+    marginBottom: 6,
+  },
+  filePick: {
+    backgroundColor: theme.colors.surface,
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    borderColor: theme.colors.border,
+    borderRadius: theme.borderRadius.md,
+    padding: theme.spacing.lg,
+    gap: 4,
+  },
+  fileName: {
+    fontSize: theme.fontSize.md,
+    fontWeight: '600',
+    color: theme.colors.text,
+    flexShrink: 1,
+  },
 });

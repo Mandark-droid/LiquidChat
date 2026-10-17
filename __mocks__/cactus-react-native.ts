@@ -32,6 +32,9 @@ export class CactusSTT {
   async transcribe() {
     return { success: true, response: '' };
   }
+  async detectLanguage() {
+    return { language: 'en', confidence: 1 };
+  }
   async destroy() {}
 }
 export const useCactusSTT = () => ({});

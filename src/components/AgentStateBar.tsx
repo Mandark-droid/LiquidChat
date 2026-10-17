@@ -17,7 +17,12 @@ const STATE_CONFIG: Record<string, { color: string; emoji: string; label: string
   thinking: {
     color: theme.colors.agentThinking,
     emoji: '\uD83E\uDDE0',
-    label: 'Thinking...',
+    label: 'Working...',
+  },
+  generating: {
+    color: theme.colors.agentThinking,
+    emoji: '✍️',
+    label: 'Generating...',
   },
   acting: {
     color: theme.colors.agentActing,

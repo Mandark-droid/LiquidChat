@@ -1,9 +1,15 @@
 package com.liquidchat.meetings
 
 import android.Manifest
+import android.app.Activity
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.media.MediaMetadataRetriever
+import android.net.Uri
 import android.os.Build
+import android.provider.OpenableColumns
 import androidx.core.content.ContextCompat
+import com.facebook.react.bridge.ActivityEventListener
 import com.facebook.react.bridge.Arguments
 import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
@@ -21,13 +27,18 @@ import com.facebook.react.modules.core.DeviceEventManagerModule
  *  MeetingRecorder:error    {message}
  *  MeetingRecorder:silenced {silenced}
  *  MeetingRecorder:stopRequested {}             user tapped Stop in the notification
+ *  MeetingRecorder:importProgress {decodedMs, totalMs}
  */
 class MeetingRecorderModule(private val ctx: ReactApplicationContext) :
-    ReactContextBaseJavaModule(ctx), MeetingRecorderEngine.Listener {
+    ReactContextBaseJavaModule(ctx), MeetingRecorderEngine.Listener, ActivityEventListener {
 
     override fun getName() = "MeetingRecorder"
 
+    private var pickPromise: Promise? = null
+    @Volatile private var importer: AudioFileImporter? = null
+
     init {
+        ctx.addActivityEventListener(this)
         MeetingRecorderEngine.addListener(this)
         MeetingRecorderService.onStopFromNotification = {
             emit("MeetingRecorder:stopRequested", Arguments.createMap())
@@ -35,6 +46,8 @@ class MeetingRecorderModule(private val ctx: ReactApplicationContext) :
     }
 
     override fun invalidate() {
+        ctx.removeActivityEventListener(this)
+        importer?.cancelled = true
         MeetingRecorderEngine.removeListener(this)
         MeetingRecorderService.onStopFromNotification = null
         super.invalidate()
@@ -197,7 +210,131 @@ class MeetingRecorderModule(private val ctx: ReactApplicationContext) :
         )
     }
 
+    // --- Upload a recording ------------------------------------------------
+
+    /** Storage Access Framework picker: audio or video (meeting apps often save .mp4). */
+    @ReactMethod
+    fun pickAudio(promise: Promise) {
+        val activity = ctx.currentActivity ?: run {
+            promise.reject("NO_ACTIVITY", "App is not in the foreground"); return
+        }
+        pickPromise?.reject("SUPERSEDED", "Another picker was opened")
+        pickPromise = promise
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "*/*"
+            putExtra(Intent.EXTRA_MIME_TYPES, arrayOf("audio/*", "video/*"))
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+        }
+        try {
+            activity.startActivityForResult(intent, PICK_AUDIO_REQUEST)
+        } catch (e: Throwable) {
+            pickPromise = null
+            promise.reject("PICKER_FAILED", e.message, e)
+        }
+    }
+
+    override fun onActivityResult(activity: Activity, requestCode: Int, resultCode: Int, data: Intent?) {
+        if (requestCode != PICK_AUDIO_REQUEST) return
+        val promise = pickPromise ?: return
+        pickPromise = null
+        val uri = data?.data
+        if (resultCode != Activity.RESULT_OK || uri == null) { promise.resolve(null); return }
+        Thread {
+            try {
+                runCatching {
+                    ctx.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }
+                var name = uri.lastPathSegment ?: "Recording"
+                var size = -1.0
+                ctx.contentResolver.query(uri, null, null, null, null)?.use { c ->
+                    if (c.moveToFirst()) {
+                        val n = c.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                        val sz = c.getColumnIndex(OpenableColumns.SIZE)
+                        if (n >= 0 && !c.isNull(n)) name = c.getString(n)
+                        if (sz >= 0 && !c.isNull(sz)) size = c.getLong(sz).toDouble()
+                    }
+                }
+                var durationMs = 0.0
+                runCatching {
+                    val r = MediaMetadataRetriever()
+                    try {
+                        r.setDataSource(ctx, uri)
+                        durationMs = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
+                            ?.toDoubleOrNull() ?: 0.0
+                    } finally {
+                        r.release()
+                    }
+                }
+                promise.resolve(Arguments.createMap().apply {
+                    putString("uri", uri.toString())
+                    putString("name", name)
+                    putDouble("size", size)
+                    putDouble("durationMs", durationMs)
+                    putString("mime", ctx.contentResolver.getType(uri))
+                })
+            } catch (e: Throwable) {
+                promise.reject("PICK_FAILED", e.message, e)
+            }
+        }.start()
+    }
+
+    override fun onNewIntent(intent: Intent) {}
+
+    /** Decodes [uri] into 16 kHz mono WAV segments in [dir]; resolves {segments, durationMs}. */
+    @ReactMethod
+    fun importAudio(uri: String, dir: String, opts: ReadableMap?, promise: Promise) {
+        if (importer != null) { promise.reject("BUSY", "An import is already running"); return }
+        val job = AudioFileImporter(
+            ctx,
+            Uri.parse(uri),
+            dir.removePrefix("file://"),
+            segmentSec = if (opts?.hasKey("segmentSec") == true) opts.getInt("segmentSec") else 30,
+            startIndex = if (opts?.hasKey("startIndex") == true) opts.getInt("startIndex") else 0,
+        )
+        importer = job
+        Thread({
+            try {
+                val (segments, durationMs) = job.run { decoded, total ->
+                    emit("MeetingRecorder:importProgress", Arguments.createMap().apply {
+                        putDouble("decodedMs", decoded.toDouble())
+                        putDouble("totalMs", total.toDouble())
+                    })
+                }
+                promise.resolve(Arguments.createMap().apply {
+                    putDouble("durationMs", durationMs.toDouble())
+                    putArray("segments", Arguments.createArray().apply {
+                        for (seg in segments) pushMap(Arguments.createMap().apply {
+                            putInt("index", seg.index)
+                            putString("path", seg.path)
+                            putDouble("startMs", seg.startMs.toDouble())
+                            putDouble("durationMs", seg.durationMs.toDouble())
+                            putDouble("speechRatio", seg.speechRatio)
+                            putDouble("meanDb", seg.meanDb)
+                        })
+                    })
+                })
+            } catch (e: InterruptedException) {
+                promise.reject("CANCELLED", "Import cancelled")
+            } catch (e: Throwable) {
+                promise.reject("IMPORT_FAILED", e.message ?: e.toString(), e)
+            } finally {
+                importer = null
+            }
+        }, "MeetingAudioImport").start()
+    }
+
+    @ReactMethod
+    fun cancelImport(promise: Promise) {
+        importer?.cancelled = true
+        promise.resolve(null)
+    }
+
     // Required by NativeEventEmitter on the JS side; events go via DeviceEventEmitter.
     @ReactMethod fun addListener(eventName: String) {}
     @ReactMethod fun removeListeners(count: Double) {}
+
+    companion object {
+        private const val PICK_AUDIO_REQUEST = 47_211
+    }
 }

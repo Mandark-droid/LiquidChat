@@ -107,6 +107,7 @@ export const LIQUID_MODELS: LiquidModel[] = [
     category: 'text',
     sizeMb: 339,
     legacy: true,
+    supersededBy: 'lfm2.5-350m',
     description: 'Superseded by LFM2.5-350M.',
     supportsCompletion: true,
     supportsToolCalling: false,

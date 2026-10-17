@@ -413,10 +413,11 @@ function rankLocal(
       (a, b) => mem(b) - mem(a),
     );
   } else {
+    // Among models that clear the bar, a resident one beats a reload for a marginal quality gain.
     cmp = by(
       (a, b) => bucket(b, op, threshold) - bucket(a, op, threshold),
-      (a, b) => q(b) - q(a),
       (a, b) => isLoaded(b) - isLoaded(a),
+      (a, b) => q(b) - q(a),
       (a, b) => isPreferred(b) - isPreferred(a),
       (a, b) => mem(a) - mem(b),
     );

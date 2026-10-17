@@ -160,4 +160,22 @@ class IntentRouterService {
 }
 
 export const intentRouter = new IntentRouterService();
+
+// Words that mean the user wants their data, the device, or an action — those go to the agent.
+const AGENT_HINTS =
+  /\b(my|me|mine|i|i'm|remind|reminder|alarm|timer|schedule|calendar|meeting|event|task|todo|email|e-mail|mail|message|sms|call|contact|notification|battery|wifi|wi-fi|bluetooth|flashlight|torch|brightness|volume|dnd|disturb|screenshot|photo|camera|open|launch|app|settings|navigate|directions|map|note|save|remember|draft|send|book|today|tomorrow|tonight|weather)\b/i;
+
+/** Small talk and general-knowledge questions that need no tools: answer directly and stream. */
+export function isPlainChat(message: string): boolean {
+  const t = message.trim();
+  if (!t) return false;
+  const firstWord = t.split(/\s+/)[0].toLowerCase();
+  if (ACTION_VERBS.includes(firstWord)) return false;
+  if (CHAT_PATTERNS.some(p => p.test(t)) && t.split(/\s+/).length <= 6) return true;
+  if (AGENT_HINTS.test(t)) return false;
+  if (QUERY_PATTERNS.some(p => p.test(t))) return true;
+  if (/^(what|what's|who|who's|where|when|why|how|which|can you explain|is|are|does|do)\b/i.test(t))
+    return true;
+  return t.split(/\s+/).length <= 3;
+}
 export type { RoutingContext, RoutingResult };

@@ -165,7 +165,7 @@ export default function EmailDraftScreen({ meetingId, onBack }: Props) {
   };
 
   return (
-    <SafeAreaView style={ui.screen} edges={['top']}>
+    <SafeAreaView style={ui.screen} edges={['top', 'bottom']}>
       <ScreenHeader
         title="Email drafter"
         subtitle={

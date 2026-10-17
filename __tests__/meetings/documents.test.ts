@@ -60,7 +60,9 @@ describe('buildMinutesMarkdown', () => {
     expect([...order].sort((a, b) => a - b)).toEqual(order);
     expect(md).toContain('| 1 | Send revised proposal | Priya | 23 Oct 2026 | Open |');
     expect(md).toContain('| 2 | Book follow-up call | Rahul Mehta | — | Done |');
-    expect(md.trimEnd().endsWith('_Generated on-device by LiquidChat_')).toBe(true);
+    expect(md.trimEnd()).toMatch(
+      /!\[LiquidChat\]\(data:image\/png;base64,[A-Za-z0-9+/=]+\) \*\*LiquidChat\*\* · Generated using LiquidChat$/,
+    );
   });
 
   it('never mentions TraceVerse', () => {
@@ -71,7 +73,8 @@ describe('buildMinutesMarkdown', () => {
     const md = buildMinutesMarkdown(makeMeeting(), LH);
     expect(md).toContain('*Minutes of Meeting — Thakkar Consulting*');
     expect(md).toContain('**Prepared by:** Kshitij  ');
-    expect(md).toContain('_Confidential · hello@example.com · Generated on-device by LiquidChat_');
+    expect(md).toContain('_Confidential · hello@example.com_');
+    expect(md).toContain('**LiquidChat** · Generated using LiquidChat');
   });
 
   it('escapes table pipes in action text', () => {
@@ -109,7 +112,7 @@ describe('buildMinutesMarkdown', () => {
     for (const h of ['## Summary', '## Decisions', '## Action items', '## Transcript', 'Client']) {
       expect(md).not.toContain(h);
     }
-    expect(md).toContain('_Generated on-device by LiquidChat_');
+    expect(md).toContain('**LiquidChat** · Generated using LiquidChat');
   });
 
   it('formats durations of an hour or more as "h min"', () => {
@@ -146,7 +149,10 @@ describe('buildMinutesHtml', () => {
     );
     expect(html).toContain('<h1>&lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt; &amp; Co</h1>');
     expect(html).not.toMatch(/<script/i);
-    for (const raw of ['<img', '<iframe', '<marquee', '<i>me', '<b>Corp', '<a href']) {
+    // The only image is the template's own embedded logo.
+    expect(html.match(/<img /g)).toHaveLength(1);
+    expect(html).toContain('<img src="data:image/png;base64,');
+    for (const raw of ['<img src=x', '<iframe', '<marquee', '<i>me', '<b>Corp', '<a href']) {
       expect(html).not.toContain(raw);
     }
     expect(html.match(/<style>/g)).toHaveLength(1); // only the template's own stylesheet
@@ -169,7 +175,11 @@ describe('buildMinutesHtml', () => {
 
   it('has the LiquidChat footer and never TraceVerse', () => {
     const html = buildMinutesHtml(makeMeeting(), EMPTY_LETTERHEAD, OPTS);
-    expect(html).toContain('<div class="footer">Generated on-device by LiquidChat</div>');
+    expect(html).toContain('<b>LiquidChat</b><span> · Generated using LiquidChat</span>');
+    expect(html).toMatch(
+      /<div class="lc"><img src="data:image\/png;base64,[A-Za-z0-9+/=]+" alt="LiquidChat"\/>/,
+    );
+    expect(html).not.toContain('class="note"'); // blank letterhead: no empty org line
     expect(html).toContain('<td class="brand">LiquidChat</td>');
     expect(html).not.toMatch(/traceverse/i);
   });
@@ -203,6 +213,8 @@ describe('buildMinutesDocxBase64', () => {
         '_rels/.rels',
         'docProps/core.xml',
         'word/_rels/document.xml.rels',
+        'word/_rels/footer1.xml.rels',
+        'word/media/liquidchat.png',
         'word/document.xml',
         'word/footer1.xml',
         'word/numbering.xml',
@@ -240,7 +252,7 @@ describe('buildMinutesDocxBase64', () => {
     expect(doc).not.toMatch(/[\u0001\u0007]/);
     const core = await read('docProps/core.xml');
     expect(core).toContain('<dc:title>R&amp;D &lt;Q4&gt; &quot;plan&quot;</dc:title>');
-    expect(core).toContain('<dc:description>Generated on-device by LiquidChat</dc:description>');
+    expect(core).toContain('<dc:description>Generated using LiquidChat</dc:description>');
     expect(core).toContain(`${new Date(MEETING_TS).toISOString().replace(/\.\d+Z$/, 'Z')}`);
   });
 
@@ -248,7 +260,22 @@ describe('buildMinutesDocxBase64', () => {
     const { read } = await unzip(
       await buildMinutesDocxBase64(makeMeeting(), EMPTY_LETTERHEAD, OPTS),
     );
-    expect(await read('word/footer1.xml')).toContain('Generated on-device by LiquidChat');
+    const footer = await read('word/footer1.xml');
+    expect(footer).toContain('Generated using LiquidChat');
+    expect(footer).toContain(' LiquidChat</w:t>');
+    expect(footer).toContain('<a:blip r:embed="rIdLogo"/>');
+    expect(await read('word/_rels/footer1.xml.rels')).toContain('Target="media/liquidchat.png"');
+    expect(await read('[Content_Types].xml')).toContain(
+      '<Default Extension="png" ContentType="image/png"/>',
+    );
+  });
+
+  it('keeps the LiquidChat footer even with a custom organisation letterhead', async () => {
+    const { read } = await unzip(await buildMinutesDocxBase64(makeMeeting(), LH, OPTS));
+    const footer = await read('word/footer1.xml');
+    expect(footer).toContain('Generated using LiquidChat');
+    expect(footer).toContain('Confidential · hello@example.com');
+    expect(buildMinutesHtml(makeMeeting(), LH, OPTS)).toContain('Generated using LiquidChat');
   });
 
   it('adds a transcript appendix only on request and drops done items when asked', async () => {
@@ -316,6 +343,8 @@ describe('shareBlurb', () => {
       '',
       'Action items:',
       '• Send revised proposal — Priya (23 Oct 2026)',
+      '',
+      '— Generated using LiquidChat',
     ]);
   });
 
@@ -325,7 +354,11 @@ describe('shareBlurb', () => {
     expect(blurb.split('\n').filter(l => l.startsWith('•'))).toHaveLength(8);
     expect(blurb).toContain('• Task 0');
     expect(blurb).not.toContain('Task 8');
-    expect(shareBlurb(makeMeeting({ minutes: undefined, actionItems: [] }))).toMatch(HEADER);
+    expect(shareBlurb(makeMeeting({ minutes: undefined, actionItems: [] })).split('\n')).toEqual([
+      expect.stringMatching(HEADER),
+      '',
+      '— Generated using LiquidChat',
+    ]);
   });
 
   it('shows the spoken due phrase when no date was resolved', () => {

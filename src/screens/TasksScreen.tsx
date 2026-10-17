@@ -512,7 +512,7 @@ const styles = StyleSheet.create({
   checkDone: { backgroundColor: theme.colors.secondary, borderColor: theme.colors.secondary },
   checkMark: { color: theme.colors.textLight, fontWeight: '800', fontSize: 14 },
   done: { textDecorationLine: 'line-through', color: theme.colors.textMuted },
-  meta: { fontSize: theme.fontSize.sm, color: theme.colors.textSecondary, maxWidth: 260 },
+  meta: { fontSize: theme.fontSize.sm, color: theme.colors.textSecondary, flexShrink: 1 },
   backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
   sheet: {
     backgroundColor: theme.colors.background,

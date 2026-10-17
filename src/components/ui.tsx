@@ -349,6 +349,7 @@ const s = StyleSheet.create({
     marginBottom: 8,
   },
   sectionTitle: {
+    flexShrink: 1,
     fontSize: theme.fontSize.sm,
     fontWeight: '700',
     color: theme.colors.textSecondary,

@@ -10,7 +10,13 @@ import { defaultTitle, generateMinutes, transcriptPlain } from './MinutesGenerat
 import { ensureRecordingPermissions, Recorder, RecorderEvents } from './native';
 import { getMeetingSettings } from './settings';
 import { transcriber } from './Transcriber';
-import type { Attendee, Meeting, RecorderSegmentEvent, TranscriptSegment } from './types';
+import type {
+  Attendee,
+  Meeting,
+  PickedAudio,
+  RecorderSegmentEvent,
+  TranscriptSegment,
+} from './types';
 
 /**
  * Owns the single active recording and the post-processing pipeline:
@@ -36,6 +42,12 @@ export interface LiveState {
 }
 
 type Listener = (s: LiveState) => void;
+
+const SATURATED_DB = -10;
+
+function warn(what: string, e: unknown) {
+  console.warn(`[MeetingSession] ${what} failed: ${e instanceof Error ? e.message : String(e)}`);
+}
 
 const IDLE: LiveState = {
   meetingId: null,
@@ -209,6 +221,113 @@ class MeetingSessionImpl {
   }
 
   // ---------------------------------------------------------------------
+  // Uploaded recordings
+
+  /**
+   * Creates a meeting from an audio/video file and returns its id at once; decoding,
+   * transcription and minutes then run in the background through processMeeting().
+   */
+  async importRecording(params: {
+    file: PickedAudio;
+    title?: string;
+    client?: string;
+    attendees?: Attendee[];
+    agenda?: string;
+  }): Promise<string> {
+    if (this.state.phase !== 'idle') throw new Error('Finish the current meeting first');
+    const settings = await getMeetingSettings();
+    const now = Date.now();
+    const meeting = await meetingStore.create({
+      schemaVersion: 1,
+      id: meetingStore.newId(),
+      title:
+        params.title?.trim() ||
+        params.file.name.replace(/\.[^.]+$/, '') ||
+        defaultTitle(now, params.client?.trim()),
+      client: params.client?.trim() || undefined,
+      attendees: params.attendees ?? [],
+      agenda: params.agenda?.trim() || undefined,
+      startedAt: now,
+      durationMs: params.file.durationMs,
+      status: 'transcribing',
+      source: 'import',
+      language: settings.language,
+      sttModel: settings.sttModel,
+      segments: [],
+      markers: [],
+      actionItems: [],
+      updatedAt: now,
+    });
+    this.runImport(meeting.id, params.file.uri, settings.sttModel).catch(e => warn('import', e));
+    return meeting.id;
+  }
+
+  cancelImport(): Promise<void> {
+    return Recorder.cancelImport();
+  }
+
+  private async runImport(id: string, uri: string, sttModel: string): Promise<void> {
+    this.processing.add(id);
+    const sub = RecorderEvents.onImportProgress(e => {
+      const p = e.totalMs > 0 ? Math.min(1, e.decodedMs / e.totalMs) : 0;
+      this.set({ progress: p, progressLabel: `Decoding audio ${Math.round(p * 100)}%` });
+    });
+    try {
+      await Recorder.setProcessing('Importing recording…').catch(() => {});
+      this.set({
+        ...IDLE,
+        meetingId: id,
+        phase: 'transcribing',
+        progressLabel: 'Decoding audio',
+        progress: 0,
+      });
+      transcriber.prepare(sttModel).catch(e => warn('STT prepare', e));
+      const res = await Recorder.importAudio(uri, meetingStore.audioDir(id), { segmentSec: 30 });
+      sub.remove();
+      for (const s of res.segments) {
+        if (s.meanDb > SATURATED_DB)
+          console.warn(
+            `[MeetingSession] Imported segment ${s.index}: mean level ${s.meanDb.toFixed(1)} dBFS, audio looks clipped or noisy`,
+          );
+      }
+      await meetingStore.update(id, m => {
+        m.segments = res.segments.map(s => ({
+          index: s.index,
+          startMs: s.startMs,
+          durationMs: s.durationMs,
+          wallStartMs: m.startedAt + s.startMs,
+          speechRatio: s.speechRatio,
+          audioFile: s.path.split('/').pop()!,
+          text: '',
+          status: 'pending' as const,
+        }));
+        m.durationMs = res.durationMs || m.durationMs;
+        m.endedAt = m.startedAt + m.durationMs;
+        if (!res.segments.length) {
+          m.status = 'error';
+          m.error = 'No audio could be decoded from this file.';
+        }
+      });
+      if (!res.segments.length) throw new Error('No audio could be decoded from this file.');
+    } catch (e) {
+      sub.remove();
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error(`[MeetingSession] Import ${id} failed: ${msg}`);
+      await meetingStore.update(id, m => {
+        m.status = 'error';
+        m.error = msg;
+      });
+      this.processing.delete(id);
+      await transcriber.release();
+      await Recorder.release().catch(() => {});
+      this.set({ ...IDLE, error: msg });
+      return;
+    }
+    this.processing.delete(id);
+    await this.processMeeting(id, { forceMinutes: true });
+  }
+
+  // ---------------------------------------------------------------------
   // Post-processing (also used for recovery and "retry")
 
   async processMeeting(id: string, opts: { forceMinutes?: boolean } = {}): Promise<void> {
@@ -237,11 +356,12 @@ class MeetingSessionImpl {
         });
         await Recorder.setProcessing('Writing minutes…').catch(() => {});
         this.set({ phase: 'summarizing', progressLabel: 'Writing minutes', progress: 0 });
-        await generateMinutes(id, settings.summaryModel, (label, p) =>
+        const done = await generateMinutes(id, settings.summaryModel, (label, p) =>
           this.set({ progressLabel: label, progress: p }),
         );
-        if (getModelTier(settings.summaryModel) !== 'hot') {
-          await modelLifecycle.release(settings.summaryModel).catch(() => {});
+        const used = done.minutes?.model ?? settings.summaryModel;
+        if (getModelTier(used) !== 'hot') {
+          await modelLifecycle.release(used).catch(e => warn(`release ${used}`, e));
         }
       } else {
         await meetingStore.update(id, m => {
@@ -251,9 +371,10 @@ class MeetingSessionImpl {
       }
 
       if (!settings.keepAudio) await meetingStore.deleteAudio(id);
-      if (settings.indexForChat) await this.indexForChat(id).catch(() => {});
+      if (settings.indexForChat) await this.indexForChat(id).catch(e => warn('indexForChat', e));
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
+      console.error(`[MeetingSession] Processing ${id} failed: ${msg}`);
       await meetingStore.update(id, m => {
         m.status = 'error';
         m.error = msg;
@@ -292,7 +413,7 @@ class MeetingSessionImpl {
       RecorderEvents.onSegment(seg => {
         this.segmentChain = this.segmentChain
           .then(() => this.onSegment(meetingId, seg))
-          .catch(() => {});
+          .catch(e => warn(`segment ${seg.index}`, e));
       }),
       RecorderEvents.onLevel(l =>
         this.set({ levelDb: l.db, elapsedMs: l.elapsedMs, isSpeech: l.isSpeech }),
@@ -319,6 +440,13 @@ class MeetingSessionImpl {
 
   private async onSegment(meetingId: string, e: RecorderSegmentEvent) {
     const file = e.path.split('/').pop()!;
+    // Speech averages roughly -35..-20 dBFS; a mean near full scale means the mic delivered
+    // noise or clipped audio, which Whisper turns into repetition loops.
+    if (e.meanDb > SATURATED_DB) {
+      console.warn(
+        `[MeetingSession] Segment ${e.index}: mean level ${e.meanDb.toFixed(1)} dBFS, input looks saturated or noisy (source may be misbehaving)`,
+      );
+    }
     const seg: TranscriptSegment = {
       index: e.index,
       startMs: e.startMs,
@@ -347,7 +475,7 @@ class MeetingSessionImpl {
     const seg = m?.segments.find(s => s.index === index);
     if (!m || !seg || !seg.audioFile) return;
     if (!transcriber.getStatus().model)
-      transcriber.prepare(m.sttModel ?? settings.sttModel).catch(() => {});
+      transcriber.prepare(m.sttModel ?? settings.sttModel).catch(e => warn('STT prepare', e));
 
     const prev = [...m.segments]
       .reverse()
@@ -365,6 +493,9 @@ class MeetingSessionImpl {
       task: settings.task,
       contextPrompting: settings.contextPrompting,
     });
+    if (outcome.status === 'error') {
+      console.warn(`[MeetingSession] Segment ${index} transcription failed: ${outcome.error}`);
+    }
     await meetingStore.update(meetingId, mm => {
       const s = mm.segments.find(x => x.index === index);
       if (!s) return;

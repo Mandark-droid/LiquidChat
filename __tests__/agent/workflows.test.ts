@@ -206,7 +206,7 @@ describe('workflow 2: meeting follow-up with per-step routing', () => {
     });
     h.setApproval(() => 'deny');
     const res = await h.controller.execute({
-      text: 'email Rahul then also remind me',
+      text: 'email rahul@acme.com then also remind me',
       source: 'chat',
     });
     expect(res.state).toBe('FAILED');

@@ -117,7 +117,7 @@ export default function SkillsScreen({ onBack, onRunResult }: Props) {
   };
 
   return (
-    <SafeAreaView style={ui.screen} edges={['top']}>
+    <SafeAreaView style={ui.screen} edges={['top', 'bottom']}>
       <ScreenHeader
         title="Skills"
         subtitle="Reusable workflows the agent can run"

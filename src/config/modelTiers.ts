@@ -60,11 +60,15 @@ const DEVICE_PROFILES: DeviceProfile[] = [
   },
 ];
 
+// Phones report less than their marketed RAM (kernel/modem carve-outs): an "8 GB" Nothing
+// Phone 2a reports 7.24 GiB. Matching the nominal size exactly drops it a whole tier.
+const REPORTED_RAM_TOLERANCE = 0.85;
+
 export function getDeviceProfile(totalRamBytes: number): DeviceProfile {
   const totalRamGb = totalRamBytes / (1024 * 1024 * 1024);
   let matched = DEVICE_PROFILES[0];
   for (const profile of DEVICE_PROFILES) {
-    if (totalRamGb >= profile.totalRamGb) {
+    if (totalRamGb >= profile.totalRamGb * REPORTED_RAM_TOLERANCE) {
       matched = profile;
     }
   }

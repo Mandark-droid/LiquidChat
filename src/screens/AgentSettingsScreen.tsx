@@ -95,7 +95,7 @@ export default function AgentSettingsScreen({ onBack }: { onBack: () => void }) 
   };
 
   return (
-    <SafeAreaView style={ui.screen} edges={['top']}>
+    <SafeAreaView style={ui.screen} edges={['top', 'bottom']}>
       <ScreenHeader title="Agent" subtitle="Routing, privacy, permissions" onBack={onBack} />
       <ScrollView
         contentContainerStyle={{ padding: theme.spacing.lg, paddingBottom: 80 }}

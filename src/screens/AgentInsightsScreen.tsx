@@ -71,7 +71,7 @@ export default function AgentInsightsScreen({ onBack }: { onBack: () => void }) 
   if (selected) return <Inspector record={selected} onBack={() => setSelected(null)} />;
 
   return (
-    <SafeAreaView style={ui.screen} edges={['top']}>
+    <SafeAreaView style={ui.screen} edges={['top', 'bottom']}>
       <ScreenHeader
         title="Agent insights"
         subtitle="Last 7 days"
@@ -216,7 +216,7 @@ function Inspector({ record, onBack }: { record: ExecutionRecord; onBack: () => 
   }, [record.id]);
   const plan = record.plan;
   return (
-    <SafeAreaView style={ui.screen} edges={['top']}>
+    <SafeAreaView style={ui.screen} edges={['top', 'bottom']}>
       <ScreenHeader title="Task" subtitle={record.state} onBack={onBack} />
       <ScrollView contentContainerStyle={{ padding: theme.spacing.lg, paddingBottom: 60 }}>
         <Text style={ui.body}>{record.request.text}</Text>

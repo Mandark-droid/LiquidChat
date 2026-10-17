@@ -69,7 +69,7 @@ const styles = StyleSheet.create({
     borderBottomColor: theme.colors.border,
     gap: 16,
   },
-  metric: { alignItems: 'center' },
+  metric: { alignItems: 'center', flexShrink: 1 },
   label: { fontSize: 10, color: theme.colors.textMuted, textTransform: 'uppercase' },
   value: { fontSize: 13, fontWeight: '700', color: theme.colors.text, marginTop: 2 },
   modelBadge: {
@@ -79,6 +79,7 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     borderRadius: 12,
     maxWidth: 140,
+    flexShrink: 1,
   },
   modelText: { fontSize: 11, fontWeight: '600', color: '#FFF' },
 });

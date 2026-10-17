@@ -17,6 +17,13 @@ function cleanTranscriptIsolated(inputs: string[]): string[] | null {
 }
 
 describe('cleanTranscript', () => {
+  it('strips decoder-stall punctuation runs but keeps normal punctuation', () => {
+    expect(cleanTranscript(',,,,,,,,,,,,, Good morning everyone. This is the sync, Rahul.')).toBe(
+      'Good morning everyone. This is the sync, Rahul.',
+    );
+    expect(cleanTranscript(',,,,,,,,,,,,,,,,,, ,, , , . .')).toBe('');
+  });
+
   it('isolated runner works for non-empty input (sanity check of the harness)', () => {
     expect(cleanTranscriptIsolated(['hello  world', '[BLANK_AUDIO]'])).toEqual(['hello world', '']);
   });
@@ -85,6 +92,15 @@ describe('cleanTranscript', () => {
         'Send it today. ' + 'and then we review '.repeat(6) + 'the numbers on Monday.',
       ),
     ).toBe('Send it today. and then we review and then we review the numbers on Monday.');
+  });
+
+  it('drops a whole-segment decoder loop, including hyphen-joined ones (Whisper on noise)', () => {
+    expect(cleanTranscript('spea-' + 'courge-'.repeat(60) + 'c')).toBe('');
+    expect(cleanTranscript('okay '.repeat(40))).toBe('');
+    const real =
+      'We agreed the budget is twenty lakh and Priya will send the revised proposal on Friday, ' +
+      'then Rahul confirms the launch date with the client team next week.';
+    expect(cleanTranscript(real)).toBe(real);
   });
 
   it('collapses repeats case-insensitively', () => {

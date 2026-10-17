@@ -6,7 +6,14 @@ import {
   Platform,
 } from 'react-native';
 
-import type { RecorderLevelEvent, RecorderSegmentEvent, RecorderStateEvent } from './types';
+import type {
+  ImportedAudio,
+  ImportProgressEvent,
+  PickedAudio,
+  RecorderLevelEvent,
+  RecorderSegmentEvent,
+  RecorderStateEvent,
+} from './types';
 
 interface MeetingRecorderNative {
   start(opts: {
@@ -32,6 +39,14 @@ interface MeetingRecorderNative {
   }>;
   repairWav(path: string): Promise<number>;
   needsNotificationPermission(): Promise<boolean>;
+  /** Resolves null when the user backs out of the picker. */
+  pickAudio(): Promise<PickedAudio | null>;
+  importAudio(
+    uri: string,
+    dir: string,
+    opts?: { segmentSec?: number; startIndex?: number },
+  ): Promise<ImportedAudio>;
+  cancelImport(): Promise<void>;
 }
 
 interface MeetingDocsNative {
@@ -67,6 +82,10 @@ export const Docs: MeetingDocsNative =
 export const isRecorderAvailable = (): boolean =>
   Platform.OS === 'android' && !!NativeModules.MeetingRecorder;
 
+/** False on APKs built before audio upload existed. */
+export const isAudioImportAvailable = (): boolean =>
+  isRecorderAvailable() && typeof NativeModules.MeetingRecorder.importAudio === 'function';
+
 export const RecorderEvents = {
   onSegment: (cb: (e: RecorderSegmentEvent) => void): EmitterSubscription =>
     DeviceEventEmitter.addListener('MeetingRecorder:segment', cb),
@@ -80,6 +99,8 @@ export const RecorderEvents = {
     DeviceEventEmitter.addListener('MeetingRecorder:silenced', cb),
   onStopRequested: (cb: () => void): EmitterSubscription =>
     DeviceEventEmitter.addListener('MeetingRecorder:stopRequested', cb),
+  onImportProgress: (cb: (e: ImportProgressEvent) => void): EmitterSubscription =>
+    DeviceEventEmitter.addListener('MeetingRecorder:importProgress', cb),
 };
 
 /** Mic is mandatory; notifications are best-effort (FGS still runs without them). */

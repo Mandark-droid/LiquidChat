@@ -48,12 +48,28 @@ export function cleanTranscript(raw: string): string {
     .replace(/<\|[^|>]*\|>/g, ' ') // stray special tokens
     .replace(/\[(?:BLANK_AUDIO|MUSIC|NOISE|SILENCE|INAUDIBLE)\]/gi, ' ') // non-speech markers
     .replace(/\((?:music|applause|laughter|noise|silence|inaudible)\)/gi, ' ')
+    // Decoder stalls show up as long runs of punctuation (",,,,,,,", ". . . .").
+    .replace(/(?:[,.;:!?\-–—…]\s*){3,}/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
   if (!t) return '';
+  if (isDegenerateLoop(t)) return '';
   t = collapseRepeats(t);
   if (HALLUCINATIONS.some(r => r.test(t))) return '';
   return t;
+}
+
+/**
+ * Whisper on noise often emits one token looped to maxTokens, sometimes joined by
+ * hyphens ("spea-courge-courge-courge…") so word-level collapsing never sees it.
+ */
+function isDegenerateLoop(text: string): boolean {
+  const words = text
+    .toLowerCase()
+    .split(/[\s\-–—,.]+/)
+    .filter(Boolean);
+  if (words.length < 20) return false;
+  return new Set(words).size / words.length < 0.15;
 }
 
 /** Collapses decoder loops such as "we will we will we will we will …". */
@@ -96,9 +112,16 @@ export function isWhisperModel(slug: string): boolean {
   return slug.startsWith('whisper');
 }
 
+/** Cactus may report "en", "<|en|>" or "English"-like tags; keep a bare ISO code or null. */
+export function normalizeLanguageCode(raw: string | undefined | null): string | null {
+  const code = (raw ?? '').replace(/[<|>\s]/g, '').toLowerCase();
+  return /^[a-z]{2,3}$/.test(code) ? code : null;
+}
+
 export function buildWhisperPrompt(job: TranscribeJob): string {
   const lang = job.language === 'auto' ? '' : `<|${job.language}|>`;
-  const task = `<|${job.task}|>`;
+  // Translating English to English only degrades output.
+  const task = `<|${job.language === 'en' ? 'transcribe' : job.task}|>`;
   const head = `<|startoftranscript|>${lang}${task}<|notimestamps|>`;
   if (!job.contextPrompting) return head;
   // Whisper conditions on at most ~224 prompt tokens; keep it short.
@@ -125,6 +148,8 @@ class TranscriberImpl {
   private queue: Array<{ job: TranscribeJob; resolve: (o: TranscribeOutcome) => void }> = [];
   private running = false;
   private promptSupported = true;
+  /** Detection that failed once (e.g. weights without language heads) fails every time. */
+  private detectionWorks = true;
   private listeners = new Set<Listener>();
   private status: TranscriberStatus = {
     model: '',
@@ -163,6 +188,7 @@ class TranscriberImpl {
       if (this.stt && this.model !== model) await this.release();
       this.model = model;
       this.promptSupported = true;
+      this.detectionWorks = true;
       const quantization = quantizationFor(model);
       const stt = new CactusSTT({ model, options: quantization ? { quantization } : undefined });
       try {
@@ -174,6 +200,7 @@ class TranscriberImpl {
         this.set({ phase: 'ready' });
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
+        console.warn(`[Transcriber] Preparing ${model} failed: ${msg}`);
         this.set({ phase: 'error', error: msg });
         try {
           await stt.destroy();
@@ -223,6 +250,8 @@ class TranscriberImpl {
       const stt = this.stt!;
       const whisper = isWhisperModel(this.model);
       const usePrompt = whisper && this.promptSupported;
+      if (whisper && job.language === 'auto')
+        job = { ...job, language: await this.detect(stt, job) };
       const prompt = whisper
         ? buildWhisperPrompt({ ...job, contextPrompting: job.contextPrompting && usePrompt })
         : undefined;
@@ -249,15 +278,56 @@ class TranscriberImpl {
         });
         text = cleanTranscript(result.response);
       }
+      // Greedy decoding can lock into a loop ("in in in …") on a speech segment. Like
+      // Whisper's reference decoder, fall back to sampling, without the context prompt.
+      for (const temperature of whisper ? [0.4, 0.8] : []) {
+        if (text || job.speechRatio <= 0.3 || !(result.response ?? '').trim()) break;
+        result = await stt.transcribe({
+          audio: job.audioPath,
+          prompt: buildWhisperPrompt({ ...job, contextPrompting: false }),
+          options: { maxTokens: 448, temperature },
+        });
+        text = cleanTranscript(result.response);
+      }
+      if (!text && job.speechRatio > 0.3)
+        console.warn(
+          `[Transcriber] ${job.audioPath.split('/').pop()}: no usable text from speech (raw: ${JSON.stringify((result.response ?? '').slice(0, 160))})`,
+        );
       return { status: text ? 'done' : 'skipped', text };
     } catch (e) {
-      return { status: 'error', text: '', error: e instanceof Error ? e.message : String(e) };
+      const error = e instanceof Error ? e.message : String(e);
+      console.warn(`[Transcriber] ${job.audioPath.split('/').pop()} failed: ${error}`);
+      return { status: 'error', text: '', error };
     }
+  }
+
+  /** Per segment, so code-switched meetings (e.g. Hindi/English) are handled. */
+  private async detect(stt: CactusSTT, job: TranscribeJob): Promise<string> {
+    for (const useVad of this.detectionWorks ? [true, false] : []) {
+      try {
+        const r = await stt.detectLanguage({ audio: job.audioPath, options: { useVad } });
+        const code = normalizeLanguageCode(r.language);
+        if (code) return code;
+        console.warn(
+          `[Transcriber] unrecognised detected language "${r.language}" (vad=${useVad})`,
+        );
+      } catch (e) {
+        console.warn(`[Transcriber] language detection failed: ${(e as Error).message}`);
+      }
+    }
+    if (this.detectionWorks) {
+      this.detectionWorks = false;
+      console.warn('[Transcriber] language detection unavailable; using English for this model');
+    }
+    // A translate task with no language token derails Whisper (it emits rows of commas).
+    // Forcing English transcribes English speech and renders other speech in English.
+    return 'en';
   }
 
   async release(): Promise<void> {
     const stt = this.stt;
     this.stt = null;
+    this.detectionWorks = true;
     if (stt) {
       try {
         await stt.destroy();

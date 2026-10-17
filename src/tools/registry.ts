@@ -429,6 +429,13 @@ export function getToolDefinitionsJSON(): string {
   return JSON.stringify(MOBILE_ACTION_TOOLS, null, 2);
 }
 
+const DEFAULT_PROMPT_PREFIX = 'You are a helpful assistant with access to the following functions.';
+
+/** True for empty or a saved copy of the built-in prompt (its tool JSON varies by version). */
+export function isDefaultSystemPrompt(prompt?: string): boolean {
+  return !prompt?.trim() || prompt.trim().startsWith(DEFAULT_PROMPT_PREFIX);
+}
+
 export function getDefaultSystemPrompt(): string {
   return (
     'You are a helpful assistant with access to the following functions. Use them if required.\n\n' +

@@ -82,7 +82,7 @@ export default function MemoryScreen({ onBack }: { onBack: () => void }) {
   };
 
   return (
-    <SafeAreaView style={ui.screen} edges={['top']}>
+    <SafeAreaView style={ui.screen} edges={['top', 'bottom']}>
       <ScreenHeader
         title="Memory"
         subtitle="What LiquidChat remembers — on this phone only"

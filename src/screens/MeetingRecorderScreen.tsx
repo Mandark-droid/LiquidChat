@@ -89,7 +89,7 @@ export default function MeetingRecorderScreen({ onBack, onFinished }: Props) {
               : 'Listening — first text appears after ~20 s';
 
   return (
-    <SafeAreaView style={ui.screen} edges={['top']}>
+    <SafeAreaView style={ui.screen} edges={['top', 'bottom']}>
       <ScreenHeader
         title={meeting?.title ?? 'Meeting'}
         subtitle={meeting?.client ?? 'Recording on-device'}
@@ -257,7 +257,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 18,
   },
-  ctrl: { alignItems: 'center', width: 72 },
+  ctrl: { alignItems: 'center', minWidth: 72, paddingHorizontal: 6 },
   ctrlMain: {
     width: 72,
     height: 72,

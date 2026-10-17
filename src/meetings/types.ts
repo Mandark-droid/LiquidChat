@@ -131,6 +131,8 @@ export interface MeetingSettings {
   autoGenerateMinutes: boolean;
   indexForChat: boolean;
   letterhead: Letterhead;
+  /** Bumped when defaults change in a way existing users should receive once. */
+  defaultsVersion?: number;
 }
 
 export interface RecorderSegmentEvent {
@@ -141,6 +143,35 @@ export interface RecorderSegmentEvent {
   wallStartMs: number;
   speechRatio: number;
   meanDb: number;
+}
+
+export interface PickedAudio {
+  uri: string;
+  name: string;
+  /** Bytes; -1 when the provider doesn't say. */
+  size: number;
+  /** 0 when the container has no duration metadata. */
+  durationMs: number;
+  mime?: string | null;
+}
+
+export interface ImportedSegment {
+  index: number;
+  path: string;
+  startMs: number;
+  durationMs: number;
+  speechRatio: number;
+  meanDb: number;
+}
+
+export interface ImportedAudio {
+  durationMs: number;
+  segments: ImportedSegment[];
+}
+
+export interface ImportProgressEvent {
+  decodedMs: number;
+  totalMs: number;
 }
 
 export interface RecorderLevelEvent {

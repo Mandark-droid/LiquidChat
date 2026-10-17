@@ -36,10 +36,11 @@ import { theme } from '../config/theme';
 import { useIntentRouter } from '../hooks/useIntentRouter';
 import { useMemory } from '../hooks/useMemory';
 import { actionLogger } from '../services/ActionLogger';
+import { isPlainChat } from '../services/IntentRouter';
 import { memoryService } from '../services/MemoryService';
 import { modelLifecycle } from '../services/ModelLifecycleManager';
 import { planToManifest } from '../skills/SkillGenerator';
-import { executeTool, getDefaultSystemPrompt } from '../tools/registry';
+import { executeTool, getDefaultSystemPrompt, isDefaultSystemPrompt } from '../tools/registry';
 import type {
   ActionChainStep,
   AgentState,
@@ -52,11 +53,23 @@ import type {
 } from '../types';
 import { DEFAULT_SETTINGS } from '../types';
 import { generateChatTitle } from '../utils/chatHelpers';
+import { listDownloadedCactusModels } from '../utils/engineMigration';
 import { triggerLightHaptic, triggerMediumHaptic } from '../utils/haptics';
 import { triggerSuccessHaptic } from '../utils/haptics';
 import { storage } from '../utils/storage';
 import { parseCactusFunctionCalls, parseToolCalls } from '../utils/toolParser';
 import { speak, stopSpeaking } from '../utils/ttsManager';
+
+/** A legacy model whose successor is already on the device loads the successor instead. */
+async function resolveSuperseded(slug: string): Promise<string> {
+  const next = getModelBySlug(slug)?.supersededBy;
+  if (!next) return slug;
+  const downloaded = await listDownloadedCactusModels();
+  return downloaded.some(m => m.slug === next) ? next : slug;
+}
+
+const PLAIN_CHAT_PROMPT =
+  'You are LiquidChat, a helpful on-device assistant. Reply naturally and concisely.';
 
 interface ChatScreenProps {
   chatId: string;
@@ -165,7 +178,8 @@ export default function ChatScreen({ chatId, onBack, onOpenModelSelector }: Chat
     setModelLoaded(false);
   };
 
-  const initializeModel = async (modelSlug: string, activeSettings?: ChatSettings | null) => {
+  const initializeModel = async (requestedSlug: string, activeSettings?: ChatSettings | null) => {
+    const modelSlug = await resolveSuperseded(requestedSlug);
     // Use passed-in settings to avoid stale React state closure on first call
     const currentSettings = activeSettings !== undefined ? activeSettings : settings;
     // A. Orchestration / agent runtime: ModelLifecycleManager owns the instance so the
@@ -340,10 +354,17 @@ export default function ChatScreen({ chatId, onBack, onOpenModelSelector }: Chat
 
       // Agent runtime: plan → per-step routing → permission-gated tools → verified reply.
       // Images still use the direct multimodal path below.
-      if (settings?.agentRuntimeEnabled !== false && !userMessage.images?.length && text) {
+      const plainChat = !userMessage.images?.length && isPlainChat(text);
+      if (
+        settings?.agentRuntimeEnabled !== false &&
+        !userMessage.images?.length &&
+        text &&
+        !plainChat
+      ) {
         await runAgent(text, updatedMessages, !!opts.voice);
         return;
       }
+      setAgentState({ kind: 'generating' });
 
       // Recall relevant memories before generating
       let memoryContext = '';
@@ -356,10 +377,11 @@ export default function ChatScreen({ chatId, onBack, onOpenModelSelector }: Chat
         }
       }
 
-      const { text: responseText, functionCalls } = await generateResponse(
-        updatedMessages,
-        memoryContext,
-      );
+      const {
+        text: responseText,
+        functionCalls,
+        metrics: turnMetrics,
+      } = await generateResponse(updatedMessages, memoryContext, plainChat);
       if (abortRef.current) return;
 
       // Parse tool calls from response text or from CactusLM functionCalls
@@ -372,9 +394,9 @@ export default function ChatScreen({ chatId, onBack, onOpenModelSelector }: Chat
         role: 'assistant' as const,
         content: responseText,
         timestamp: Date.now(),
-        tokens: metrics?.totalTokens,
-        timeToFirstTokenMs: metrics?.timeToFirstTokenMs,
-        tokensPerSecond: metrics?.tokensPerSecond,
+        tokens: turnMetrics?.totalTokens,
+        timeToFirstTokenMs: turnMetrics?.timeToFirstTokenMs,
+        tokensPerSecond: turnMetrics?.tokensPerSecond,
         toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
       };
 
@@ -385,7 +407,7 @@ export default function ChatScreen({ chatId, onBack, onOpenModelSelector }: Chat
 
       // Auto-speak if enabled
       if (settings?.autoTTS && responseText) {
-        speak(responseText, settings.ttsRate);
+        speak(responseText);
       }
 
       // Auto-remember interaction if enabled
@@ -424,6 +446,10 @@ export default function ChatScreen({ chatId, onBack, onOpenModelSelector }: Chat
     const order: string[] = [];
     let plan: Plan | null = null;
     setSavablePlan(null);
+    let streamed = '';
+    let tokenCount = 0;
+    const startedAt = Date.now();
+    let firstTokenAt: number | null = null;
     const publish = () => setActionChainSteps(order.map(id => steps.get(id)!));
     const onEvent = (e: AgentEvent) => {
       // Stop pressed before the first event: cancel as soon as the id is known.
@@ -461,7 +487,14 @@ export default function ChatScreen({ chatId, onBack, onOpenModelSelector }: Chat
       } else if (e.type === 'state') {
         setAgentState(agentStateFor(e.state));
       } else if (e.type === 'token') {
-        setStreamingText(t => t + e.token);
+        streamed += e.token;
+        tokenCount++;
+        firstTokenAt ??= Date.now();
+        setLiveTokenCount(tokenCount);
+        const elapsed = Date.now() - startedAt;
+        if (elapsed > 0) setLiveTokensPerSecond(Math.round((tokenCount / elapsed) * 10000) / 10);
+        // A tool call streams as markup or JSON; show progress, not raw syntax.
+        if (!/^\s*(<\|tool_call|\[|\{)/.test(streamed)) setStreamingText(streamed);
       }
     };
 
@@ -485,7 +518,20 @@ export default function ChatScreen({ chatId, onBack, onOpenModelSelector }: Chat
       role: 'assistant' as const,
       content: result.response || (result.state === 'FAILED' ? 'I could not complete that.' : ''),
       timestamp: Date.now(),
+      tokens: tokenCount || undefined,
+      timeToFirstTokenMs: firstTokenAt ? firstTokenAt - startedAt : undefined,
     };
+    if (tokenCount) {
+      const totalTimeMs = Date.now() - startedAt;
+      setMetrics({
+        totalTokens: tokenCount,
+        timeToFirstTokenMs: firstTokenAt ? firstTokenAt - startedAt : 0,
+        totalTimeMs,
+        tokensPerSecond: (tokenCount / totalTimeMs) * 1000,
+        prefillTokens: 0,
+        decodeTokens: tokenCount,
+      });
+    }
     const withReply = [...history, reply];
     setMessages(withReply);
     await saveMessages(withReply);
@@ -502,17 +548,22 @@ export default function ChatScreen({ chatId, onBack, onOpenModelSelector }: Chat
       triggerSuccessHaptic();
       setTimeout(() => setActionChainSteps([]), 2500);
     }
-    if ((voice || settings?.autoTTS) && reply.content) speak(reply.content, settings?.ttsRate ?? 1);
+    if ((voice || settings?.autoTTS) && reply.content) speak(reply.content);
   };
 
   const generateResponse = async (
     allMessages: ChatMessage[],
     memoryContext?: string,
+    plainChat = false,
   ): Promise<{
     text: string;
     functionCalls?: Array<{ name: string; arguments: string | Record<string, any> }>;
+    metrics?: ChatMetrics;
   }> => {
-    const systemPrompt = buildSystemPrompt(settings?.systemPrompt, memoryContext);
+    const systemPrompt =
+      plainChat && isDefaultSystemPrompt(settings?.systemPrompt)
+        ? PLAIN_CHAT_PROMPT + (memoryContext ?? '')
+        : buildSystemPrompt(settings?.systemPrompt, memoryContext);
 
     const formattedMessages: CactusLMMessage[] = [{ role: 'system', content: systemPrompt }];
 
@@ -573,29 +624,20 @@ export default function ChatScreen({ chatId, onBack, onOpenModelSelector }: Chat
       result.functionCalls;
 
     const totalTime = Date.now() - startTime;
-    setMetrics({
+    const turnMetrics = {
       totalTokens: result.totalTokens || tokenCount,
       timeToFirstTokenMs: firstTokenTime ? firstTokenTime - startTime : 0,
       totalTimeMs: result.totalTimeMs || totalTime,
-      tokensPerSecond: result.decodeTps || (tokenCount / totalTime) * 1000,
+      tokensPerSecond: result.decodeTps || (totalTime > 0 ? (tokenCount / totalTime) * 1000 : 0),
       prefillTokens: result.prefillTokens || 0,
       decodeTokens: result.decodeTokens || tokenCount,
-    });
+    };
+    setMetrics(turnMetrics);
+    console.log(
+      `[Chat] direct reply: ${turnMetrics.prefillTokens} prefill, ${turnMetrics.decodeTokens} decode, TTFT ${turnMetrics.timeToFirstTokenMs}ms, ${turnMetrics.tokensPerSecond.toFixed(1)} tok/s`,
+    );
 
-    // Compute metrics if not already set
-    if (!metrics) {
-      const totalTime = Date.now() - startTime;
-      setMetrics({
-        totalTokens: tokenCount,
-        timeToFirstTokenMs: firstTokenTime ? firstTokenTime - startTime : 0,
-        totalTimeMs: totalTime,
-        tokensPerSecond: totalTime > 0 ? (tokenCount / totalTime) * 1000 : 0,
-        prefillTokens: 0,
-        decodeTokens: tokenCount,
-      });
-    }
-
-    return { text: fullResponse, functionCalls };
+    return { text: fullResponse, functionCalls, metrics: turnMetrics };
   };
 
   const handleToolExecution = async (currentMessages: ChatMessage[], toolCalls: ToolCall[]) => {
@@ -721,7 +763,7 @@ export default function ChatScreen({ chatId, onBack, onOpenModelSelector }: Chat
         scrollToBottom();
 
         if (settings?.autoTTS && followUp) {
-          speak(followUp, settings.ttsRate);
+          speak(followUp);
         }
       }
     } catch {
@@ -834,7 +876,9 @@ export default function ChatScreen({ chatId, onBack, onOpenModelSelector }: Chat
         {isGenerating && !streamingText && (
           <View style={styles.thinkingContainer}>
             <ActivityIndicator size="small" color={theme.colors.accent} />
-            <Text style={styles.thinkingText}>Thinking...</Text>
+            <Text style={styles.thinkingText}>
+              {/thinking/i.test(modelDisplayName) ? 'Thinking...' : 'Generating...'}
+            </Text>
           </View>
         )}
       </ScrollView>

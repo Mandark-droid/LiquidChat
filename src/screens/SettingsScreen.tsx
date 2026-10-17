@@ -18,10 +18,17 @@ import { exportForFineTuning } from '../services/chatExport';
 import { pushDatasetToHub, validateHFToken } from '../services/huggingfaceApi';
 import { memoryService } from '../services/MemoryService';
 import { modelLifecycle } from '../services/ModelLifecycleManager';
-import { getDefaultSystemPrompt } from '../tools/registry';
+import { isDefaultSystemPrompt } from '../tools/registry';
 import type { ChatSettings } from '../types';
 import { DEFAULT_SETTINGS } from '../types';
 import { storage } from '../utils/storage';
+import {
+  clampSpeechSpeed,
+  MAX_SPEECH_SPEED,
+  MIN_SPEECH_SPEED,
+  setSpeechSpeed,
+  speak,
+} from '../utils/ttsManager';
 
 interface SettingsScreenProps {
   onOpenModelSelector: (currentModel: string, onSelect: (model: string) => void) => void;
@@ -62,15 +69,12 @@ export default function SettingsScreen({ onOpenModelSelector }: SettingsScreenPr
   const loadSettings = async () => {
     const saved = await storage.getSettings();
     if (saved) {
-      // Auto-populate system prompt with default if empty
-      if (!saved.systemPrompt) {
-        saved.systemPrompt = getDefaultSystemPrompt();
-      }
+      // An empty prompt means "built-in default"; older builds saved the default verbatim.
+      if (isDefaultSystemPrompt(saved.systemPrompt)) saved.systemPrompt = '';
+      saved.speechSpeed = clampSpeechSpeed(saved.speechSpeed);
       setSettings(saved);
     } else {
-      // First launch - populate default system prompt
-      const defaults = { ...DEFAULT_SETTINGS, systemPrompt: getDefaultSystemPrompt() };
-      setSettings(defaults);
+      setSettings({ ...DEFAULT_SETTINGS });
     }
   };
 
@@ -228,6 +232,7 @@ export default function SettingsScreen({ onOpenModelSelector }: SettingsScreenPr
         onPress: async () => {
           setSettings(DEFAULT_SETTINGS);
           await storage.saveSettings(DEFAULT_SETTINGS);
+          await setSpeechSpeed(DEFAULT_SETTINGS.speechSpeed);
           setHfUsername(null);
         },
       },
@@ -238,6 +243,57 @@ export default function SettingsScreen({ onOpenModelSelector }: SettingsScreenPr
     <View style={styles.section}>
       <Text style={styles.sectionTitle}>{title}</Text>
       <View style={styles.sectionContent}>{children}</View>
+    </View>
+  );
+
+  const changeSpeechSpeed = (delta: number) => {
+    const next = clampSpeechSpeed(settings.speechSpeed + delta);
+    updateSetting('speechSpeed', next);
+    setSpeechSpeed(next).then(() => speak('This is how replies will sound.'));
+  };
+
+  const renderSpeechSpeed = () => (
+    <View style={styles.settingRow}>
+      <View style={styles.settingLabelRow}>
+        <Text style={styles.settingLabel}>Speech speed</Text>
+        <Text style={styles.settingValue}>{settings.speechSpeed.toFixed(1)}x</Text>
+      </View>
+      <View style={styles.sliderRow}>
+        <TouchableOpacity
+          style={styles.sliderButton}
+          accessibilityLabel="Slower speech"
+          disabled={settings.speechSpeed <= MIN_SPEECH_SPEED}
+          onPress={() => changeSpeechSpeed(-0.1)}
+        >
+          <Text style={styles.sliderButtonText}>-</Text>
+        </TouchableOpacity>
+        <View style={styles.sliderTrack}>
+          <View
+            style={[
+              styles.sliderFill,
+              {
+                width: `${((settings.speechSpeed - MIN_SPEECH_SPEED) / (MAX_SPEECH_SPEED - MIN_SPEECH_SPEED)) * 100}%`,
+              },
+            ]}
+          />
+        </View>
+        <TouchableOpacity
+          style={styles.sliderButton}
+          accessibilityLabel="Faster speech"
+          disabled={settings.speechSpeed >= MAX_SPEECH_SPEED}
+          onPress={() => changeSpeechSpeed(0.1)}
+        >
+          <Text style={styles.sliderButtonText}>+</Text>
+        </TouchableOpacity>
+      </View>
+      <TouchableOpacity
+        style={styles.resetPromptButton}
+        onPress={() =>
+          setSpeechSpeed(settings.speechSpeed).then(() => speak('This is how replies will sound.'))
+        }
+      >
+        <Text style={styles.resetPromptText}>Preview voice</Text>
+      </TouchableOpacity>
     </View>
   );
 
@@ -338,7 +394,7 @@ export default function SettingsScreen({ onOpenModelSelector }: SettingsScreenPr
               style={styles.systemPromptInput}
               value={settings.systemPrompt}
               onChangeText={text => updateSetting('systemPrompt', text)}
-              placeholder="System prompt with tool definitions..."
+              placeholder="Built-in default (tools are added automatically when needed)"
               placeholderTextColor={theme.colors.textMuted}
               multiline
               numberOfLines={6}
@@ -346,7 +402,7 @@ export default function SettingsScreen({ onOpenModelSelector }: SettingsScreenPr
             />
             <TouchableOpacity
               style={styles.resetPromptButton}
-              onPress={() => updateSetting('systemPrompt', getDefaultSystemPrompt())}
+              onPress={() => updateSetting('systemPrompt', '')}
             >
               <Text style={styles.resetPromptText}>Reset to Default</Text>
             </TouchableOpacity>
@@ -380,9 +436,9 @@ export default function SettingsScreen({ onOpenModelSelector }: SettingsScreenPr
               'autoTTS',
               'Speak assistant responses aloud',
             )}
+            {renderSpeechSpeed()}
             {settings.autoTTS && (
               <>
-                {renderSlider('TTS Rate', settings.ttsRate, 0.5, 2.0, 0.1, 'ttsRate')}
                 <View style={styles.settingRow}>
                   <Text style={styles.settingLabel}>TTS Voice</Text>
                   <TextInput

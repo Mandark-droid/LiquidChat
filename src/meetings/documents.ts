@@ -1,6 +1,7 @@
 import * as RNFS from '@dr.pogodin/react-native-fs';
 import JSZip from 'jszip';
 
+import { LIQUIDCHAT_LOGO_PNG_BASE64 } from './brandLogo';
 import { meetingStore } from './MeetingStore';
 import { formatClock, transcriptLines } from './MinutesGenerator';
 import { Docs } from './native';
@@ -22,7 +23,9 @@ export interface ExportOptions {
 }
 
 const BRAND = 'LiquidChat';
-const GENERATED_BY = 'Generated on-device by LiquidChat';
+/** Always printed in the footer of every export; the letterhead cannot remove it. */
+export const BRAND_FOOTER = 'Generated using LiquidChat';
+const LOGO_DATA_URI = `data:image/png;base64,${LIQUIDCHAT_LOGO_PNG_BASE64}`;
 
 const MIME: Record<ExportFormat, string> = {
   pdf: 'application/pdf',
@@ -46,6 +49,7 @@ interface DocModel {
   nextSteps: string[];
   nextMeeting?: string;
   transcript: string[];
+  /** Organisation note / contact line from the letterhead (may be empty). */
   footer: string;
 }
 
@@ -112,7 +116,7 @@ function model(
     nextSteps: mn?.nextSteps ?? [],
     nextMeeting: m.nextMeeting,
     transcript: opts.includeTranscript ? transcriptLines(m) : [],
-    footer: [lh.footerNote, lh.contactLine, GENERATED_BY].filter(Boolean).join(' · '),
+    footer: [lh.footerNote, lh.contactLine].filter(s => s?.trim()).join(' · '),
   };
 }
 
@@ -123,6 +127,7 @@ export function buildMinutesMarkdown(
   m: Meeting,
   lh?: Letterhead,
   opts = { includeTranscript: false, includeCompleted: true },
+  withLogo = true,
 ): string {
   const d = model(
     m,
@@ -154,12 +159,18 @@ export function buildMinutesMarkdown(
   list('Next steps', d.nextSteps);
   if (d.nextMeeting) out.push('', `**Next meeting:** ${d.nextMeeting}`);
   if (d.transcript.length) out.push('', '## Transcript', ...d.transcript.map(l => `${l}  `));
-  out.push('', '---', `_${d.footer}_`);
+  out.push('', '---');
+  if (d.footer) out.push(`_${d.footer}_`, '');
+  out.push(
+    withLogo
+      ? `![${BRAND}](${LOGO_DATA_URI}) **${BRAND}** · ${BRAND_FOOTER}`
+      : `${BRAND} · ${BRAND_FOOTER}`,
+  );
   return out.join('\n');
 }
 
 function buildPlainText(m: Meeting, lh: Letterhead, opts: ExportOptions): string {
-  return buildMinutesMarkdown(m, lh, opts)
+  return buildMinutesMarkdown(m, lh, opts, false)
     .replace(/^#+ /gm, '')
     .replace(/\*\*|__|\*|_/g, '')
     .replace(/^\|[-| ]+\|$/gm, '')
@@ -183,6 +194,7 @@ export function shareBlurb(m: Meeting): string {
         ),
       );
   }
+  lines.push('', `— ${BRAND_FOOTER}`);
   return lines.join('\n');
 }
 
@@ -243,7 +255,11 @@ export function buildMinutesHtml(m: Meeting, lh: Letterhead, opts: ExportOptions
   .next { margin-top: 14px; padding: 8px 10px; border-left: 3px solid ${accent}; background: #f8fafc; }
   .transcript p { margin: 2px 0; font-size: 9pt; color: #374151; }
   .pagebreak { page-break-before: always; }
-  .footer { margin-top: 26px; padding-top: 8px; border-top: 1px solid #e5e7eb; font-size: 8pt; color: #6b7280; }
+  .footer { margin-top: 26px; padding-top: 8px; border-top: 1px solid #e5e7eb; font-size: 8pt; color: #6b7280; page-break-inside: avoid; }
+  .footer .note { margin-bottom: 6px; }
+  .footer .lc img { height: 18px; width: 18px; border-radius: 4px; vertical-align: middle; margin-right: 6px; }
+  .footer .lc b { color: #1f2328; vertical-align: middle; }
+  .footer .lc span { vertical-align: middle; }
 </style></head><body>
 <table class="band"><tr><td class="brand">${esc(d.brand)}</td><td class="doctype">Minutes of Meeting</td></tr></table>
 <h1>${esc(d.title)}</h1>
@@ -256,7 +272,7 @@ ${list('Open questions', d.openQuestions)}
 ${list('Next steps', d.nextSteps)}
 ${d.nextMeeting ? `<div class="next"><b>Next meeting:</b> ${esc(d.nextMeeting)}</div>` : ''}
 ${transcript}
-<div class="footer">${esc(d.footer)}</div>
+<div class="footer">${d.footer ? `<div class="note">${esc(d.footer)}</div>` : ''}<div class="lc"><img src="${LOGO_DATA_URI}" alt="${BRAND}"/><b>${BRAND}</b><span> · ${BRAND_FOOTER}</span></div></div>
 </body></html>`;
 }
 
@@ -278,6 +294,13 @@ function run(text: string, props = ''): string {
 }
 function para(content: string, style?: string, extra = ''): string {
   return `<w:p><w:pPr>${style ? `<w:pStyle w:val="${style}"/>` : ''}${extra}</w:pPr>${content}</w:p>`;
+}
+const DRAWING_NS =
+  'xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"';
+/** Inline 18px LiquidChat logo (footer part relationship rIdLogo). */
+function logoRun(): string {
+  const emu = 171450;
+  return `<w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="${emu}" cy="${emu}"/><wp:docPr id="1" name="LiquidChat logo"/><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic><pic:nvPicPr><pic:cNvPr id="1" name="liquidchat.png"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="rIdLogo"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${emu}" cy="${emu}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r>`;
 }
 function bullet(text: string): string {
   return para(run(text), 'ListBullet');
@@ -370,8 +393,9 @@ export async function buildMinutesDocxBase64(
   const documentXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <w:document ${W}><w:body>${parts.join('')}<w:sectPr><w:footerReference w:type="default" r:id="rIdFooter"/><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1134" w:right="1134" w:bottom="1134" w:left="1134" w:header="567" w:footer="567" w:gutter="0"/></w:sectPr></w:body></w:document>`;
 
+  const grey = '<w:color w:val="6B7280"/><w:sz w:val="16"/>';
   const footerXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<w:ftr ${W}>${para(run(d.footer, '<w:color w:val="6B7280"/><w:sz w:val="16"/>') + run('   Page ', '<w:color w:val="6B7280"/><w:sz w:val="16"/>') + '<w:r><w:rPr><w:color w:val="6B7280"/><w:sz w:val="16"/></w:rPr><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:rPr><w:sz w:val="16"/></w:rPr><w:instrText xml:space="preserve"> PAGE </w:instrText></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r>')}</w:ftr>`;
+<w:ftr ${W} ${DRAWING_NS}>${para(logoRun() + run(' ' + BRAND, '<w:b/><w:sz w:val="16"/>') + run(`  ·  ${BRAND_FOOTER}`, grey))}${para((d.footer ? run(d.footer + '   ', grey) : '') + run('   Page ', '<w:color w:val="6B7280"/><w:sz w:val="16"/>') + '<w:r><w:rPr><w:color w:val="6B7280"/><w:sz w:val="16"/></w:rPr><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:rPr><w:sz w:val="16"/></w:rPr><w:instrText xml:space="preserve"> PAGE </w:instrText></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r>')}</w:ftr>`;
 
   const stylesXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <w:styles ${W}>
@@ -391,7 +415,7 @@ export async function buildMinutesDocxBase64(
   zip.file(
     '[Content_Types].xml',
     `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/><Override PartName="/word/numbering.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml"/><Override PartName="/word/footer1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"/><Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/></Types>`,
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Default Extension="png" ContentType="image/png"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/><Override PartName="/word/numbering.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml"/><Override PartName="/word/footer1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"/><Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/></Types>`,
   );
   zip.file(
     '_rels/.rels',
@@ -406,12 +430,18 @@ export async function buildMinutesDocxBase64(
   zip.file(
     'docProps/core.xml',
     `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><dc:title>${x(d.title)}</dc:title><dc:creator>${x(lh.preparedBy || BRAND)}</dc:creator><dc:description>${x(GENERATED_BY)}</dc:description><dcterms:created xsi:type="dcterms:W3CDTF">${new Date(m.startedAt).toISOString().replace(/\.\d+Z$/, 'Z')}</dcterms:created></cp:coreProperties>`,
+<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><dc:title>${x(d.title)}</dc:title><dc:creator>${x(lh.preparedBy || BRAND)}</dc:creator><dc:description>${x(BRAND_FOOTER)}</dc:description><dcterms:created xsi:type="dcterms:W3CDTF">${new Date(m.startedAt).toISOString().replace(/\.\d+Z$/, 'Z')}</dcterms:created></cp:coreProperties>`,
   );
   zip.file('word/document.xml', documentXml);
   zip.file('word/styles.xml', stylesXml);
   zip.file('word/numbering.xml', numberingXml);
   zip.file('word/footer1.xml', footerXml);
+  zip.file('word/media/liquidchat.png', LIQUIDCHAT_LOGO_PNG_BASE64, { base64: true });
+  zip.file(
+    'word/_rels/footer1.xml.rels',
+    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdLogo" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/liquidchat.png"/></Relationships>`,
+  );
   return zip.generateAsync({ type: 'base64', compression: 'DEFLATE' });
 }
 

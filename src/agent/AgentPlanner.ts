@@ -75,13 +75,12 @@ export class AgentPlanner {
     return this.fastPath(request, ctx);
   }
 
-  /** One turn, tool schemas in the system prompt — parity with the legacy chat path. */
+  /** One turn; tool schemas go only in `tools` (the chat template renders them), not the prompt too. */
   async fastPath(request: AgentRequest, ctx: PlanContext): Promise<PlannerOutcome> {
     const tools = this.deps.registry.list({ distribution: this.deps.distribution() });
     const system =
       (this.deps.systemPrompt?.() ??
-        'You are a helpful assistant with access to the following functions. Use them if required.\n\n' +
-          JSON.stringify(this.deps.registry.toMobileActions(tools), null, 2)) +
+        'You are a helpful assistant with access to device functions. Call one only when the request needs it; otherwise answer directly.') +
       (ctx.memoryContext ? `\n\n${ctx.memoryContext}` : '');
     const { result } = await this.deps.inference.run(
       {
@@ -103,6 +102,7 @@ export class AgentPlanner {
         tools: this.deps.registry.toInferenceTools(tools),
         maxTokens: 512,
         temperature: 0.3,
+        onToken: ctx.onToken,
       },
       { signal: ctx.signal, approve: ctx.approve, onToken: ctx.onToken },
     );
@@ -119,6 +119,8 @@ export class AgentPlanner {
       args: c.arguments ?? {},
       dependsOn: i > 0 ? [`s${i}`] : [],
     }));
+    const question = missingDetails(steps, request, this.deps.registry, ctx.memoryContext);
+    if (question) return { kind: 'answer', text: question };
     return this.checked({ goal: request.text, steps, source: 'fastpath' }, result.text);
   }
 
@@ -180,7 +182,15 @@ export class AgentPlanner {
         return { kind: 'invalid', issues: [{ code: 'EMPTY', message: 'no tools needed' }], raw };
       }
       const v = validatePlan(plan, this.deps.registry, distribution);
-      if (v.ok) return { kind: 'plan', plan: v.plan! };
+      if (v.ok) {
+        const question = missingDetails(
+          v.plan!.steps,
+          request,
+          this.deps.registry,
+          ctx.memoryContext,
+        );
+        return question ? { kind: 'answer', text: question } : { kind: 'plan', plan: v.plan! };
+      }
       prompt = `${base}\n\nYour previous plan was rejected:\n${v.issues.map(i => `- ${i.stepId ?? 'plan'}: ${i.message}`).join('\n')}\nReturn a corrected JSON plan.`;
       if (attempt === 1) return { kind: 'invalid', issues: v.issues, raw };
     }
@@ -195,6 +205,45 @@ export class AgentPlanner {
     const v = validatePlan(plan, this.deps.registry, this.deps.distribution());
     return v.ok ? { kind: 'plan', plan: v.plan! } : { kind: 'invalid', issues: v.issues, raw };
   }
+}
+
+const PLACEHOLDER_RE =
+  /@(example|test|domain|email)\.(com|org|net)\b|\b(user|someone|recipient|name)@|john\.?doe|^\+?1?5550/i;
+const PHONE_KEYS = /^(phone|phone_number|number|mobile)$/;
+
+/**
+ * Small models fill required contact fields with invented values ("user@example.com") rather
+ * than leave them empty. An address or number the user never gave is asked for, not used.
+ */
+export function missingDetails(
+  steps: Plan['steps'],
+  request: Pick<AgentRequest, 'text' | 'history'>,
+  registry: ToolRegistry,
+  knownContext = '',
+): string | null {
+  const said = [request.text, knownContext, ...(request.history ?? []).map(h => h.content)].join(
+    '\n',
+  );
+  const saidLower = said.toLowerCase();
+  const saidDigits = said.replace(/\D/g, '');
+  const missing = new Set<string>();
+  for (const step of steps) {
+    if (step.kind !== 'tool') continue;
+    const props = registry.get(step.tool)?.inputSchema.properties ?? {};
+    for (const [key, value] of Object.entries(step.args ?? {})) {
+      if (typeof value !== 'string' || !value || /\{\{|\$\{|\$s\d/.test(value)) continue;
+      const isEmail = props[key]?.format === 'email';
+      const isPhone = PHONE_KEYS.test(key);
+      if (!isEmail && !isPhone) continue;
+      const grounded = isEmail
+        ? saidLower.includes(value.toLowerCase())
+        : value.replace(/\D/g, '').length >= 3 && saidDigits.includes(value.replace(/\D/g, ''));
+      if (!grounded || (PLACEHOLDER_RE.test(value) && !saidLower.includes(value.toLowerCase())))
+        missing.add(isEmail ? 'the email address' : 'the phone number');
+    }
+  }
+  if (!missing.size) return null;
+  return `I need ${[...missing].join(' and ')} to do that. Who should it go to?`;
 }
 
 export const PLANNER_SYSTEM =

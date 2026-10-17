@@ -49,7 +49,8 @@ export interface ChatSettings {
   systemPrompt: string;
   enableHaptics: boolean;
   autoTTS: boolean;
-  ttsRate: number;
+  /** Speech speed multiplier, 1.0 = normal (replaces ttsRate, whose scale played at 3x on Android). */
+  speechSpeed: number;
   ttsVoice: string;
   autoExecuteTools: boolean;
   hfToken: string;
@@ -104,12 +105,15 @@ export interface LiquidModel {
   minRamGb?: number;
   /** Superseded by a newer catalog entry; kept so saved settings keep working. */
   legacy?: boolean;
+  /** Replacement used automatically once it is downloaded. */
+  supersededBy?: string;
 }
 
 export type AgentState =
   | { kind: 'idle' }
   | { kind: 'listening' }
   | { kind: 'thinking' }
+  | { kind: 'generating' }
   | { kind: 'acting'; toolName: string }
   | { kind: 'vision' }
   | { kind: 'error'; message: string };
@@ -131,7 +135,7 @@ export const DEFAULT_SETTINGS: ChatSettings = {
   systemPrompt: '',
   enableHaptics: true,
   autoTTS: false,
-  ttsRate: 1.0,
+  speechSpeed: 1.0,
   ttsVoice: 'en-US-language',
   autoExecuteTools: true,
   agentRuntimeEnabled: true,

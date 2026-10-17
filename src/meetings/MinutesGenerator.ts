@@ -1,6 +1,8 @@
-import type { CactusLM } from 'cactus-react-native';
+import { CactusLM } from 'cactus-react-native';
 
+import { getModelBySlug, LIQUID_MODELS, quantizationFor } from '../config/models';
 import { modelLifecycle } from '../services/ModelLifecycleManager';
+import { listDownloadedCactusModels } from '../utils/engineMigration';
 import { resolveDue, toIsoDate } from './dateResolver';
 import { meetingStore, newActionId } from './MeetingStore';
 import { transcriber } from './Transcriber';
@@ -93,7 +95,8 @@ function contextBlock(m: Meeting): string {
 
 const SYSTEM =
   'You write accurate minutes of meeting (MoM) from transcripts for a professional services firm. ' +
-  'You only use facts stated in the transcript. You reply with a single JSON object and nothing else.';
+  'You only use facts stated in the transcript. Always write the minutes in English, even if the ' +
+  'transcript is in another language. You reply with a single JSON object and nothing else.';
 
 function mapPrompt(m: Meeting, chunk: string, i: number, n: number): string {
   return `Meeting context:
@@ -107,11 +110,11 @@ ${chunk}
 Extract the minutes for THIS part. Return JSON with exactly these keys:
 {"title": "short meeting title (max 8 words)",
  "summary": "2-3 sentence summary of this part",
- "key_points": ["main discussion point", "..."],
- "decisions": ["decision that was agreed", "..."],
+ "key_points": [one string per main discussion point],
+ "decisions": [one string per decision that was agreed],
  "action_items": [{"task": "what must be done", "owner": "person responsible or empty", "due": "deadline exactly as said, or empty", "priority": "high|medium|low"}],
- "open_questions": ["unresolved question", "..."],
- "next_steps": ["..."]}
+ "open_questions": [one string per unresolved question],
+ "next_steps": [one string per next step]}
 
 Rules:
 - Use only what is said in the transcript. Never invent names, numbers or dates.
@@ -256,12 +259,16 @@ function parseHeadedText(raw: string): Partial<PartialMinutes> {
   return out;
 }
 
+// Small models echo the schema's descriptions or ellipses back as content.
+const TEMPLATE_ECHO =
+  /^(\.{2,}|…|n\/?a|none|tbd|one string per .*|main discussion point|decision that was agreed|unresolved question|what must be done)\.?$/i;
+
 const strList = (v: any): string[] =>
   Array.isArray(v)
     ? v
         .map(x => (typeof x === 'string' ? x : (x?.text ?? x?.point ?? JSON.stringify(x))))
         .map(s => String(s).trim())
-        .filter(Boolean)
+        .filter(s => s && !TEMPLATE_ECHO.test(s))
     : [];
 
 function normalizePartial(j: any, raw: string): PartialMinutes {
@@ -279,7 +286,9 @@ function normalizePartial(j: any, raw: string): PartialMinutes {
     actionItems: actions
       .map((a: any) => (typeof a === 'string' ? { task: a } : a))
       .map((a: any) => ({
-        task: String(a.task ?? a.action ?? a.item ?? '').trim(),
+        task: String(a.task ?? a.action ?? a.item ?? '')
+          .trim()
+          .replace(TEMPLATE_ECHO, ''),
         owner: cleanField(a.owner ?? a.assignee),
         due: cleanField(a.due ?? a.deadline ?? a.due_date),
         priority: (['high', 'medium', 'low'].includes(String(a.priority).toLowerCase())
@@ -326,6 +335,9 @@ function dedupe(xs: string[]): string[] {
   return out;
 }
 
+/** Fewer distinct words than this is noise or a fragment, not a meeting. */
+const MIN_DISTINCT_WORDS = 8;
+
 export function mergePartials(parts: PartialMinutes[]): PartialMinutes {
   const actions: PartialMinutes['actionItems'] = [];
   for (const p of parts) {
@@ -350,6 +362,103 @@ export function mergePartials(parts: PartialMinutes[]): PartialMinutes {
     nextSteps: dedupe(parts.flatMap(p => p.nextSteps)),
     actionItems: actions,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Summary model selection
+
+/** Must match ModelLifecycleManager's RAM estimate. */
+const RAM_MULTIPLIER = 1.3;
+
+export interface SummaryModelChoice {
+  slug: string;
+  downloaded: boolean;
+  reason: string;
+}
+
+/**
+ * Picks the model for minutes. The configured model wins only if it fits the RAM left
+ * after evictable models are freed; otherwise an already-downloaded text model is
+ * preferred over downloading something new.
+ */
+export function chooseSummaryModel(input: {
+  preferred: string;
+  downloaded: Set<string>;
+  loaded: { slug: string; tier: string; ramMb: number }[];
+  budgetMb: number;
+}): SummaryModelChoice | null {
+  const { preferred, downloaded, loaded, budgetMb } = input;
+  const pinnedMb = (slug: string) =>
+    loaded.filter(m => m.tier === 'hot' && m.slug !== slug).reduce((n, m) => n + m.ramMb, 0);
+  const fits = (slug: string) => {
+    if (budgetMb <= 0) return true;
+    const def = getModelBySlug(slug);
+    const need = def ? Math.round(def.sizeMb * RAM_MULTIPLIER) : 500;
+    return need <= budgetMb - pinnedMb(slug);
+  };
+  const isLoaded = (slug: string) => loaded.some(m => m.slug === slug);
+
+  if (fits(preferred) && (downloaded.has(preferred) || isLoaded(preferred)))
+    return { slug: preferred, downloaded: true, reason: 'configured' };
+
+  const candidates = LIQUID_MODELS.filter(
+    m =>
+      m.category === 'text' &&
+      m.supportsCompletion &&
+      !m.isSTT &&
+      !m.isCustom &&
+      (downloaded.has(m.slug) || isLoaded(m.slug)) &&
+      fits(m.slug),
+  ).sort(
+    (a, b) =>
+      Number(isLoaded(b.slug)) - Number(isLoaded(a.slug)) ||
+      Number(!!a.legacy) - Number(!!b.legacy) ||
+      b.sizeMb - a.sizeMb,
+  );
+  if (candidates.length)
+    return {
+      slug: candidates[0].slug,
+      downloaded: true,
+      reason: fits(preferred) ? `${preferred} not downloaded` : `${preferred} does not fit in RAM`,
+    };
+
+  if (fits(preferred)) return { slug: preferred, downloaded: false, reason: 'configured' };
+  return null;
+}
+
+async function resolveSummaryModel(preferred: string): Promise<SummaryModelChoice> {
+  const downloaded = new Set((await listDownloadedCactusModels()).map(m => m.slug));
+  const choice = chooseSummaryModel({
+    preferred,
+    downloaded,
+    loaded: modelLifecycle.getLoadedModels(),
+    budgetMb: modelLifecycle.getRamBudgetMb(),
+  });
+  if (!choice) {
+    throw new Error(
+      `${getModelBySlug(preferred)?.name ?? preferred} needs more memory than this phone has free, ` +
+        'and no smaller text model is downloaded. Download LFM2.5-350M in Models, then retry.',
+    );
+  }
+  if (choice.slug !== preferred) {
+    console.log(`[Minutes] Using "${choice.slug}" instead of "${preferred}" (${choice.reason})`);
+  }
+  return choice;
+}
+
+/** Downloads with visible progress so ensure() then finds the weights cached. */
+async function downloadWithProgress(slug: string, onProgress?: MinutesProgress): Promise<void> {
+  const quantization = quantizationFor(slug);
+  const lm = new CactusLM({ model: slug, options: quantization ? { quantization } : undefined });
+  const name = getModelBySlug(slug)?.name ?? slug;
+  try {
+    await lm.download({
+      onProgress: p =>
+        onProgress?.(`Downloading ${name} · ${Math.round(p * 100)}%`, 0.02 + 0.3 * p),
+    });
+  } finally {
+    await lm.destroy().catch(() => {});
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -378,21 +487,36 @@ export async function generateMinutes(
   const lines = transcriptLines(meeting);
   if (!lines.some(l => !l.includes('★')))
     throw new Error('Transcript is empty — nothing to summarise.');
+  const spoken = new Set(
+    meeting.segments.filter(s => s.status === 'done').flatMap(s => [...tokens(s.text)]),
+  );
+  if (spoken.size < MIN_DISTINCT_WORDS) {
+    throw new Error(
+      'Too little clear speech was transcribed to write minutes. Check the recording, then retry.',
+    );
+  }
 
   // Free the STT model before loading the LLM; phones rarely fit both comfortably.
   await transcriber.release();
 
-  onProgress?.('Loading model', 0.02);
-  const managed = await modelLifecycle.ensure(modelSlug);
+  const choice = await resolveSummaryModel(modelSlug);
+  const slug = choice.slug;
+  if (!choice.downloaded) await downloadWithProgress(slug, onProgress);
+
+  onProgress?.(`Loading ${getModelBySlug(slug)?.name ?? slug}`, 0.33);
+  const managed = await modelLifecycle.ensure(slug);
   const lm = managed.instance;
-  if (!lm) throw new Error(`Model ${modelSlug} failed to load`);
+  if (!lm) throw new Error(`Model ${slug} failed to load`);
 
   const chunks = chunkLines(lines, CHUNK_CHARS);
   const parts: PartialMinutes[] = [];
   for (let i = 0; i < chunks.length; i++) {
-    onProgress?.(`Reading part ${i + 1} of ${chunks.length}`, 0.05 + (0.8 * i) / chunks.length);
+    onProgress?.(`Reading part ${i + 1} of ${chunks.length}`, 0.35 + (0.5 * i) / chunks.length);
     const raw = await complete(lm, mapPrompt(meeting, chunks[i], i, chunks.length), 900);
-    parts.push(normalizePartial(extractJson(raw), raw));
+    const json = extractJson(raw);
+    if (!json)
+      console.warn(`[Minutes] Part ${i + 1}: no JSON in model output, using text fallback`);
+    parts.push(normalizePartial(json, raw));
   }
 
   const merged = mergePartials(parts);
@@ -442,7 +566,7 @@ export async function generateMinutes(
     openQuestions: merged.openQuestions,
     nextSteps: merged.nextSteps,
     generatedAt: now,
-    model: modelSlug,
+    model: slug,
     edited: false,
   };
 

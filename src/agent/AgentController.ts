@@ -155,6 +155,7 @@ export class AgentControllerImpl implements IAgentController {
           executionId: record.id,
           memoryContext,
           signal: cancel.signal,
+          onToken: token => emit({ type: 'token', executionId: record.id, stepId: 'plan', token }),
         });
         if (cancel.cancelled) return await this.cancelled(record, setState);
         if (outcome.kind === 'answer') {

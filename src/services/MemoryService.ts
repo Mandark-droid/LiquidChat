@@ -1,8 +1,14 @@
 import * as RNFS from '@dr.pogodin/react-native-fs';
 
+import { getModelBySlug } from '../config/models';
 import type { DocumentResult, MemoryResult } from '../types';
 import { type ManagedModel, modelLifecycle } from './ModelLifecycleManager';
 import { VectorStore } from './VectorStore';
+
+// Cactus 1.7 slugs still present in saved settings; same weights, so stored vectors stay valid.
+const RENAMED_EMBED_SLUGS: Record<string, string> = {
+  'qwen3-0.6-embed': 'qwen3-embedding-0.6b',
+};
 
 function generateId(): string {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
@@ -70,7 +76,14 @@ class MemoryService {
     this.initializing = true;
 
     try {
-      if (model) this.modelSlug = model;
+      if (model) {
+        const slug = RENAMED_EMBED_SLUGS[model] ?? model;
+        if (getModelBySlug(slug)) this.modelSlug = slug;
+        else
+          console.warn(
+            `[MemoryService] Unknown embedding model "${model}", using ${this.modelSlug}`,
+          );
+      }
 
       // Load persisted vector stores
       await Promise.all([this.memoryStore.load(), this.documentStore.load()]);
