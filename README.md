@@ -95,6 +95,22 @@ Everything below runs on the phone; audio, transcripts and drafts never leave it
 - **Email drafter** — follow-up after a meeting, a new email from one line of intent, or a reply to a pasted email. Pick a tone, refine with instructions ("shorter", "more formal"), then open it in your mail app or send it with the MoM PDF attached.
 - **Ask about a meeting** — opens a chat grounded in that meeting's minutes and transcript.
 
+## Agent runtime (new)
+
+LiquidChat is now a local-first agent, not just a chat with tools. Spec: [`docs/spec/LiquidChat-Mobile-Agent-Runtime-PRD.md`](docs/spec/LiquidChat-Mobile-Agent-Runtime-PRD.md); implementation map: [`docs/agent-runtime.md`](docs/agent-runtime.md); Android layer: [`docs/android-native.md`](docs/android-native.md).
+
+- **Multi-step tasks** — requests are planned into validated steps, executed through a permission gateway, verified (e.g. DnD read back after enabling it), retried, cancellable, and resumable after the app is killed — without ever repeating a send.
+- **Per-step hybrid routing** — every model step is routed on its own: planning and phone actions stay on-device; a single hard reasoning step can go to a cloud model you configured (Anthropic, OpenAI-compatible, Gemini) if your privacy policy and budget allow, then control returns on-device. Modes: on-device only / hybrid / cloud first; battery, heat and RAM aware.
+- **Privacy** — only public data may leave the phone by default; personal data needs your policy *and* a first-time approval per provider; notification content is on-device-only. Keys live in Keystore-encrypted storage; the agent database is SQLCipher-encrypted.
+- **Approvals** — anything sensitive asks first (spoken in voice mode); sending is never "always allowed".
+- **Memory** — remembers preferences and past outcomes only with your OK; inspect, edit, pin, export or wipe it.
+- **Skills & routines** — Meeting preparation, Morning briefing, Focus mode, Meeting follow-up, End of day; create your own in plain language, save a workflow that worked, import/export. Skills are declarative — they cannot run code.
+- **Notification summaries** (opt-in), **MCP servers** as extra tools, **insights** (completion, routing, latency, cost) and an **offline evaluation set**.
+
+### Code quality
+
+`npm run check` runs strict TypeScript, ESLint (incl. import sorting and hooks rules), Prettier and Jest — the equivalents of mypy, pylint, isort, black and pytest. CI runs it plus Android debug builds for both flavors (`full`, `play`) and Android lint.
+
 ## Features
 
 - **On-device inference** — All model execution happens locally on the device via Cactus framework
