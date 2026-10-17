@@ -19,7 +19,13 @@ Build debug or release APKs for the LiquidChat React Native Android app.
 - compileSdk / targetSdk: 36, minSdk: 24 (Android 7+)
 - NDK: 27.1.12297006 (required for Cactus native module)
 - JS engine: Hermes
-- Key dependency: `cactus-react-native` 1.7.0 (on-device inference)
+- Key dependency: `cactus-react-native` 1.13.1 (on-device inference)
+- **Product flavors** (dimension `distribution`), exposed to JS as `NativeModules.DeviceContext.distribution`:
+  - `full` — sideload build, includes the AccessibilityService (`src/full/AndroidManifest.xml`) for UI automation
+  - `play` — Google Play policy-safe build, no AccessibilityService declared
+  - Variants are therefore `fullDebug`, `fullRelease`, `playDebug`, `playRelease`; plain `assembleDebug` builds **both** flavors.
+
+Ask the user which flavor they want if it is not obvious; default to `full` for personal/sideload testing and `play` for anything going to the Play Store.
 
 ## Step 0: Prerequisites check
 
@@ -38,43 +44,49 @@ npm install
 
 ## Step 2A: Debug build
 
-Run on connected device or emulator:
+Run on connected device or emulator (Metro must be reachable):
 ```bash
-npm run android
+npx react-native run-android --mode fullDebug   # or --mode playDebug
+```
+(`npm run android` without `--mode` is ambiguous once flavors exist; pass the mode.)
+
+Build APK files only (no device needed):
+```bash
+cd android && ./gradlew assembleFullDebug     # full flavor
+cd android && ./gradlew assemblePlayDebug     # play flavor
 ```
 
-Build APK file only (no device needed):
-```bash
-cd android && ./gradlew assembleDebug
-```
-
-Output: `android/app/build/outputs/apk/debug/app-debug.apk`
+Outputs:
+- `android/app/build/outputs/apk/full/debug/app-full-debug.apk`
+- `android/app/build/outputs/apk/play/debug/app-play-debug.apk`
 
 Install on device:
 ```bash
-adb install -r android/app/build/outputs/apk/debug/app-debug.apk
+adb install -r android/app/build/outputs/apk/full/debug/app-full-debug.apk
+```
+
+Lint (what CI runs):
+```bash
+cd android && ./gradlew lintFullDebug
 ```
 
 ## Step 2B: Release build
 
 Quick release (uses debug keystore — fine for internal testing):
 ```bash
-cd android && ./gradlew assembleRelease
+cd android && ./gradlew assembleFullRelease -PreactNativeArchitectures=arm64-v8a
 ```
 
-Output: `android/app/build/outputs/apk/release/app-release.apk`
+Output: `android/app/build/outputs/apk/full/release/app-full-release.apk`
 
-Optimised build (from package.json — arm64-v8a only):
+`npm run build:android` runs `react-native build-android` without a mode; with flavors it builds every release variant. Prefer the explicit Gradle tasks above/below.
+
+Play Store bundle (AAB format — always the **play** flavor):
 ```bash
-npm run build:android
+cd android && ./gradlew bundlePlayRelease
 ```
 
-Play Store bundle (AAB format — preferred for Google Play):
-```bash
-cd android && ./gradlew bundleRelease
-```
-
-Output: `android/app/build/outputs/bundle/release/app-release.aab`
+Output: `android/app/build/outputs/bundle/playRelease/app-play-release.aab`
 
 ## Production signing (for Play Store distribution)
 
@@ -113,20 +125,27 @@ npm run android
 | `Metro bundler error` | Run `npm start` in a separate terminal first |
 | `adb: device not found` | Enable USB debugging on device; run `adb kill-server && adb start-server` |
 | App crashes on launch | Check `adb logcat *:E` for error messages |
+| `Task 'assembleDebug' is ambiguous` / `run-android` picks the wrong variant | Pass the flavor: `--mode fullDebug` or `./gradlew assembleFullDebug` |
+| Debug APK shows "Unable to load script" though Metro runs | Check `react { debuggableVariants = ["fullDebug", "playDebug"] }` in `android/app/build.gradle` |
 
 ## View logs on device
 
 ```bash
 adb logcat | grep -E "LiquidChat|cactus|ReactNative"
+# platform layer (alarms, notification listener):
+adb logcat -s LiquidChatAlarms LiquidChatNotif
 ```
 
 ## APK locations summary
 
 ```
-Debug:       android/app/build/outputs/apk/debug/app-debug.apk
-Release APK: android/app/build/outputs/apk/release/app-release.apk
-Release AAB: android/app/build/outputs/bundle/release/app-release.aab
+Full debug:    android/app/build/outputs/apk/full/debug/app-full-debug.apk
+Play debug:    android/app/build/outputs/apk/play/debug/app-play-debug.apk
+Full release:  android/app/build/outputs/apk/full/release/app-full-release.apk
+Play AAB:      android/app/build/outputs/bundle/playRelease/app-play-release.aab
 ```
+
+CI (`.github/workflows/ci.yml`) builds `assembleFullDebug assemblePlayDebug lintFullDebug` and uploads both debug APKs as the `liquidchat-debug-apks` artifact.
 
 ## Version bump (before release)
 

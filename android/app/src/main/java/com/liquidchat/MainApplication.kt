@@ -10,6 +10,7 @@ import com.facebook.react.ReactPackage
 import com.facebook.react.defaults.DefaultReactNativeHost
 import com.margelo.nitro.cactus.CactusPackage
 import com.liquidchat.meetings.MeetingRecorderPackage
+import com.liquidchat.platform.PlatformPackage
 
 class MainApplication : Application(), ReactApplication {
 
@@ -21,6 +22,7 @@ class MainApplication : Application(), ReactApplication {
               add(SystemControlsPackage())
               add(AccessibilityBridgePackage())
               add(MeetingRecorderPackage())
+              add(PlatformPackage())
             }
 
         override fun getJSMainModuleName(): String = "index"

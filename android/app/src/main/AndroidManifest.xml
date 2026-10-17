@@ -26,6 +26,10 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROCESSING" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- Platform layer: re-register agent routine alarms after reboot / update -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- Platform layer: DeviceContext.snapshot() online/unmetered -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission
         android:name="android.permission.WRITE_EXTERNAL_STORAGE"
         android:maxSdkVersion="28" />
@@ -54,21 +58,41 @@
             <category android:name="android.intent.category.LAUNCHER" />
         </intent-filter>
       </activity>
-      <service
-          android:name=".LiquidChatAccessibilityService"
-          android:exported="false"
-          android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
-          <intent-filter>
-              <action android:name="android.accessibilityservice.AccessibilityService" />
-          </intent-filter>
-          <meta-data
-              android:name="android.accessibilityservice"
-              android:resource="@xml/accessibility_service_config" />
-      </service>
+      <!-- LiquidChatAccessibilityService is declared only in src/full/AndroidManifest.xml
+           (Play policy: the play flavor ships without an AccessibilityService). -->
       <service
           android:name=".meetings.MeetingRecorderService"
           android:exported="false"
           android:foregroundServiceType="microphone|dataSync|mediaProcessing" />
+      <!-- Platform layer (com.liquidchat.platform) -->
+      <receiver
+          android:name=".platform.AlarmReceiver"
+          android:exported="false">
+          <intent-filter>
+              <action android:name="com.liquidchat.platform.ALARM_FIRE" />
+          </intent-filter>
+      </receiver>
+      <receiver
+          android:name=".platform.BootReceiver"
+          android:exported="false">
+          <intent-filter>
+              <action android:name="android.intent.action.BOOT_COMPLETED" />
+              <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+          </intent-filter>
+          <intent-filter>
+              <action android:name="android.intent.action.TIME_SET" />
+              <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+          </intent-filter>
+      </receiver>
+      <service
+          android:name=".platform.LiquidChatNotificationListener"
+          android:label="@string/app_name"
+          android:exported="true"
+          android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+          <intent-filter>
+              <action android:name="android.service.notification.NotificationListenerService" />
+          </intent-filter>
+      </service>
       <provider
           android:name="androidx.core.content.FileProvider"
           android:authorities="${applicationId}.fileprovider"
