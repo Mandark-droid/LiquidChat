@@ -62,6 +62,8 @@ export interface ChatSettings {
   embeddingModel: string;
   orchestrationEnabled: boolean;
   intentRoutingEnabled: boolean;
+  /** Route chat through the agent runtime (planner, permission gateway, per-step routing). */
+  agentRuntimeEnabled?: boolean;
 }
 
 export interface MemoryResult {
@@ -132,6 +134,7 @@ export const DEFAULT_SETTINGS: ChatSettings = {
   ttsRate: 1.0,
   ttsVoice: 'en-US-language',
   autoExecuteTools: true,
+  agentRuntimeEnabled: true,
   hfToken: '',
   hfPrivateDataset: false,
   sttModel: 'whisper-small',

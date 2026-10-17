@@ -176,12 +176,22 @@ function validateConfigs(configs: RemoteProviderConfig[]): void {
     ids.add(p.id);
     if (!['openai', 'anthropic', 'gemini'].includes(p.kind))
       throw new Error(`Unknown provider kind "${p.kind}"`);
-    if (p.baseUrl && !/^https?:\/\//i.test(p.baseUrl))
-      throw new Error(`Provider "${p.id}" baseUrl must be http(s)`);
+    if (p.baseUrl && !isSafeBaseUrl(p.baseUrl))
+      throw new Error(
+        `Provider "${p.id}" baseUrl must use https (http only for local addresses, e.g. a LAN vLLM)`,
+      );
     // Guard against a key accidentally pasted into the config object.
     if ('apiKey' in (p as unknown as Record<string, unknown>))
       throw new Error('API keys must be stored in the CredentialStore, not in provider config');
   }
+}
+
+/** API keys travel in headers, so plaintext http is only accepted for local hosts. */
+export function isSafeBaseUrl(url: string): boolean {
+  const m = /^(https?):\/\/(\[[^\]]+\]|[^:/?#\s@]+)/i.exec(url.trim());
+  if (!m) return false;
+  if (m[1].toLowerCase() === 'https') return true;
+  return /^(localhost|127\.|10\.|192\.168\.|\[::1\])/i.test(m[2]);
 }
 
 export class ModelRegistry {

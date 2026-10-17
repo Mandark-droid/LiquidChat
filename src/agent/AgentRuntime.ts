@@ -16,12 +16,12 @@ import { adaptMcpTools, discoverMcpTools } from '../mcp/McpToolAdapter';
 import { MemoryManager, type MemoryProposal } from '../memory/MemoryManager';
 import { NotificationStore } from '../notifications/NotificationStore';
 import { type AgentTracer, createTracer } from '../observability/AgentTracer';
+import { type EvalCase, evalCases } from '../observability/evalset';
 import {
   type EvalPlanner,
   type EvalRunResult,
   runEvaluation,
 } from '../observability/EvaluationRunner';
-import { type EvalCase, evalCases } from '../observability/evalset';
 import { MetricsCollector } from '../observability/MetricsCollector';
 import type {
   AlarmScheduler,

@@ -6,8 +6,8 @@
  */
 import { AgentRuntime } from '../../src/agent/AgentRuntime';
 import type { AgentEvent } from '../../src/agent/types';
-import { listEvalRuns } from '../../src/observability/EvaluationRunner';
 import { evalCases } from '../../src/observability/evalset';
+import { listEvalRuns } from '../../src/observability/EvaluationRunner';
 import { createFakePlatform, type FakePlatform } from '../../src/platform/fakes';
 import { parseAlarmPayload } from '../../src/scheduler/TaskScheduler';
 import { ApprovalManager } from '../../src/security/ApprovalManager';

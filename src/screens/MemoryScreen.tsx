@@ -7,7 +7,18 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { Alert, ScrollView, Share, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { Button, Card, Chip, EmptyState, Field, HeaderButton, ScreenHeader, SectionTitle, Segmented, ui } from '../components/ui';
+import {
+  Button,
+  Card,
+  Chip,
+  EmptyState,
+  Field,
+  HeaderButton,
+  ScreenHeader,
+  SectionTitle,
+  Segmented,
+  ui,
+} from '../components/ui';
 import { theme } from '../config/theme';
 import { type Memory, type MemoryKind, memoryManager } from '../memory/MemoryManager';
 import { memoryProposals, type PendingProposal } from '../memory/proposals';
@@ -25,7 +36,10 @@ export default function MemoryScreen({ onBack }: { onBack: () => void }) {
   const load = useCallback(async () => {
     try {
       const list = query.trim()
-        ? await memoryManager.retrieve(query, { limit: 50, kinds: filter === 'all' ? undefined : [filter] })
+        ? await memoryManager.retrieve(query, {
+            limit: 50,
+            kinds: filter === 'all' ? undefined : [filter],
+          })
         : await memoryManager.list({ kind: filter === 'all' ? undefined : filter });
       setItems(list);
     } catch (e) {
@@ -41,9 +55,18 @@ export default function MemoryScreen({ onBack }: { onBack: () => void }) {
   const save = async () => {
     if (!draft.content.trim()) return;
     if (editing === 'new') {
-      await memoryManager.create({ kind: draft.kind, title: draft.title, content: draft.content, source: 'user' });
+      await memoryManager.create({
+        kind: draft.kind,
+        title: draft.title,
+        content: draft.content,
+        source: 'user',
+      });
     } else if (editing) {
-      await memoryManager.update(editing.id, { title: draft.title, content: draft.content, kind: draft.kind });
+      await memoryManager.update(editing.id, {
+        title: draft.title,
+        content: draft.content,
+        kind: draft.kind,
+      });
     }
     setEditing(null);
     load();
@@ -51,7 +74,11 @@ export default function MemoryScreen({ onBack }: { onBack: () => void }) {
 
   const open = (m: Memory | 'new') => {
     setEditing(m);
-    setDraft(m === 'new' ? { title: '', content: '', kind: 'profile' } : { title: m.title, content: m.content, kind: m.kind });
+    setDraft(
+      m === 'new'
+        ? { title: '', content: '', kind: 'profile' }
+        : { title: m.title, content: m.content, kind: m.kind },
+    );
   };
 
   return (
@@ -62,12 +89,18 @@ export default function MemoryScreen({ onBack }: { onBack: () => void }) {
         onBack={onBack}
         right={
           <>
-            <HeaderButton label="Export" onPress={async () => Share.share({ message: await memoryManager.export() })} />
+            <HeaderButton
+              label="Export"
+              onPress={async () => Share.share({ message: await memoryManager.export() })}
+            />
             <HeaderButton label="+" onPress={() => open('new')} />
           </>
         }
       />
-      <ScrollView contentContainerStyle={{ padding: theme.spacing.lg, paddingBottom: 60 }} keyboardShouldPersistTaps="handled">
+      <ScrollView
+        contentContainerStyle={{ padding: theme.spacing.lg, paddingBottom: 60 }}
+        keyboardShouldPersistTaps="handled"
+      >
         {proposals.length ? (
           <>
             <SectionTitle>Suggested to remember</SectionTitle>
@@ -79,8 +112,20 @@ export default function MemoryScreen({ onBack }: { onBack: () => void }) {
                   {p.sensitive ? ' · sensitive' : ''}
                 </Text>
                 <View style={{ flexDirection: 'row', gap: 8, marginTop: 10 }}>
-                  <Button label="Dismiss" kind="secondary" small onPress={() => memoryProposals.dismiss(p.id)} />
-                  <Button label="Remember" small onPress={async () => { await memoryProposals.accept(p.id, memoryManager); load(); }} />
+                  <Button
+                    label="Dismiss"
+                    kind="secondary"
+                    small
+                    onPress={() => memoryProposals.dismiss(p.id)}
+                  />
+                  <Button
+                    label="Remember"
+                    small
+                    onPress={async () => {
+                      await memoryProposals.accept(p.id, memoryManager);
+                      load();
+                    }}
+                  />
                 </View>
               </Card>
             ))}
@@ -90,37 +135,74 @@ export default function MemoryScreen({ onBack }: { onBack: () => void }) {
         {editing ? (
           <Card style={{ marginTop: 12 }}>
             <Segmented
-              options={[{ key: 'profile', label: 'Preference' }, { key: 'episodic', label: 'Episode' }, { key: 'procedural', label: 'Procedure' }]}
+              options={[
+                { key: 'profile', label: 'Preference' },
+                { key: 'episodic', label: 'Episode' },
+                { key: 'procedural', label: 'Procedure' },
+              ]}
               value={draft.kind}
               onChange={k => setDraft(d => ({ ...d, kind: k }))}
             />
             <View style={{ height: 12 }} />
-            <Field label="Title" value={draft.title} onChangeText={t => setDraft(d => ({ ...d, title: t }))} />
-            <Field label="Content" value={draft.content} multiline onChangeText={t => setDraft(d => ({ ...d, content: t }))} />
+            <Field
+              label="Title"
+              value={draft.title}
+              onChangeText={t => setDraft(d => ({ ...d, title: t }))}
+            />
+            <Field
+              label="Content"
+              value={draft.content}
+              multiline
+              onChangeText={t => setDraft(d => ({ ...d, content: t }))}
+            />
             <View style={{ flexDirection: 'row', gap: 8 }}>
-              <Button label="Cancel" kind="secondary" style={{ flex: 1 }} onPress={() => setEditing(null)} />
+              <Button
+                label="Cancel"
+                kind="secondary"
+                style={{ flex: 1 }}
+                onPress={() => setEditing(null)}
+              />
               <Button label="Save" style={{ flex: 1 }} onPress={save} />
             </View>
           </Card>
         ) : null}
 
         <View style={{ marginTop: 14 }}>
-          <Field label="Search" value={query} onChangeText={setQuery} placeholder="Full-text search" />
+          <Field
+            label="Search"
+            value={query}
+            onChangeText={setQuery}
+            placeholder="Full-text search"
+          />
           <View style={ui.wrap}>
             {(['all', 'profile', 'episodic', 'procedural'] as Filter[]).map(f => (
-              <Chip key={f} label={f === 'all' ? 'All' : f} active={filter === f} onPress={() => setFilter(f)} />
+              <Chip
+                key={f}
+                label={f === 'all' ? 'All' : f}
+                active={filter === f}
+                onPress={() => setFilter(f)}
+              />
             ))}
           </View>
         </View>
 
         {items.length === 0 ? (
-          <EmptyState title="Nothing remembered yet" body='Say "remember that I prefer Google Maps" or add one with +. LiquidChat asks before saving anything.' />
+          <EmptyState
+            title="Nothing remembered yet"
+            body='Say "remember that I prefer Google Maps" or add one with +. LiquidChat asks before saving anything.'
+          />
         ) : (
           items.map(m => (
-            <TouchableOpacity key={m.id} onPress={() => open(m)} onLongPress={() => memoryActions(m, load)}>
+            <TouchableOpacity
+              key={m.id}
+              onPress={() => open(m)}
+              onLongPress={() => memoryActions(m, load)}
+            >
               <Card style={{ marginTop: 8 }}>
                 <View style={[ui.row, { justifyContent: 'space-between' }]}>
-                  <Text style={[ui.body, { fontWeight: '700', flex: 1 }]} numberOfLines={1}>{m.title}</Text>
+                  <Text style={[ui.body, { fontWeight: '700', flex: 1 }]} numberOfLines={1}>
+                    {m.title}
+                  </Text>
                   <View style={ui.wrap}>
                     {m.pinned ? <Chip label="Pinned" tone="info" /> : null}
                     {m.sensitive ? <Chip label="Sensitive" tone="warn" /> : null}
@@ -141,10 +223,21 @@ export default function MemoryScreen({ onBack }: { onBack: () => void }) {
           kind="danger"
           style={{ marginTop: 24 }}
           onPress={() =>
-            Alert.alert('Clear all memory?', 'This permanently deletes everything LiquidChat remembers.', [
-              { text: 'Cancel', style: 'cancel' },
-              { text: 'Delete all', style: 'destructive', onPress: async () => { await memoryManager.clearAll(); load(); } },
-            ])
+            Alert.alert(
+              'Clear all memory?',
+              'This permanently deletes everything LiquidChat remembers.',
+              [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                  text: 'Delete all',
+                  style: 'destructive',
+                  onPress: async () => {
+                    await memoryManager.clearAll();
+                    load();
+                  },
+                },
+              ],
+            )
           }
         />
       </ScrollView>
@@ -154,9 +247,28 @@ export default function MemoryScreen({ onBack }: { onBack: () => void }) {
 
 function memoryActions(m: Memory, reload: () => void) {
   Alert.alert(m.title, undefined, [
-    { text: m.pinned ? 'Unpin' : 'Pin (always use)', onPress: async () => { await memoryManager.update(m.id, { pinned: !m.pinned }); reload(); } },
-    { text: m.sensitive ? 'Mark not sensitive' : 'Mark sensitive', onPress: async () => { await memoryManager.update(m.id, { sensitive: !m.sensitive }); reload(); } },
-    { text: 'Delete', style: 'destructive', onPress: async () => { await memoryManager.delete(m.id); reload(); } },
+    {
+      text: m.pinned ? 'Unpin' : 'Pin (always use)',
+      onPress: async () => {
+        await memoryManager.update(m.id, { pinned: !m.pinned });
+        reload();
+      },
+    },
+    {
+      text: m.sensitive ? 'Mark not sensitive' : 'Mark sensitive',
+      onPress: async () => {
+        await memoryManager.update(m.id, { sensitive: !m.sensitive });
+        reload();
+      },
+    },
+    {
+      text: 'Delete',
+      style: 'destructive',
+      onPress: async () => {
+        await memoryManager.delete(m.id);
+        reload();
+      },
+    },
     { text: 'Cancel', style: 'cancel' },
   ]);
 }

@@ -1,5 +1,13 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { NativeModules, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
+import {
+  NativeModules,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import RamUsageBar from '../components/RamUsageBar';
@@ -16,7 +24,20 @@ interface DeviceMetrics {
   platform: string;
 }
 
-export default function AgentDashboardScreen() {
+export type AgentSection = 'insights' | 'skills' | 'memory' | 'agentSettings';
+
+const SECTIONS: { key: AgentSection; title: string; body: string }[] = [
+  { key: 'skills', title: 'Skills & routines', body: 'Meeting prep, morning brief, focus mode…' },
+  { key: 'memory', title: 'Memory', body: 'What LiquidChat remembers, and suggestions' },
+  { key: 'insights', title: 'Insights', body: 'Tasks, routing, evaluation, interrupted tasks' },
+  {
+    key: 'agentSettings',
+    title: 'Agent settings',
+    body: 'Cloud models, privacy, MCP, notifications',
+  },
+];
+
+export default function AgentDashboardScreen({ onOpen }: { onOpen?: (s: AgentSection) => void }) {
   const { loadedModels, totalRamMb, ramBudgetMb, deviceProfile } = useModelManager();
   const [recentActions, setRecentActions] = useState<ActionLogEntry[]>([]);
   const [actionStats, setActionStats] = useState({
@@ -184,6 +205,20 @@ export default function AgentDashboardScreen() {
         <Text style={styles.headerTitle}>Agent Dashboard</Text>
       </View>
       <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
+        {onOpen ? (
+          <View style={styles.navGrid}>
+            {SECTIONS.map(sec => (
+              <TouchableOpacity
+                key={sec.key}
+                style={styles.navCard}
+                onPress={() => onOpen(sec.key)}
+              >
+                <Text style={styles.navTitle}>{sec.title}</Text>
+                <Text style={styles.navBody}>{sec.body}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        ) : null}
         {renderSection('Loaded Models', renderLoadedModels())}
         {renderSection('Action History', renderActionHistory())}
         {renderSection('Memory Stats', renderMemoryStats())}
@@ -194,6 +229,18 @@ export default function AgentDashboardScreen() {
 }
 
 const styles = StyleSheet.create({
+  navGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 },
+  navCard: {
+    width: '48%',
+    flexGrow: 1,
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.borderRadius.lg,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    padding: theme.spacing.md,
+  },
+  navTitle: { fontSize: theme.fontSize.md, fontWeight: '700', color: theme.colors.text },
+  navBody: { marginTop: 4, fontSize: theme.fontSize.sm, color: theme.colors.textSecondary },
   container: {
     flex: 1,
     backgroundColor: theme.colors.background,

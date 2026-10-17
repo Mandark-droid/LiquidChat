@@ -1,4 +1,5 @@
 import {
+  isSafeBaseUrl,
   localEntries,
   ModelRegistry,
   REMOTE_PROVIDERS_KEY,
@@ -111,5 +112,22 @@ describe('measured stats', () => {
     await registry.recordSample('lfm2-700m', { latencyMs: 100 });
     await registry.recordSample('lfm2-700m', { latencyMs: 99999, success: false });
     expect((await registry.get('lfm2-700m'))!.averageLatencyMs).toBe(100);
+  });
+});
+
+describe('provider base URLs', () => {
+  test('https anywhere, plaintext http only for local hosts', () => {
+    expect(isSafeBaseUrl('https://openrouter.ai/api/v1')).toBe(true);
+    expect(isSafeBaseUrl('http://192.168.1.20:8000/v1')).toBe(true);
+    expect(isSafeBaseUrl('http://localhost:11434/v1')).toBe(true);
+    expect(isSafeBaseUrl('http://api.example.com/v1')).toBe(false);
+    expect(isSafeBaseUrl('ftp://x')).toBe(false);
+  });
+
+  test('a provider with a plaintext remote base URL is rejected', async () => {
+    const { registry } = makeRegistry();
+    await expect(
+      registry.upsertProvider({ ...OPENAI_CFG, baseUrl: 'http://api.example.com/v1' }, 'sk-test'),
+    ).rejects.toThrow(/https/);
   });
 });

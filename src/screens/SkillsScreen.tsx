@@ -8,7 +8,17 @@ import { Alert, ScrollView, Share, Switch, Text, TouchableOpacity, View } from '
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { agentRuntime } from '../agent/runtime';
-import { Button, Card, Chip, EmptyState, Field, HeaderButton, ScreenHeader, SectionTitle, ui } from '../components/ui';
+import {
+  Button,
+  Card,
+  Chip,
+  EmptyState,
+  Field,
+  HeaderButton,
+  ScreenHeader,
+  SectionTitle,
+  ui,
+} from '../components/ui';
 import { theme } from '../config/theme';
 import { SkillError } from '../skills/SkillRegistry';
 import type { InstalledSkill, SkillManifest } from '../skills/types';
@@ -68,7 +78,10 @@ export default function SkillsScreen({ onBack, onRunResult }: Props) {
     try {
       const d = await agentRuntime.generator.draft(request);
       if (!d.manifest) {
-        Alert.alert('Could not create a valid skill', d.issues.map(i => `${i.path}: ${i.message}`).join('\n'));
+        Alert.alert(
+          'Could not create a valid skill',
+          d.issues.map(i => `${i.path}: ${i.message}`).join('\n'),
+        );
       } else setDraft(d.manifest);
     } catch (e) {
       showSkillError(e);
@@ -112,15 +125,37 @@ export default function SkillsScreen({ onBack, onRunResult }: Props) {
         right={
           !selected ? (
             <>
-              <HeaderButton label="Import" onPress={() => setMode(mode === 'import' ? 'list' : 'import')} />
-              <HeaderButton label="+" onPress={() => setMode(mode === 'create' ? 'list' : 'create')} />
+              <HeaderButton
+                label="Import"
+                onPress={() => setMode(mode === 'import' ? 'list' : 'import')}
+              />
+              <HeaderButton
+                label="+"
+                onPress={() => setMode(mode === 'create' ? 'list' : 'create')}
+              />
             </>
           ) : undefined
         }
       />
-      <ScrollView contentContainerStyle={{ padding: theme.spacing.lg, paddingBottom: 60 }} keyboardShouldPersistTaps="handled">
+      <ScrollView
+        contentContainerStyle={{ padding: theme.spacing.lg, paddingBottom: 60 }}
+        keyboardShouldPersistTaps="handled"
+      >
         {selected ? (
-          <SkillDetail skill={selected} busy={busy} onRun={() => run(selected)} onChanged={async () => { await load(); setSelected((await agentRuntime.skills.get(selected.id)) ?? null); }} onDeleted={() => { setSelected(null); load(); }} onToggle={toggle} />
+          <SkillDetail
+            skill={selected}
+            busy={busy}
+            onRun={() => run(selected)}
+            onChanged={async () => {
+              await load();
+              setSelected((await agentRuntime.skills.get(selected.id)) ?? null);
+            }}
+            onDeleted={() => {
+              setSelected(null);
+              load();
+            }}
+            onToggle={toggle}
+          />
         ) : mode === 'create' ? (
           <>
             <Field
@@ -131,12 +166,26 @@ export default function SkillsScreen({ onBack, onRunResult }: Props) {
               placeholder="Every morning, summarize important notifications and show my calendar."
             />
             <Button label="Draft skill" loading={busy} onPress={generate} />
-            {draft ? <ManifestReview manifest={draft} onInstall={installDraft} onDiscard={() => setDraft(null)} /> : null}
+            {draft ? (
+              <ManifestReview
+                manifest={draft}
+                onInstall={installDraft}
+                onDiscard={() => setDraft(null)}
+              />
+            ) : null}
           </>
         ) : mode === 'import' ? (
           <>
-            <Field label="Paste a skill (JSON bundle or YAML)" value={importText} onChangeText={setImportText} multiline style={{ minHeight: 200 }} />
-            <Text style={[ui.muted, { marginBottom: 10 }]}>Imported skills are installed disabled. Review permissions and steps, then enable.</Text>
+            <Field
+              label="Paste a skill (JSON bundle or YAML)"
+              value={importText}
+              onChangeText={setImportText}
+              multiline
+              style={{ minHeight: 200 }}
+            />
+            <Text style={[ui.muted, { marginBottom: 10 }]}>
+              Imported skills are installed disabled. Review permissions and steps, then enable.
+            </Text>
             <Button label="Import" onPress={doImport} />
           </>
         ) : skills.length === 0 ? (
@@ -147,15 +196,27 @@ export default function SkillsScreen({ onBack, onRunResult }: Props) {
               <Card style={{ marginBottom: 8 }}>
                 <View style={[ui.row, { justifyContent: 'space-between' }]}>
                   <Text style={[ui.body, { fontWeight: '700', flex: 1 }]}>{s.manifest.name}</Text>
-                  <Switch value={s.enabled} onValueChange={v => toggle(s, v)} trackColor={{ true: theme.colors.secondary, false: theme.colors.border }} />
+                  <Switch
+                    value={s.enabled}
+                    onValueChange={v => toggle(s, v)}
+                    trackColor={{ true: theme.colors.secondary, false: theme.colors.border }}
+                  />
                 </View>
                 <Text style={[ui.muted, { marginTop: 2 }]}>{s.manifest.description}</Text>
                 <View style={[ui.wrap, { marginTop: 8 }]}>
                   <Chip label={s.source} tone="muted" />
-                  {(s.manifest.triggers ?? []).filter(t => t.type === 'daily').map((t, i) => (
-                    <Chip key={i} label={`daily ${t.type === 'daily' ? t.time : ''}`} tone="info" />
-                  ))}
-                  {s.manifest.permissions.length ? <Chip label={`${s.manifest.permissions.length} permission(s)`} tone="warn" /> : null}
+                  {(s.manifest.triggers ?? [])
+                    .filter(t => t.type === 'daily')
+                    .map((t, i) => (
+                      <Chip
+                        key={i}
+                        label={`daily ${t.type === 'daily' ? t.time : ''}`}
+                        tone="info"
+                      />
+                    ))}
+                  {s.manifest.permissions.length ? (
+                    <Chip label={`${s.manifest.permissions.length} permission(s)`} tone="warn" />
+                  ) : null}
                 </View>
               </Card>
             </TouchableOpacity>
@@ -183,33 +244,64 @@ function SkillDetail({
 }) {
   return (
     <>
-      <Text style={{ fontSize: theme.fontSize.xl, fontWeight: '700', color: theme.colors.text }}>{skill.manifest.name}</Text>
+      <Text style={{ fontSize: theme.fontSize.xl, fontWeight: '700', color: theme.colors.text }}>
+        {skill.manifest.name}
+      </Text>
       <Text style={[ui.muted, { marginTop: 4 }]}>
         v{skill.manifest.version} · {skill.source}
-        {skill.publisher ? ` · by ${skill.publisher}` : ''} · {skill.enabled ? 'enabled' : 'disabled'}
+        {skill.publisher ? ` · by ${skill.publisher}` : ''} ·{' '}
+        {skill.enabled ? 'enabled' : 'disabled'}
       </Text>
       <ManifestReview manifest={skill.manifest} />
       <Text style={[ui.muted, { marginTop: 8 }]}>Integrity hash {skill.hash.slice(0, 16)}…</Text>
       <View style={{ gap: 8, marginTop: 16 }}>
         <Button label="Run now" loading={busy} disabled={!skill.enabled} onPress={onRun} />
-        <Button label={skill.enabled ? 'Disable' : 'Review done — enable'} kind="secondary" onPress={async () => { await onToggle(skill, !skill.enabled); onChanged(); }} />
-        <Button label="Export / share" kind="secondary" onPress={async () => Share.share({ message: await agentRuntime.skills.export(skill.id) })} />
+        <Button
+          label={skill.enabled ? 'Disable' : 'Review done — enable'}
+          kind="secondary"
+          onPress={async () => {
+            await onToggle(skill, !skill.enabled);
+            onChanged();
+          }}
+        />
+        <Button
+          label="Export / share"
+          kind="secondary"
+          onPress={async () => Share.share({ message: await agentRuntime.skills.export(skill.id) })}
+        />
         {skill.source !== 'builtin' ? (
-          <Button label="Delete" kind="danger" onPress={async () => { await agentRuntime.skills.remove(skill.id); onDeleted(); }} />
+          <Button
+            label="Delete"
+            kind="danger"
+            onPress={async () => {
+              await agentRuntime.skills.remove(skill.id);
+              onDeleted();
+            }}
+          />
         ) : null}
       </View>
     </>
   );
 }
 
-function ManifestReview({ manifest, onInstall, onDiscard }: { manifest: SkillManifest; onInstall?: () => void; onDiscard?: () => void }) {
+function ManifestReview({
+  manifest,
+  onInstall,
+  onDiscard,
+}: {
+  manifest: SkillManifest;
+  onInstall?: () => void;
+  onDiscard?: () => void;
+}) {
   return (
     <Card style={{ marginTop: 12 }}>
       <Text style={ui.body}>{manifest.description}</Text>
       <SectionTitle>Permissions</SectionTitle>
       {manifest.permissions.length ? (
         <View style={ui.wrap}>
-          {manifest.permissions.map(p => <Chip key={p} label={p.replace('special:', '')} tone="warn" />)}
+          {manifest.permissions.map(p => (
+            <Chip key={p} label={p.replace('special:', '')} tone="warn" />
+          ))}
         </View>
       ) : (
         <Text style={ui.muted}>None</Text>
@@ -217,7 +309,17 @@ function ManifestReview({ manifest, onInstall, onDiscard }: { manifest: SkillMan
       <SectionTitle>Triggers</SectionTitle>
       <Text style={ui.muted}>
         {(manifest.triggers ?? [{ type: 'manual' }])
-          .map(t => (t.type === 'daily' ? `daily at ${t.time}` : t.type === 'phrase' ? `says “${t.phrases[0]}”` : t.type === 'interval' ? `every ${t.minutes} min` : t.type === 'once' ? `once at ${t.at}` : 'manual'))
+          .map(t =>
+            t.type === 'daily'
+              ? `daily at ${t.time}`
+              : t.type === 'phrase'
+                ? `says “${t.phrases[0]}”`
+                : t.type === 'interval'
+                  ? `every ${t.minutes} min`
+                  : t.type === 'once'
+                    ? `once at ${t.at}`
+                    : 'manual',
+          )
           .join(' · ')}
       </Text>
       <SectionTitle>Steps</SectionTitle>
@@ -230,7 +332,12 @@ function ManifestReview({ manifest, onInstall, onDiscard }: { manifest: SkillMan
       ))}
       {onInstall ? (
         <View style={{ flexDirection: 'row', gap: 8, marginTop: 12 }}>
-          <Button label="Discard" kind="secondary" style={{ flex: 1 }} onPress={onDiscard ?? (() => {})} />
+          <Button
+            label="Discard"
+            kind="secondary"
+            style={{ flex: 1 }}
+            onPress={onDiscard ?? (() => {})}
+          />
           <Button label="Install (disabled)" style={{ flex: 1 }} onPress={onInstall} />
         </View>
       ) : null}

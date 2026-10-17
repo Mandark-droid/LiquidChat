@@ -21,6 +21,8 @@ import {
 } from 'react-native-image-picker';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { agentRuntime } from '../agent/runtime';
+import type { AgentEvent, ExecutionState } from '../agent/types';
 import ActionChainProgress from '../components/ActionChainProgress';
 import AgentStateBar from '../components/AgentStateBar';
 import MemoryChips from '../components/MemoryChips';
@@ -83,6 +85,9 @@ export default function ChatScreen({ chatId, onBack, onOpenModelSelector }: Chat
   const cactusLMRef = useRef<CactusLM | null>(null);
   const abortRef = useRef(false);
   const chatRef = useRef<Chat | null>(null);
+  /** The loaded instance belongs to ModelLifecycleManager (shared with the agent runtime). */
+  const managedModelRef = useRef(false);
+  const executionRef = useRef<string | null>(null);
 
   // Intent routing hook
   const { routeAndLoad } = useIntentRouter();
@@ -139,7 +144,7 @@ export default function ChatScreen({ chatId, onBack, onOpenModelSelector }: Chat
   };
 
   const releaseModel = async () => {
-    if (settings?.orchestrationEnabled) {
+    if (managedModelRef.current) {
       // Lifecycle manager owns the instances; just clear refs
       cactusLMRef.current = null;
       setModelLoaded(false);
@@ -160,8 +165,10 @@ export default function ChatScreen({ chatId, onBack, onOpenModelSelector }: Chat
   const initializeModel = async (modelSlug: string, activeSettings?: ChatSettings | null) => {
     // Use passed-in settings to avoid stale React state closure on first call
     const currentSettings = activeSettings !== undefined ? activeSettings : settings;
-    // A. Orchestration path: delegate to ModelLifecycleManager
-    if (currentSettings?.orchestrationEnabled) {
+    // A. Orchestration / agent runtime: ModelLifecycleManager owns the instance so the
+    // chat and the agent's on-device steps share one loaded model.
+    if (currentSettings?.orchestrationEnabled || currentSettings?.agentRuntimeEnabled !== false) {
+      managedModelRef.current = true;
       setIsModelLoading(true);
       setLoadProgress(0);
       setModelLoaded(false);
@@ -189,6 +196,7 @@ export default function ChatScreen({ chatId, onBack, onOpenModelSelector }: Chat
 
     try {
       await releaseModel();
+      managedModelRef.current = false;
 
       console.log(`[LiquidChat] Loading "${modelSlug}" via CactusLM SDK...`);
       const quantization = quantizationFor(modelSlug);
@@ -323,6 +331,13 @@ export default function ChatScreen({ chatId, onBack, onOpenModelSelector }: Chat
         }
       }
 
+      // Agent runtime: plan → per-step routing → permission-gated tools → verified reply.
+      // Images still use the direct multimodal path below.
+      if (settings?.agentRuntimeEnabled !== false && !userMessage.images?.length && text) {
+        await runAgent(text, updatedMessages);
+        return;
+      }
+
       // Recall relevant memories before generating
       let memoryContext = '';
       if (settings?.memoryEnabled) {
@@ -393,6 +408,75 @@ export default function ChatScreen({ chatId, onBack, onOpenModelSelector }: Chat
       setStreamingText('');
       setAgentState({ kind: 'idle' });
     }
+  };
+
+  const runAgent = async (text: string, history: ChatMessage[]) => {
+    const steps = new Map<string, ActionChainStep>();
+    const order: string[] = [];
+    const publish = () => setActionChainSteps(order.map(id => steps.get(id)!));
+    const onEvent = (e: AgentEvent) => {
+      executionRef.current = e.executionId;
+      if (e.type === 'plan') {
+        steps.clear();
+        order.length = 0;
+        for (const s of e.plan.steps) {
+          order.push(s.id);
+          steps.set(s.id, {
+            toolName: s.kind === 'tool' ? s.tool : s.operation,
+            status: 'pending',
+          });
+        }
+        if (order.length > 1) publish();
+      } else if (e.type === 'step') {
+        const cur = steps.get(e.step.stepId);
+        if (!cur) return;
+        cur.status =
+          e.step.status === 'succeeded'
+            ? 'success'
+            : e.step.status === 'failed' || e.step.status === 'skipped'
+              ? 'error'
+              : e.step.status === 'running' || e.step.status === 'waiting'
+                ? 'running'
+                : 'pending';
+        cur.resultMessage = e.step.display ?? e.step.error?.message;
+        if (cur.status === 'running') setAgentState({ kind: 'acting', toolName: cur.toolName });
+        if (order.length > 1) publish();
+      } else if (e.type === 'state') {
+        setAgentState(agentStateFor(e.state));
+      } else if (e.type === 'token') {
+        setStreamingText(t => t + e.token);
+      }
+    };
+
+    const result = await agentRuntime.execute(
+      {
+        text,
+        source: 'chat',
+        conversationId: chatId,
+        history: history
+          .filter(m => (m.role === 'user' || m.role === 'assistant') && m.content)
+          .slice(-7, -1)
+          .map(m => ({ role: m.role as 'user' | 'assistant', content: m.content ?? '' })),
+      },
+      onEvent,
+    );
+    executionRef.current = null;
+    if (abortRef.current || result.state === 'CANCELLED') return;
+
+    const reply: ChatMessage = {
+      role: 'assistant' as const,
+      content: result.response || (result.state === 'FAILED' ? 'I could not complete that.' : ''),
+      timestamp: Date.now(),
+    };
+    const withReply = [...history, reply];
+    setMessages(withReply);
+    await saveMessages(withReply);
+    scrollToBottom();
+    if (order.length > 1) {
+      triggerSuccessHaptic();
+      setTimeout(() => setActionChainSteps([]), 2500);
+    }
+    if (settings?.autoTTS && reply.content) speak(reply.content, settings.ttsRate);
   };
 
   const generateResponse = async (
@@ -625,6 +709,10 @@ export default function ChatScreen({ chatId, onBack, onOpenModelSelector }: Chat
 
   const handleStop = () => {
     abortRef.current = true;
+    if (executionRef.current) {
+      agentRuntime.cancel(executionRef.current).catch(() => {});
+      executionRef.current = null;
+    }
     setIsGenerating(false);
     setAgentState({ kind: 'idle' });
     setActionChainSteps([]);
@@ -1075,3 +1163,15 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
 });
+
+function agentStateFor(state: ExecutionState): AgentState {
+  switch (state) {
+    case 'FAILED':
+      return { kind: 'error', message: 'Task failed' };
+    case 'COMPLETED':
+    case 'CANCELLED':
+      return { kind: 'idle' };
+    default:
+      return { kind: 'thinking' };
+  }
+}

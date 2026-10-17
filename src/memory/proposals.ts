@@ -18,7 +18,12 @@ export class ProposalQueue {
 
   add(p: MemoryProposal, executionId?: string): void {
     if (this.items.some(i => i.content === p.content)) return;
-    this.items.unshift({ ...p, executionId, id: `prop_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`, createdAt: Date.now() });
+    this.items.unshift({
+      ...p,
+      executionId,
+      id: `prop_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`,
+      createdAt: Date.now(),
+    });
     this.items = this.items.slice(0, 20);
     this.emit();
   }
@@ -30,7 +35,14 @@ export class ProposalQueue {
   async accept(id: string, memory: MemoryManager): Promise<void> {
     const p = this.items.find(i => i.id === id);
     if (!p) return;
-    await memory.create({ kind: p.kind, title: p.title, content: p.content, tags: p.tags, sensitive: p.sensitive, source: 'approved_proposal' });
+    await memory.create({
+      kind: p.kind,
+      title: p.title,
+      content: p.content,
+      tags: p.tags,
+      sensitive: p.sensitive,
+      source: 'approved_proposal',
+    });
     this.dismiss(id);
   }
 

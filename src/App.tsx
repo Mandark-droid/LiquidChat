@@ -1,12 +1,18 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { StatusBar, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { AppState, StatusBar, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { agentRuntime, refreshLocalModels, startAgentRuntime } from './agent/runtime';
+import type { AgentResult } from './agent/types';
+import ApprovalHost from './components/ApprovalHost';
 import { theme } from './config/theme';
 import { buildMinutesMarkdown } from './meetings/documents';
 import { meetingStore } from './meetings/MeetingStore';
 import { transcriptPlain } from './meetings/MinutesGenerator';
+import { platform } from './platform/android';
 import AgentDashboardScreen from './screens/AgentDashboardScreen';
+import AgentInsightsScreen from './screens/AgentInsightsScreen';
+import AgentSettingsScreen from './screens/AgentSettingsScreen';
 import ChatListScreen from './screens/ChatListScreen';
 import ChatScreen from './screens/ChatScreen';
 import EmailDraftScreen from './screens/EmailDraftScreen';
@@ -14,8 +20,10 @@ import MeetingDetailScreen from './screens/MeetingDetailScreen';
 import MeetingRecorderScreen from './screens/MeetingRecorderScreen';
 import MeetingSettingsScreen from './screens/MeetingSettingsScreen';
 import MeetingsScreen from './screens/MeetingsScreen';
+import MemoryScreen from './screens/MemoryScreen';
 import ModelSelectionScreen from './screens/ModelSelectionScreen';
 import SettingsScreen from './screens/SettingsScreen';
+import SkillsScreen from './screens/SkillsScreen';
 import TasksScreen from './screens/TasksScreen';
 import { type Chat, DEFAULT_SETTINGS } from './types';
 import { generateChatId } from './utils/chatHelpers';
@@ -30,6 +38,10 @@ type Screen =
   | { type: 'meetingDetail'; meetingId: string }
   | { type: 'meetingSettings' }
   | { type: 'emailDraft'; meetingId?: string; back: Screen }
+  | { type: 'skills' }
+  | { type: 'memory' }
+  | { type: 'insights' }
+  | { type: 'agentSettings' }
   | {
       type: 'modelSelection';
       currentModel: string;
@@ -51,9 +63,59 @@ function AppContent() {
   const [screen, setScreen] = useState<Screen>({ type: 'tabs' });
   const [currentModel, setCurrentModel] = useState('lfm2.5-1.2b-instruct');
 
+  /** Shows an agent result (routine, skill run) as a new chat the user can continue. */
+  const openResultChat = useCallback(async (title: string, text: string) => {
+    const base = (await storage.getSettings()) ?? DEFAULT_SETTINGS;
+    const chatId = generateChatId();
+    const now = Date.now();
+    await storage.saveChat({
+      id: chatId,
+      title: title.slice(0, 50),
+      messages: [{ role: 'assistant', content: text, timestamp: now }],
+      createdAt: now,
+      updatedAt: now,
+      model: base.model,
+      settings: base,
+    });
+    setScreen({ type: 'chat', chatId });
+  }, []);
+
   useEffect(() => {
     checkEngineMigration();
-  }, []);
+    const showRoutine = async (r: AgentResult | null) => {
+      if (!r?.response) return;
+      const rec = await agentRuntime.repo.get(r.executionId);
+      const skill = rec?.request.skillId
+        ? await agentRuntime.skills.get(rec.request.skillId)
+        : null;
+      openResultChat(skill?.manifest.name ?? 'Routine', r.response);
+    };
+    startAgentRuntime().then(err => {
+      if (err) {
+        console.warn('[LiquidChat] agent runtime unavailable:', err);
+        return;
+      }
+      // A routine notification tapped while the app was closed.
+      agentRuntime
+        .handleLaunchPayload()
+        .then(showRoutine)
+        .catch(() => {});
+    });
+    // …or while it was running.
+    const offLaunch = platform.alarms.onLaunchPayload(() => {
+      agentRuntime
+        .handleLaunchPayload()
+        .then(showRoutine)
+        .catch(() => {});
+    });
+    const sub = AppState.addEventListener('change', st => {
+      if (st === 'active') agentRuntime.ingestNotifications().catch(() => {});
+    });
+    return () => {
+      offLaunch();
+      sub.remove();
+    };
+  }, [openResultChat]);
 
   /** Opens a chat pre-loaded with a meeting's minutes and transcript as context. */
   const handleAskInChat = useCallback(async (meetingId: string) => {
@@ -127,11 +189,28 @@ function AppContent() {
     const saved = await storage.getSettings();
     const updated = { ...(saved ?? DEFAULT_SETTINGS), model: modelSlug };
     await storage.saveSettings(updated);
+    refreshLocalModels().catch(() => {});
     setActiveTab('chats');
     setScreen({ type: 'tabs' });
   }, []);
 
   // Render current screen
+  const backToAgent = () => {
+    setActiveTab('agent');
+    setScreen({ type: 'tabs' });
+  };
+  if (screen.type === 'skills') {
+    return (
+      <SkillsScreen
+        onBack={backToAgent}
+        onRunResult={text => openResultChat('Skill result', text)}
+      />
+    );
+  }
+  if (screen.type === 'memory') return <MemoryScreen onBack={backToAgent} />;
+  if (screen.type === 'insights') return <AgentInsightsScreen onBack={backToAgent} />;
+  if (screen.type === 'agentSettings') return <AgentSettingsScreen onBack={backToAgent} />;
+
   if (screen.type === 'meetingRecorder') {
     return (
       <>
@@ -238,7 +317,7 @@ function AppContent() {
           />
         );
       case 'agent':
-        return <AgentDashboardScreen />;
+        return <AgentDashboardScreen onOpen={section => setScreen({ type: section })} />;
       case 'settings':
         return <SettingsScreen onOpenModelSelector={handleModelSelectFromTab} />;
       default:
@@ -272,6 +351,7 @@ export default function App() {
   return (
     <SafeAreaProvider>
       <AppContent />
+      <ApprovalHost />
     </SafeAreaProvider>
   );
 }
