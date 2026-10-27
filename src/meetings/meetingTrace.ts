@@ -26,7 +26,14 @@ export function traceMeeting<T>(id: string, mode: string, fn: () => Promise<T>):
         span.setAttribute('liquidchat.meeting.action_items', m.actionItems.length);
         if (m.minutes?.model)
           span.setAttribute('liquidchat.meeting.minutes_model', m.minutes.model);
-        if (m.error) span.setAttribute('error.type', m.error.slice(0, 200));
+        if (m.error) {
+          // A category always; the message (it can quote the Space or the transcript) only with content capture.
+          span.setAttribute(
+            'error.type',
+            m.status === 'error' ? 'meeting_failed' : 'meeting_warning',
+          );
+          setContent(span, 'liquidchat.meeting.error', m.error);
+        }
         setContent(span, 'liquidchat.meeting.transcript', transcriptPlain(m));
         setContent(span, 'liquidchat.meeting.minutes', m.minutes?.summary);
         setContent(

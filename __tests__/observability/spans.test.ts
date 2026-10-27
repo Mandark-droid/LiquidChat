@@ -96,3 +96,21 @@ describe('LiquidChat spans', () => {
     expect(q.attributes['rag.result.score_margin']).toBeCloseTo(0.4);
   });
 });
+
+describe('errors and content capture', () => {
+  it('keeps error messages out of spans unless content capture is on', async () => {
+    const { withSpan } = require('../../src/observability/spans');
+    const fail = () =>
+      withSpan('x', {}, async () => {
+        throw new TypeError('secret transcript text');
+      }).catch(() => undefined);
+    await fail();
+    const s = spans()[0];
+    expect(s.attributes['error.type']).toBe('TypeError');
+    expect(JSON.stringify([s.attributes, s.status, s.events])).not.toMatch(/secret transcript/);
+    exporter.reset();
+    setContentCapture(true);
+    await fail();
+    expect(spans()[0].status.message).toBe('secret transcript text');
+  });
+});

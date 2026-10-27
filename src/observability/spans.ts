@@ -62,11 +62,18 @@ export async function withSpan<T>(
     const result = await fn(span);
     return result;
   } catch (e) {
-    span.recordException(e instanceof Error ? e : new Error(String(e)));
-    span.setStatus({
-      code: SpanStatusCode.ERROR,
-      message: e instanceof Error ? e.message : String(e),
-    });
+    // The error's type always; its message (which may quote content) only with content capture.
+    const type = e instanceof Error ? e.name : typeof e;
+    span.setAttribute('error.type', type);
+    if (captureContent) {
+      span.recordException(e instanceof Error ? e : new Error(String(e)));
+      span.setStatus({
+        code: SpanStatusCode.ERROR,
+        message: e instanceof Error ? e.message : String(e),
+      });
+    } else {
+      span.setStatus({ code: SpanStatusCode.ERROR, message: type });
+    }
     throw e;
   } finally {
     span.end();
