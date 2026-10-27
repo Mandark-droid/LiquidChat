@@ -5,7 +5,7 @@ import { getModelTier } from '../config/modelTiers';
 import { memoryService } from '../services/MemoryService';
 import { modelLifecycle } from '../services/ModelLifecycleManager';
 import { storage } from '../utils/storage';
-import { processMeetingInCloud } from './cloudMeeting';
+import { minutesInCloud, processMeetingInCloud } from './cloudMeeting';
 import { buildMinutesMarkdown } from './documents';
 import { meetingStore } from './MeetingStore';
 import { defaultTitle, generateMinutes, transcriptPlain } from './MinutesGenerator';
@@ -338,8 +338,10 @@ class MeetingSessionImpl {
   async processMeeting(id: string, opts: { forceMinutes?: boolean } = {}): Promise<void> {
     if (this.processing.has(id)) return;
     const settings = await getMeetingSettings();
-    if (settings.engine === 'space' && !opts.forceMinutes) {
-      const done = await this.processInCloud(id, { fallback: true });
+    if (settings.engine === 'space') {
+      const done = opts.forceMinutes
+        ? await this.minutesInCloud(id)
+        : await this.processInCloud(id, { fallback: true });
       if (done) return;
     }
     this.processing.add(id);
@@ -473,6 +475,44 @@ class MeetingSessionImpl {
     } finally {
       this.processing.delete(id);
       await Recorder.release().catch(() => {});
+      this.set({ ...IDLE });
+    }
+  }
+
+  /** "Regenerate minutes" in Space mode: Gemma 4 on the existing transcript; false falls back to the phone. */
+  private async minutesInCloud(id: string): Promise<boolean> {
+    const settings = await getMeetingSettings();
+    const token = (await storage.getSettings())?.hfToken?.trim() ?? '';
+    if (!token || this.processing.has(id)) return false;
+    this.processing.add(id);
+    try {
+      await meetingStore.update(id, m => {
+        m.status = 'summarizing';
+        m.error = undefined;
+      });
+      this.set({
+        meetingId: id,
+        phase: 'summarizing',
+        progressLabel: 'Writing minutes',
+        progress: 0.8,
+        remote: true,
+      });
+      await minutesInCloud(
+        id,
+        { spaceId: settings.spaceId, token, asrModel: settings.spaceAsrModel },
+        (label, p) => this.set({ progressLabel: label, progress: p }),
+      );
+      return true;
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error(`[MeetingSession] LiquidChat Space minutes failed for ${id}: ${msg}`);
+      await meetingStore.update(id, m => {
+        m.status = 'ready';
+        m.error = `LiquidChat Space unavailable (${msg}); minutes written on the phone instead.`;
+      });
+      return false;
+    } finally {
+      this.processing.delete(id);
       this.set({ ...IDLE });
     }
   }

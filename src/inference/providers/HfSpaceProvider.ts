@@ -32,6 +32,7 @@ export class HfSpaceProvider extends RemoteProviderBase {
         JSON.stringify(messages),
         req.maxTokens ?? 1024,
         req.temperature ?? 0.3,
+        'gemma',
       ]);
     } catch (e) {
       const status = e instanceof SpaceError ? e.status : undefined;

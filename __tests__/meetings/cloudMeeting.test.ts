@@ -139,3 +139,38 @@ describe('cloud results on the meeting', () => {
     expect(text).toContain('Attendees: Lalit');
   });
 });
+
+describe('Space endpoint contracts', () => {
+  // Gradio rejects a call with fewer inputs than the endpoint declares; these must match space/app.py.
+  const fs = require('fs');
+  const path = require('path');
+  const app: string = fs.readFileSync(path.join(__dirname, '../../space/app.py'), 'utf8');
+  const inputs = (api: string) => {
+    const m = new RegExp(String.raw`click\(\w+, \[([^\]]*)\][^\n]*api_name="${api}"`).exec(app);
+    if (!m) throw new Error(`no ${api} endpoint in space/app.py`);
+    return m[1].split(',').filter(s => s.trim()).length;
+  };
+
+  it('the app sends every input each endpoint takes', async () => {
+    const sent: Record<string, number> = {};
+    const client = {
+      call: async (api: string, data: unknown[]) => {
+        sent[api] = data.length;
+        return api === 'minutes' ? { title: 'T', summary: 'S', action_items: [] } : '';
+      },
+    };
+    const { writeMinutesInCloud } = require('../../src/meetings/cloudMeeting');
+    const store = require('../../src/meetings/MeetingStore').meetingStore;
+    const m = makeMeeting({ segments: [seg(0, 'We will ship on Friday.')] });
+    jest.spyOn(store, 'update').mockImplementation(async (_id: unknown, f: unknown) => {
+      (f as (x: typeof m) => void)(m);
+      return m;
+    });
+    await writeMinutesInCloud(m, client).catch(() => undefined);
+    expect(sent.minutes).toBe(inputs('minutes'));
+    expect(inputs('start')).toBe(4); // processMeetingInCloud sends [file, true, 0, maxSpeakers]
+    expect(inputs('transcribe_part')).toBe(5);
+    expect(inputs('ask')).toBe(3);
+    expect(inputs('chat')).toBe(4); // HfSpaceProvider sends [messages, maxTokens, temperature, model]
+  });
+});

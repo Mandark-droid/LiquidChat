@@ -141,18 +141,56 @@ export async function processMeetingInCloud(
   if (!segments.length) throw new Error('No speech was found in the recording.');
 
   const model = `space:${opts.asrModel}`;
-  let updated = await meetingStore.update(meetingId, m => {
+  const updated = await meetingStore.update(meetingId, m => {
     applyCloudTranscript(m, segments, audio.pieces, job.speakers, model);
   });
 
+  return writeMinutesInCloud(updated!, client, segments, onProgress);
+}
+
+/** The meeting's transcript with speaker ids (SPEAKER_00 …), as the Space produced it. */
+function transcriptSegments(m: Meeting): CloudSegment[] {
+  return m.segments.flatMap(s =>
+    s.status === 'done' && s.text
+      ? s.utterances?.length
+        ? s.utterances.map(u => ({
+            start: u.startMs / 1000,
+            end: u.endMs / 1000,
+            speaker: u.speakerId,
+            text: u.text,
+          }))
+        : [
+            {
+              start: Math.max(0, s.startMs) / 1000,
+              end: (Math.max(0, s.startMs) + s.durationMs) / 1000,
+              speaker: '',
+              text: s.text,
+            },
+          ]
+      : [],
+  );
+}
+
+/**
+ * Minutes from Gemma 4 on the Space for a meeting that already has a transcript (after a Space
+ * run, or "Regenerate minutes" in Space mode), so no audio is uploaded again.
+ */
+export async function writeMinutesInCloud(
+  meeting: Meeting,
+  client: Pick<SpaceClient, 'call'>,
+  segments: CloudSegment[] = transcriptSegments(meeting),
+  onProgress?: MinutesProgress,
+): Promise<Meeting> {
+  if (!segments.length) throw new Error('This meeting has no transcript yet.');
   onProgress?.('Writing minutes', 0.8);
   const raw = await client.call<Record<string, unknown>>('minutes', [
     JSON.stringify({ segments }),
-    meetingContextText(updated!),
+    meetingContextText(meeting),
+    'gemma',
   ]);
   // Names the model recognised (introductions, being addressed) label the speakers.
   const names = (raw.speaker_names ?? {}) as Record<string, unknown>;
-  updated = await meetingStore.update(meetingId, m => {
+  const updated = await meetingStore.update(meeting.id, m => {
     for (const s of m.speakers ?? []) {
       const n = typeof names[s.id] === 'string' ? (names[s.id] as string).trim() : '';
       if (n && s.nameSource !== 'user') {
@@ -167,6 +205,24 @@ export async function processMeetingInCloud(
     owner: ownerName(a.owner, updated!.speakers ?? []),
   }));
   return applyMinutes(updated!, partial, 'space:gemma-4-12b', onProgress);
+}
+
+/** Minutes only, on the Space (see writeMinutesInCloud). */
+export async function minutesInCloud(
+  meetingId: string,
+  opts: CloudOptions,
+  onProgress?: MinutesProgress,
+): Promise<Meeting> {
+  const meeting = await meetingStore.get(meetingId);
+  if (!meeting) throw new Error('Meeting not found');
+  if (!opts.token)
+    throw new Error('Add your Hugging Face token in Settings to use the LiquidChat Space.');
+  return writeMinutesInCloud(
+    meeting,
+    opts.client ?? new SpaceClient(opts.spaceId, opts.token),
+    undefined,
+    onProgress,
+  );
 }
 
 /** The whole meeting as Space segments, with speaker names where known. */

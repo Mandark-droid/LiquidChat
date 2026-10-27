@@ -484,7 +484,7 @@ Return JSON with exactly these keys:
  "next_steps": ["next step"]}}
 
 Rules: an action item is something a person committed to or was asked to do. The owner is the person who will do it: when someone says "I will" the owner is that line's speaker; when someone asks another person and they agree, the owner is the person who agreed. Use [] for empty lists."""
-    raw = _generate([{"role": "system", "content": MINUTES_SYSTEM}, {"role": "user", "content": prompt}], 2000, 0.0, model)
+    raw = _generate([{"role": "system", "content": MINUTES_SYSTEM}, {"role": "user", "content": prompt}], 1400, 0.0, model)
     return _parse_json(raw)
 
 
