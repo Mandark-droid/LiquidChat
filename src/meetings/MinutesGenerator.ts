@@ -281,7 +281,7 @@ const strList = (v: any): string[] =>
         .filter(s => s && !TEMPLATE_ECHO.test(s))
     : [];
 
-function normalizePartial(j: any, raw: string): PartialMinutes {
+export function normalizePartial(j: any, raw: string): PartialMinutes {
   const src = j ?? parseHeadedText(raw);
   const actions = Array.isArray(src.action_items ?? src.actionItems)
     ? (src.action_items ?? src.actionItems)
@@ -669,6 +669,21 @@ Reply with the JSON object only. Start with {`,
     if (j?.title) title = String(j.title).trim();
   }
 
+  return applyMinutes(meeting, { ...merged, title, summary }, slug, onProgress);
+}
+
+/**
+ * Saves minutes for a meeting from either engine (on-device or the LiquidChat Space): action
+ * items keep the user's edits and completed state, deadlines are resolved against the meeting date.
+ */
+export async function applyMinutes(
+  meeting: Meeting,
+  merged: PartialMinutes,
+  slug: string,
+  onProgress?: MinutesProgress,
+): Promise<Meeting> {
+  const meetingId = meeting.id;
+  const { title, summary } = merged;
   const meetingDate = new Date(meeting.startedAt);
   const now = Date.now();
   const previous = meeting.actionItems;

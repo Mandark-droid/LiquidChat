@@ -47,7 +47,50 @@ export default function MeetingSettingsScreen({ onBack }: { onBack: () => void }
         contentContainerStyle={{ padding: theme.spacing.lg, paddingBottom: 48 }}
         keyboardShouldPersistTaps="handled"
       >
-        <SectionTitle>Transcription</SectionTitle>
+        <SectionTitle>Processing</SectionTitle>
+        <Card>
+          <Segmented
+            options={[
+              { key: 'device', label: 'On this phone' },
+              { key: 'space', label: 'LiquidChat Space' },
+            ]}
+            value={s.engine}
+            onChange={v => update({ engine: v })}
+          />
+          <Text style={[ui.muted, { marginTop: 10 }]}>
+            {s.engine === 'device'
+              ? 'Private and offline: nothing leaves the phone. Roughly one minute of processing per minute of audio.'
+              : 'Much more accurate transcripts, speakers and action items, in about five minutes for a 45-minute meeting. The recording is uploaded to the Space below and processed with your own Hugging Face ZeroGPU quota (your token from Settings). The Space keeps nothing: audio is deleted after reading and nothing is logged. If the Space is unreachable, the phone takes over.'}
+          </Text>
+          {s.engine === 'space' && (
+            <>
+              <Field
+                label="Space"
+                value={s.spaceId}
+                onChangeText={v => update({ spaceId: v.trim() })}
+                placeholder="kshitijthakkar/LiquidChat"
+                hint="Any copy of the LiquidChat Space works (duplicate it on Hugging Face to run your own)."
+              />
+              <Text style={ui.muted}>Speech model on the Space</Text>
+              <View style={{ marginTop: 8 }}>
+                <Segmented
+                  options={[
+                    { key: 'hinglish', label: 'Hindi + English' },
+                    { key: 'large-v3', label: 'Whisper large-v3' },
+                  ]}
+                  value={s.spaceAsrModel}
+                  onChange={v => update({ spaceAsrModel: v })}
+                />
+              </View>
+              <Text style={[ui.muted, { marginTop: 8 }]}>
+                Hindi + English handles Hinglish and Indian accents and writes in Latin script.
+                Whisper large-v3 is for meetings in other languages.
+              </Text>
+            </>
+          )}
+        </Card>
+
+        <SectionTitle>Transcription on this phone</SectionTitle>
         <Card>
           <Text style={ui.muted}>Speech model</Text>
           <View style={[ui.wrap, { marginTop: 8 }]}>

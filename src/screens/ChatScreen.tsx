@@ -35,6 +35,10 @@ import { getModelBySlug, quantizationFor } from '../config/models';
 import { theme } from '../config/theme';
 import { useIntentRouter } from '../hooks/useIntentRouter';
 import { useMemory } from '../hooks/useMemory';
+import { askInCloud } from '../meetings/cloudMeeting';
+import { meetingContext } from '../meetings/meetingQA';
+import { meetingStore } from '../meetings/MeetingStore';
+import { getMeetingSettings } from '../meetings/settings';
 import { actionLogger } from '../services/ActionLogger';
 import { isPlainChat } from '../services/IntentRouter';
 import { memoryService } from '../services/MemoryService';
@@ -340,6 +344,47 @@ export default function ChatScreen({ chatId, onBack, onOpenModelSelector }: Chat
     scrollToBottom();
 
     try {
+      // Meeting Q&A: the minutes plus the passages that match this question; no tools, no routing.
+      if (settings?.meetingId) {
+        setAgentState({ kind: 'generating' });
+        const meeting = await meetingStore.get(settings.meetingId);
+        // With the LiquidChat Space engine, Gemma 4 reads the whole meeting; otherwise (or if
+        // the Space is unreachable) the phone answers from the notes and matching passages.
+        let answer = '';
+        let turnMetrics: ChatMetrics | undefined;
+        const ms = await getMeetingSettings();
+        if (meeting && ms.engine === 'space' && settings.hfToken) {
+          setStreamingText('Asking your LiquidChat Space…');
+          answer = await askInCloud(meeting, text, {
+            spaceId: ms.spaceId,
+            token: settings.hfToken,
+          }).catch(e => {
+            console.warn(`[Chat] LiquidChat Space ask failed, answering on the phone: ${e}`);
+            return '';
+          });
+          setStreamingText('');
+        }
+        if (!answer) {
+          const context = meeting ? meetingContext(meeting, text) : '';
+          const recent = updatedMessages.slice(-3); // the question plus one earlier exchange
+          ({ text: answer, metrics: turnMetrics } = await generateResponse(recent, context));
+        }
+        if (abortRef.current) return;
+        const reply: ChatMessage = {
+          role: 'assistant',
+          content: answer.trim() || 'I could not find that in the meeting.',
+          timestamp: Date.now(),
+          tokens: turnMetrics?.decodeTokens,
+          timeToFirstTokenMs: turnMetrics?.timeToFirstTokenMs,
+        };
+        const withReply = [...updatedMessages, reply];
+        setMessages(withReply);
+        await saveMessages(withReply);
+        scrollToBottom();
+        if (opts.voice || settings?.autoTTS) speak(reply.content ?? '');
+        return;
+      }
+
       // C. Intent routing: when enabled, route message to best model
       if (settings?.orchestrationEnabled && settings?.intentRoutingEnabled && text) {
         const hasCorpus = memoryService.getStats().documentCount > 0;

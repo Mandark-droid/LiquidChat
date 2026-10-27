@@ -34,7 +34,9 @@ import {
   type ExportFormat,
   type ExportOptions,
   fmtDue,
+  saveAudioToDownloads,
   saveMinutesToDownloads,
+  shareAudio,
   shareMinutes,
 } from '../meetings/documents';
 import { useLiveSession, useMeeting } from '../meetings/hooks';
@@ -71,6 +73,7 @@ export default function MeetingDetailScreen({
   const [menuOpen, setMenuOpen] = useState(false);
   const [editAction, setEditAction] = useState<ActionItem | 'new' | null>(null);
   const [audioBytes, setAudioBytes] = useState(0);
+  const [exportingAudio, setExportingAudio] = useState(false);
 
   useEffect(() => {
     meetingStore.storageBytes(meetingId).then(setAudioBytes);
@@ -80,7 +83,14 @@ export default function MeetingDetailScreen({
     return (
       <SafeAreaView style={ui.screen} edges={['top', 'bottom']}>
         <ScreenHeader title="Meeting" onBack={onBack} />
-        <ActivityIndicator style={{ marginTop: 40 }} color={theme.colors.accent} />
+        {meeting === undefined ? (
+          <ActivityIndicator style={{ marginTop: 40 }} color={theme.colors.accent} />
+        ) : (
+          <Text style={[ui.muted, { margin: 24, textAlign: 'center' }]}>
+            This meeting is no longer on the phone. It may have been deleted, or a recording that
+            stopped before any audio was saved.
+          </Text>
+        )}
       </SafeAreaView>
     );
   }
@@ -126,6 +136,47 @@ export default function MeetingDetailScreen({
           }
         },
       });
+    }
+    if (audioBytes > 0 && !busy) {
+      opts.push({
+        text: 'Process with LiquidChat Space (high accuracy)',
+        onPress: () =>
+          Alert.alert(
+            'Process with LiquidChat Space?',
+            'The recording is uploaded to your LiquidChat Space and processed with your own Hugging Face GPU quota. It replaces this transcript, the speakers and the minutes (your edited action items are kept). The Space deletes the audio after reading it.',
+            [
+              { text: 'Cancel', style: 'cancel' },
+              {
+                text: 'Process',
+                onPress: () =>
+                  meetingSession
+                    .processInCloud(meetingId)
+                    .catch(e =>
+                      Alert.alert('LiquidChat Space', e instanceof Error ? e.message : String(e)),
+                    ),
+              },
+            ],
+          ),
+      });
+    }
+    if (audioBytes > 0 && !recordingHere && !exportingAudio) {
+      const exporting = (work: () => Promise<void>) => () => {
+        setExportingAudio(true);
+        work()
+          .catch(e =>
+            Alert.alert('Could not export audio', e instanceof Error ? e.message : String(e)),
+          )
+          .finally(() => setExportingAudio(false));
+      };
+      opts.push(
+        { text: 'Share recording (M4A)', onPress: exporting(() => shareAudio(meetingId)) },
+        {
+          text: 'Save recording to Downloads',
+          onPress: exporting(async () => {
+            Alert.alert('Saved', await saveAudioToDownloads(meetingId));
+          }),
+        },
+      );
     }
     if (audioBytes > 0) {
       opts.push({
@@ -179,6 +230,13 @@ export default function MeetingDetailScreen({
         }
       />
 
+      {exportingAudio && (
+        <View style={[ui.row, ui.pad, { paddingTop: 10, gap: 8 }]}>
+          <ActivityIndicator size="small" color={theme.colors.accent} />
+          <Text style={{ color: theme.colors.textSecondary }}>Preparing recording…</Text>
+        </View>
+      )}
+
       <View style={[ui.pad, { paddingTop: 12 }]}>
         <Segmented
           options={[
@@ -200,6 +258,7 @@ export default function MeetingDetailScreen({
         recording={recordingHere}
         label={live.progressLabel}
         progress={live.progress}
+        remote={!!live.remote}
         onOpenRecorder={onOpenRecorder}
       />
 
@@ -258,6 +317,7 @@ function StatusCard({
   recording,
   label,
   progress,
+  remote,
   onOpenRecorder,
 }: {
   meeting: Meeting;
@@ -265,6 +325,7 @@ function StatusCard({
   recording: boolean;
   label?: string;
   progress?: number;
+  remote?: boolean;
   onOpenRecorder: () => void;
 }) {
   if (recording) {
@@ -283,7 +344,8 @@ function StatusCard({
     return (
       <View style={styles.status}>
         <Text style={styles.statusText}>
-          {label ?? 'Processing'}… (on-device, keep the app open for best speed)
+          {label ?? 'Processing'}…{' '}
+          {remote ? '(on your LiquidChat Space)' : '(on-device, keep the app open for best speed)'}
         </Text>
         <ProgressBar value={progress ?? 0} />
       </View>

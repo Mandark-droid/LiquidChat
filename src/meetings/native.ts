@@ -65,6 +65,8 @@ interface MeetingDocsNative {
     },
   ): Promise<boolean>;
   saveToDownloads(path: string, displayName: string, mime: string): Promise<string>;
+  /** Joins 16 kHz WAV segments into one AAC .m4a; resolves the output path. */
+  encodeAudio(wavPaths: string[], outPath: string): Promise<string>;
 }
 
 function missing(name: string): never {

@@ -4,6 +4,8 @@ import { AppState, type EmitterSubscription } from 'react-native';
 import { getModelTier } from '../config/modelTiers';
 import { memoryService } from '../services/MemoryService';
 import { modelLifecycle } from '../services/ModelLifecycleManager';
+import { storage } from '../utils/storage';
+import { processMeetingInCloud } from './cloudMeeting';
 import { buildMinutesMarkdown } from './documents';
 import { meetingStore } from './MeetingStore';
 import { defaultTitle, generateMinutes, transcriptPlain } from './MinutesGenerator';
@@ -39,6 +41,8 @@ export interface LiveState {
   pendingSegments: number;
   progressLabel?: string;
   progress?: number;
+  /** Processing runs on the LiquidChat Space rather than the phone. */
+  remote?: boolean;
   error?: string;
 }
 
@@ -333,8 +337,12 @@ class MeetingSessionImpl {
 
   async processMeeting(id: string, opts: { forceMinutes?: boolean } = {}): Promise<void> {
     if (this.processing.has(id)) return;
-    this.processing.add(id);
     const settings = await getMeetingSettings();
+    if (settings.engine === 'space' && !opts.forceMinutes) {
+      const done = await this.processInCloud(id, { fallback: true });
+      if (done) return;
+    }
+    this.processing.add(id);
     try {
       await Recorder.setProcessing('Transcribing meeting…').catch(() => {});
       this.set({
@@ -395,6 +403,75 @@ class MeetingSessionImpl {
     } finally {
       this.processing.delete(id);
       await transcriber.release();
+      await Recorder.release().catch(() => {});
+      this.set({ ...IDLE });
+    }
+  }
+
+  /**
+   * High-accuracy mode: transcript, speakers and minutes from the LiquidChat Space, written into the
+   * meeting only once everything has come back. Returns false when it did not complete; with
+   * `fallback` the caller then processes on the phone, and the meeting says why.
+   */
+  async processInCloud(id: string, opts: { fallback?: boolean } = {}): Promise<boolean> {
+    if (this.processing.has(id)) return false;
+    const settings = await getMeetingSettings();
+    const token = (await storage.getSettings())?.hfToken?.trim() ?? '';
+    if (!token) {
+      if (!opts.fallback)
+        throw new Error('Add your Hugging Face token in Settings to use the LiquidChat Space.');
+      await meetingStore.update(id, m => {
+        m.error = 'No Hugging Face token, so this meeting was processed on the phone.';
+      });
+      return false;
+    }
+    const before = await meetingStore.get(id);
+    if (!before) return false;
+    this.processing.add(id);
+    try {
+      // The phone's speech model is not needed while the Space works; free its memory.
+      await transcriber.release();
+      await Recorder.setProcessing('Processing on your LiquidChat Space…').catch(() => {});
+      await meetingStore.update(id, m => {
+        m.status = 'transcribing';
+        m.error = undefined;
+      });
+      this.set({
+        meetingId: id,
+        phase: 'transcribing',
+        progressLabel: 'Starting',
+        progress: 0,
+        remote: true,
+      });
+      await processMeetingInCloud(
+        id,
+        { spaceId: settings.spaceId, token, asrModel: settings.spaceAsrModel },
+        (label, p) =>
+          this.set({
+            phase: p >= 0.8 ? 'summarizing' : 'transcribing',
+            progressLabel: label,
+            progress: p,
+          }),
+      );
+      if (!settings.keepAudio) await meetingStore.deleteAudio(id);
+      if (settings.indexForChat) await this.indexForChat(id).catch(e => warn('indexForChat', e));
+      return true;
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error(`[MeetingSession] LiquidChat Space failed for ${id}: ${msg}`);
+      await meetingStore.update(id, m => {
+        m.status =
+          before.status === 'transcribing' || before.status === 'summarizing'
+            ? 'ready'
+            : before.status;
+        m.error = opts.fallback
+          ? `LiquidChat Space unavailable (${msg}); processed on the phone instead.`
+          : `LiquidChat Space: ${msg}`;
+      });
+      if (!opts.fallback) this.set({ error: msg });
+      return false;
+    } finally {
+      this.processing.delete(id);
       await Recorder.release().catch(() => {});
       this.set({ ...IDLE });
     }

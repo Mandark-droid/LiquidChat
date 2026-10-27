@@ -17,14 +17,18 @@ export function useMeetingList(): { meetings: MeetingIndexEntry[]; refresh: () =
   return { meetings, refresh };
 }
 
-/** Live meeting object; re-renders on every store write for that meeting. */
-export function useMeeting(id: string | null): Meeting | null {
-  const [meeting, setMeeting] = useState<Meeting | null>(null);
+/**
+ * Live meeting object; re-renders on every store write for that meeting.
+ * `undefined` while loading, `null` when there is no such meeting.
+ */
+export function useMeeting(id: string | null): Meeting | null | undefined {
+  const [meeting, setMeeting] = useState<Meeting | null | undefined>(undefined);
   useEffect(() => {
     if (!id) {
       setMeeting(null);
       return;
     }
+    setMeeting(undefined);
     let alive = true;
     const load = async () => {
       const m = await meetingStore.get(id);

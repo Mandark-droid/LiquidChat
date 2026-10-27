@@ -22,6 +22,7 @@ import { minimizeForRemote, PrivacyGrants, type Redaction } from './privacy';
 import { AnthropicProvider } from './providers/AnthropicProvider';
 import { CactusProvider } from './providers/CactusProvider';
 import { GeminiProvider } from './providers/GeminiProvider';
+import { HfSpaceProvider } from './providers/HfSpaceProvider';
 import type { FetchLike } from './providers/http';
 import { OpenAICompatibleProvider } from './providers/OpenAICompatibleProvider';
 import { RoutingPolicyStore } from './RoutingPolicy';
@@ -470,6 +471,8 @@ export function createRemoteProvider(
       return new AnthropicProvider(deps);
     case 'gemini':
       return new GeminiProvider(deps);
+    case 'hfspace':
+      return new HfSpaceProvider(deps);
   }
 }
 

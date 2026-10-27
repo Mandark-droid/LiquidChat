@@ -30,7 +30,8 @@ export const MIN_QUALITY_SAMPLES = 3;
 /** EWMA floor: once samples > 1/alpha the average weights recent samples by alpha. */
 const EWMA_ALPHA = 0.2;
 
-export type RemoteProviderKind = 'openai' | 'anthropic' | 'gemini';
+/** 'hfspace': a LiquidChat Space (Gemma 4 on ZeroGPU), keyed by a Hugging Face token. */
+export type RemoteProviderKind = 'openai' | 'anthropic' | 'gemini' | 'hfspace';
 
 export interface RemoteModelConfig {
   id: string;
@@ -175,7 +176,7 @@ function validateConfigs(configs: RemoteProviderConfig[]): void {
     if (p.id === LOCAL_PROVIDER_ID) throw new Error(`Provider id "${p.id}" is reserved`);
     if (ids.has(p.id)) throw new Error(`Duplicate provider id "${p.id}"`);
     ids.add(p.id);
-    if (!['openai', 'anthropic', 'gemini'].includes(p.kind))
+    if (!['openai', 'anthropic', 'gemini', 'hfspace'].includes(p.kind))
       throw new Error(`Unknown provider kind "${p.kind}"`);
     if (p.baseUrl && !isSafeBaseUrl(p.baseUrl))
       throw new Error(

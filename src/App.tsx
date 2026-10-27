@@ -16,9 +16,10 @@ import type { AgentResult } from './agent/types';
 import { ActionSheetHost } from './components/ActionSheet';
 import ApprovalHost from './components/ApprovalHost';
 import { theme } from './config/theme';
-import { buildMinutesMarkdown } from './meetings/documents';
+import { MEETING_QA_PROMPT } from './meetings/meetingQA';
 import { meetingStore } from './meetings/MeetingStore';
-import { transcriptPlain } from './meetings/MinutesGenerator';
+import { resolveSummaryModel } from './meetings/MinutesGenerator';
+import { getMeetingSettings } from './meetings/settings';
 import { watchSharedAudio } from './meetings/sharedAudio';
 import type { PickedAudio } from './meetings/types';
 import { platform } from './platform/android';
@@ -178,11 +179,8 @@ function AppContent() {
     if (!m) return;
     const saved = await storage.getSettings();
     const base = saved ?? DEFAULT_SETTINGS;
-    const transcript = transcriptPlain(m);
-    const context =
-      'You answer questions about the meeting below. Use only this material; say so when something was not discussed.\n\n' +
-      buildMinutesMarkdown(m) +
-      (transcript ? `\n\n## Transcript (may be truncated)\n${transcript.slice(0, 6000)}` : '');
+    // The minutes model, not the small chat model: answers need the whole question and notes in view.
+    const { slug } = await resolveSummaryModel((await getMeetingSettings()).summaryModel);
     const chatId = generateChatId();
     const chat: Chat = {
       id: chatId,
@@ -190,12 +188,18 @@ function AppContent() {
       messages: [],
       createdAt: Date.now(),
       updatedAt: Date.now(),
-      model: base.model,
+      model: slug,
       settings: {
         ...base,
-        systemPrompt: context,
+        model: slug,
+        systemPrompt: MEETING_QA_PROMPT,
+        temperature: 0.2,
+        maxTokens: 400,
+        meetingId,
         autoExecuteTools: false,
         intentRoutingEnabled: false,
+        agentRuntimeEnabled: false,
+        memoryEnabled: false,
       },
     };
     await storage.saveChat(chat);

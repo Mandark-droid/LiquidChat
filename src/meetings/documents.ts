@@ -7,6 +7,7 @@ import { formatClock, transcriptLines } from './MinutesGenerator';
 import { Docs } from './native';
 import { getMeetingSettings } from './settings';
 import type { ActionItem, Letterhead, Meeting } from './types';
+import { WAV_RATE } from './wavSlice';
 
 /**
  * Client-ready MoM documents. Layout is deterministic and identical across
@@ -449,6 +450,11 @@ export async function buildMinutesDocxBase64(
 // Export + delivery
 
 export function exportFileName(m: Meeting, format: ExportFormat): string {
+  return `MoM_${fileStem(m)}.${format}`;
+}
+
+/** "2026-10-17_ACME_Weekly_sync" — date plus a filesystem-safe title. */
+function fileStem(m: Meeting): string {
   const d = new Date(m.startedAt);
   const date = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   const slug = (m.client ? `${m.client} ` : '') + m.title;
@@ -458,7 +464,7 @@ export function exportFileName(m: Meeting, format: ExportFormat): string {
       .trim()
       .replace(/\s+/g, '_')
       .slice(0, 60) || 'Meeting';
-  return `MoM_${date}_${safe}.${format}`;
+  return `${date}_${safe}`;
 }
 
 /** Writes the document to the meeting's exports folder and returns its path. */
@@ -515,6 +521,53 @@ export async function saveMinutesToDownloads(
   opts: ExportOptions,
 ): Promise<string> {
   const file = await exportMinutes(meetingId, opts);
+  await Docs.saveToDownloads(file.path, file.name, file.mime);
+  return `Downloads/LiquidChat/${file.name}`;
+}
+
+/** The meeting's recording as one .m4a, for use in other transcription tools. */
+/** Where each recorded segment sits inside an exported recording (segments are joined back to back). */
+export interface AudioPiece {
+  index: number;
+  /** Seconds from the start of the exported file. */
+  offsetS: number;
+  durationS: number;
+}
+
+/** The meeting's recording as one .m4a, for use in other transcription tools. */
+export async function exportAudio(
+  meetingId: string,
+): Promise<{ path: string; mime: string; name: string; pieces: AudioPiece[] }> {
+  const m = await meetingStore.get(meetingId);
+  if (!m) throw new Error('Meeting not found');
+  const dir = meetingStore.audioDir(meetingId);
+  const files: string[] = [];
+  const pieces: AudioPiece[] = [];
+  let offsetS = 0;
+  for (const s of [...m.segments].sort((a, b) => a.index - b.index)) {
+    const file = `${dir}/${s.audioFile}`;
+    if (!s.audioFile || !(await RNFS.exists(file))) continue;
+    // 16 kHz mono PCM16 after a 44-byte header (what the encoder reads).
+    const durationS = Math.max(0, (Number((await RNFS.stat(file)).size) - 44) / (WAV_RATE * 2));
+    files.push(file);
+    pieces.push({ index: s.index, offsetS, durationS });
+    offsetS += durationS;
+  }
+  if (!files.length) throw new Error('This meeting has no audio left on the phone.');
+  const out = meetingStore.exportsDir(meetingId);
+  await RNFS.mkdir(out);
+  const name = `Recording_${fileStem(m)}.m4a`;
+  const path = await Docs.encodeAudio(files, `${out}/${name}`);
+  return { path, mime: 'audio/mp4', name, pieces };
+}
+
+export async function shareAudio(meetingId: string): Promise<void> {
+  const file = await exportAudio(meetingId);
+  await Docs.shareFile(file.path, { mime: file.mime, chooserTitle: 'Share recording' });
+}
+
+export async function saveAudioToDownloads(meetingId: string): Promise<string> {
+  const file = await exportAudio(meetingId);
   await Docs.saveToDownloads(file.path, file.name, file.mime);
   return `Downloads/LiquidChat/${file.name}`;
 }

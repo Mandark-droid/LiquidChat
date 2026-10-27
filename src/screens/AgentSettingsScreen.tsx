@@ -27,6 +27,7 @@ import type { DataClass, EnergyMode, RoutingMode } from '../inference/types';
 import type { McpServerRecord } from '../mcp/McpServerStore';
 import type { NotificationSettings } from '../notifications/NotificationStore';
 import { platform } from '../platform/android';
+import { DEFAULT_SPACE_ID, spaceUrl } from '../services/hfSpace';
 import { DEFAULT_SETTINGS } from '../types';
 import { storage } from '../utils/storage';
 
@@ -455,6 +456,7 @@ const KIND_DEFAULTS: Record<RemoteProviderKind, { id: string; model: string; ctx
   openai: { id: 'openai', model: 'gpt-4.1-mini', ctx: 128000 },
   anthropic: { id: 'anthropic', model: 'claude-sonnet-5-5', ctx: 200000 },
   gemini: { id: 'gemini', model: 'gemini-2.5-flash', ctx: 1000000 },
+  hfspace: { id: 'liquidchat-space', model: 'gemma-4-12b-it', ctx: 128000 },
 };
 
 function ProviderForm({
@@ -478,17 +480,38 @@ function ProviderForm({
           { key: 'anthropic', label: 'Anthropic' },
           { key: 'openai', label: 'OpenAI-compatible' },
           { key: 'gemini', label: 'Gemini' },
+          { key: 'hfspace', label: 'LiquidChat Space' },
         ]}
         value={kind}
         onChange={k => {
           setKind(k);
           setId(KIND_DEFAULTS[k].id);
           setModel(KIND_DEFAULTS[k].model);
+          if (k === 'hfspace') {
+            // Free: the Space runs on your own Hugging Face GPU quota.
+            setInCost('0');
+            setOutCost('0');
+            setBaseUrl(DEFAULT_SPACE_ID);
+            storage
+              .getSettings()
+              .then(st => st?.hfToken && setKey(k2 => k2 || st.hfToken))
+              .catch(() => undefined);
+          }
         }}
       />
       <View style={{ height: 10 }} />
       <Field label="Provider id" value={id} onChangeText={setId} autoCapitalize="none" />
       <Field label="Model" value={model} onChangeText={setModel} autoCapitalize="none" />
+      {kind === 'hfspace' ? (
+        <Field
+          label="Space"
+          value={baseUrl}
+          onChangeText={setBaseUrl}
+          autoCapitalize="none"
+          placeholder={DEFAULT_SPACE_ID}
+          hint="Gemma 4 on your own free ZeroGPU quota. Used when a request needs a bigger model than the phone's; personal data still follows your cloud privacy settings."
+        />
+      ) : null}
       {kind === 'openai' ? (
         <Field
           label="Base URL (optional)"
@@ -518,7 +541,7 @@ function ProviderForm({
         </View>
       </View>
       <Field
-        label="API key"
+        label={kind === 'hfspace' ? 'Hugging Face token' : 'API key'}
         value={key}
         onChangeText={setKey}
         secureTextEntry
@@ -532,7 +555,15 @@ function ProviderForm({
           style={{ flex: 1 }}
           disabled={!id.trim() || !model.trim() || !key.trim()}
           onPress={() => {
-            const url = baseUrl.trim();
+            let url = baseUrl.trim();
+            if (kind === 'hfspace') {
+              try {
+                url = spaceUrl(url || DEFAULT_SPACE_ID);
+              } catch (e) {
+                Alert.alert('Space', e instanceof Error ? e.message : String(e));
+                return;
+              }
+            }
             if (url && !url.startsWith('https://')) {
               Alert.alert('Base URL', 'Use an https:// endpoint.');
               return;
@@ -548,8 +579,8 @@ function ProviderForm({
                     id: model.trim(),
                     displayName: model.trim(),
                     contextTokens: KIND_DEFAULTS[kind].ctx,
-                    vision: true,
-                    tools: true,
+                    vision: kind !== 'hfspace',
+                    tools: kind !== 'hfspace',
                     inputCostPerM: parseFloat(inCost) || 0,
                     outputCostPerM: parseFloat(outCost) || 0,
                   },

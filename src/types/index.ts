@@ -65,6 +65,8 @@ export interface ChatSettings {
   intentRoutingEnabled: boolean;
   /** Route chat through the agent runtime (planner, permission gateway, per-step routing). */
   agentRuntimeEnabled?: boolean;
+  /** Set on "Ask about this meeting" chats: answers come from that meeting's notes and transcript. */
+  meetingId?: string;
 }
 
 export interface MemoryResult {

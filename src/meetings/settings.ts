@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
+import { DEFAULT_SPACE_ID } from '../services/hfSpace';
 import type { MeetingSettings } from './types';
 
 const KEY = '@liquid_meeting_settings';
@@ -17,6 +18,9 @@ export const DEFAULT_MEETING_SETTINGS: MeetingSettings = {
   keepAudio: true,
   autoGenerateMinutes: true,
   indexForChat: false,
+  engine: 'device',
+  spaceId: DEFAULT_SPACE_ID,
+  spaceAsrModel: 'hinglish',
   defaultsVersion: MEETING_DEFAULTS_VERSION,
   letterhead: {
     // Empty = documents are branded "LiquidChat". Set your own organisation in Meeting settings.

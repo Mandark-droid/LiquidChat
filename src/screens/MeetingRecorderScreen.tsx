@@ -266,5 +266,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   ctrlIcon: { fontSize: 26, color: theme.colors.text },
-  ctrlLabel: { fontSize: theme.fontSize.sm, color: theme.colors.textSecondary, marginTop: 2 },
+  // Full button width: Android measures a centred label a few px short and clipped "Stop" to "Sto".
+  ctrlLabel: {
+    alignSelf: 'stretch',
+    textAlign: 'center',
+    fontSize: theme.fontSize.sm,
+    color: theme.colors.textSecondary,
+    marginTop: 2,
+  },
 });

@@ -150,6 +150,12 @@ export interface MeetingSettings {
   autoGenerateMinutes: boolean;
   indexForChat: boolean;
   letterhead: Letterhead;
+  /** Who transcribes and writes minutes: this phone (private, offline) or a LiquidChat Space. */
+  engine: 'device' | 'space';
+  /** Hugging Face Space ("owner/name") for engine 'space'; calls use your own ZeroGPU quota. */
+  spaceId: string;
+  /** Speech model on the Space: Hindi/English mixed (Latin script) or Whisper large-v3. */
+  spaceAsrModel: 'hinglish' | 'large-v3';
   /** Bumped when defaults change in a way existing users should receive once. */
   defaultsVersion?: number;
 }
