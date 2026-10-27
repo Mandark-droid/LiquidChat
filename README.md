@@ -30,8 +30,30 @@ LiquidChat is a React Native mobile application and personal agent platform buil
 
 The working prototype (v0.x) demonstrates the core loop: a LoRA fine-tuned LFM2.5-1.2B-Instruct model translates natural language into structured function calls that execute real Android device actions. The v1.0 roadmap expands this into a full multi-model orchestrator with voice input, vision pipeline, persistent semantic memory, and 30+ native tools.
 
-> **Current release: v1.1**
-> A local-first agent: streaming on-device chat, 35+ native tools, a permission-gated multi-step agent runtime, meeting recording with speaker-labelled transcripts and client-ready minutes, tasks, an email drafter, and MCP servers (Hugging Face built in). See [What's new in v1.1](#whats-new-in-v11).
+> **Current release: v1.2**
+> A local-first agent: streaming on-device chat, 35+ native tools, a permission-gated multi-step agent runtime with visible plans, meeting recording with speaker-labelled transcripts and client-ready minutes (on the phone, or high accuracy on your own free Hugging Face Space), memory and document search, tasks, an email drafter, MCP servers (Hugging Face built in) and OpenTelemetry export. See [What's new in v1.2](#whats-new-in-v12).
+
+## What's new in v1.2
+
+**Meetings: high-accuracy mode on your own LiquidChat Space**
+- **[LiquidChat Space](https://huggingface.co/spaces/kshitijthakkar/LiquidChat)** (source in `space/`): speakers first (Silero VAD + WeSpeaker clustering), then each speaker turn is transcribed by Whisper (a Hindi/English fine-tune, or large-v3) and Gemma 4 12B writes the minutes. A 52-minute Hinglish meeting takes about 5 minutes instead of an hour, with names, owners and real action items. It runs on ZeroGPU with *your* Hugging Face token, so it is free within your daily quota; only open, ungated models; the Space keeps nothing.
+- **Meeting settings → Processing:** on this phone (default, private and offline) or the LiquidChat Space, with automatic fallback to the phone; or *⋯ → Process with LiquidChat Space* on any meeting. "Regenerate minutes" in Space mode reuses the transcript.
+- **Share or save a recording** as one M4A file for other tools.
+- **Ask about this meeting** works: answers come from the minutes and the passages that match the question (Gemma 4 reads the whole meeting in Space mode).
+
+**Agent, memory and search**
+- **Every step is visible:** replies that used tools or several steps keep the plan: the goal, each step (🔧 tool with its arguments, 🧠 reasoning/summarizing), ✓/✗ and the result.
+- **Memory and document search that work:** "remember that …" is saved at once; replies use saved memories, similar earlier conversations and matching passages from imported documents and meetings. Meetings are indexed in the background; stores are capped and evict least-recently-used entries; deleting a meeting removes it from the index.
+- The on-device model now reads prompts up to 4,096 tokens (it only saw the last 512 before).
+- **Insights → Kept on this phone:** tokens processed on-device versus sent to cloud models, and the cost avoided.
+- The LiquidChat Space can also serve as a free cloud model (Gemma 4) in Agent settings, under your cloud privacy rules.
+
+**OpenTelemetry**
+- **Settings → OpenTelemetry Export** (off by default): spans for every on-device model call, agent run, skill, tool and MCP call, retrieval, vector-store query, Space call and meeting, sent over OTLP/HTTP to your collector, via [`@traceverse/genai-otel-instrument-node`](https://mandark-droid.github.io/genai-otel-instrument-node-docs/). Prompts, results and transcripts are included only if you turn that on.
+
+**Fixes**
+- Tool calls run once, from one gated place (a tool could run twice, and reopening a chat could re-run old calls); retrieved text never triggers tools; personal data sent to a network tool always asks.
+- Recorder *Stop* label no longer clipped; a missing meeting no longer spins forever.
 
 ## What's new in v1.1
 
