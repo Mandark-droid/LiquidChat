@@ -86,16 +86,18 @@ export class AgentPlanner {
     const hits = this.deps.registry.relevant(request.text, FAST_PATH_TOOLS, distribution);
     const tools = hits.length ? hits : this.deps.registry.list({ distribution });
     const system =
-      (this.deps.systemPrompt?.() ??
-        'You are a helpful assistant with access to device functions. Call one only when the request needs it; otherwise answer directly.') +
-      (ctx.memoryContext ? `\n\n${ctx.memoryContext}` : '');
+      this.deps.systemPrompt?.() ??
+      'You are a helpful assistant with access to device functions. Call one only when the request needs it; otherwise answer directly.';
+    // Saved memories go next to the question: small models overlook facts at the end of a long
+    // system prompt full of tool descriptions, but use them when they sit in the user's turn.
+    const userText = ctx.memoryContext ? `${ctx.memoryContext}\n\n${request.text}` : request.text;
     const { result } = await this.deps.inference.run(
       {
         executionId: ctx.executionId,
         stepId: 'plan',
         requirements: { operation: 'plan', toolCalling: true, complexity: 'low' },
         dataClass: 'personal',
-        estimatedInputTokens: Math.ceil((system.length + request.text.length) / 4),
+        estimatedInputTokens: Math.ceil((system.length + userText.length) / 4),
         estimatedOutputTokens: 256,
         remoteCallsSoFar: 0,
         spendSoFarUsd: 0,
@@ -104,7 +106,7 @@ export class AgentPlanner {
         messages: [
           { role: 'system', content: system },
           ...(request.history ?? []).slice(-6),
-          { role: 'user', content: request.text, images: request.images },
+          { role: 'user', content: userText, images: request.images },
         ],
         tools: this.deps.registry.toInferenceTools(tools),
         maxTokens: 512,

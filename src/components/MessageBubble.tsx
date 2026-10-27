@@ -3,6 +3,7 @@ import { Alert, Share, StyleSheet, Text, TouchableOpacity, View } from 'react-na
 
 import { theme } from '../config/theme';
 import type { ChatMessage, ToolResult } from '../types';
+import AgentPlanView from './AgentPlanView';
 import ToolCallCard from './ToolCallCard';
 
 interface MessageBubbleProps {
@@ -114,6 +115,8 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({
             </Text>
           ) : null;
         })}
+
+        {message.agentPlan ? <AgentPlanView plan={message.agentPlan} /> : null}
 
         {message.toolCalls &&
           message.toolCalls.map((tc, idx) => (

@@ -23,7 +23,26 @@ export interface ChatMessage extends Omit<CactusLMMessage, 'role'> {
    * auto-execute is off): the card offers to run them on the user's tap.
    */
   toolCallsNeedConfirm?: boolean;
+  /** The agent's plan for this reply and how each step went, kept so the chat shows the work. */
+  agentPlan?: AgentPlanRecord;
   toolResult?: ToolResult;
+}
+
+export interface AgentPlanRecord {
+  goal: string;
+  /** Where the plan came from: the planner model, a fast path, a skill. */
+  source: string;
+  steps: AgentStepRecord[];
+}
+
+export interface AgentStepRecord {
+  kind: 'tool' | 'infer';
+  /** Tool name, or the model operation (plan, reason, summarize, extract, respond…). */
+  name: string;
+  args?: Record<string, unknown>;
+  status: ActionChainStepStatus;
+  /** What the step returned or why it failed. */
+  result?: string;
 }
 
 export interface ChatMetrics {

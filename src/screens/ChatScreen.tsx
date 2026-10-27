@@ -49,6 +49,7 @@ import { planToManifest } from '../skills/SkillGenerator';
 import { executeTool, getDefaultSystemPrompt, isDefaultSystemPrompt } from '../tools/registry';
 import type {
   ActionChainStep,
+  AgentPlanRecord,
   AgentState,
   Chat,
   ChatMessage,
@@ -523,6 +524,8 @@ export default function ChatScreen({ chatId, onBack, onOpenModelSelector }: Chat
     const startedAt = Date.now();
     let firstTokenAt: number | null = null;
     const publish = () => setActionChainSteps(order.map(id => steps.get(id)!));
+    // Live step list: always for tool calls (a single one too), and for multi-step plans.
+    let showSteps = false;
     const onEvent = (e: AgentEvent) => {
       // Stop pressed before the first event: cancel as soon as the id is known.
       if (abortRef.current) {
@@ -541,7 +544,9 @@ export default function ChatScreen({ chatId, onBack, onOpenModelSelector }: Chat
             status: 'pending',
           });
         }
-        if (order.length > 1) publish();
+        // A plain one-step reply needs no list; tool calls and multi-step plans show every step.
+        showSteps = order.length > 1 || e.plan.steps.some(s => s.kind === 'tool');
+        if (showSteps) publish();
       } else if (e.type === 'step') {
         const cur = steps.get(e.step.stepId);
         if (!cur) return;
@@ -555,7 +560,7 @@ export default function ChatScreen({ chatId, onBack, onOpenModelSelector }: Chat
                 : 'pending';
         cur.resultMessage = e.step.display ?? e.step.error?.message;
         if (cur.status === 'running') setAgentState({ kind: 'acting', toolName: cur.toolName });
-        if (order.length > 1) publish();
+        if (showSteps) publish();
       } else if (e.type === 'state') {
         setAgentState(agentStateFor(e.state));
       } else if (e.type === 'token') {
@@ -595,6 +600,7 @@ export default function ChatScreen({ chatId, onBack, onOpenModelSelector }: Chat
       timestamp: Date.now(),
       tokens: tokenCount || undefined,
       timeToFirstTokenMs: firstTokenAt ? firstTokenAt - startedAt : undefined,
+      agentPlan: planRecordOf(plan as Plan | null, steps),
     };
     if (tokenCount) {
       const totalTimeMs = Date.now() - startedAt;
@@ -619,9 +625,10 @@ export default function ChatScreen({ chatId, onBack, onOpenModelSelector }: Chat
     ) {
       setSavablePlan({ plan: finalPlan, request: text });
     }
-    if (order.length > 1) {
+    if (showSteps) {
       triggerSuccessHaptic();
-      setTimeout(() => setActionChainSteps([]), 2500);
+      // The reply now lists the tools it used; the live list can go.
+      setTimeout(() => setActionChainSteps([]), 1500);
     }
     if ((voice || settings?.autoTTS) && reply.content) speak(reply.content);
     if (
@@ -1371,4 +1378,27 @@ function agentStateFor(state: ExecutionState): AgentState {
     default:
       return { kind: 'thinking' };
   }
+}
+
+/** The plan and how each step went, for the reply to keep (one-step plain replies need none). */
+function planRecordOf(
+  plan: Plan | null,
+  steps: Map<string, ActionChainStep>,
+): AgentPlanRecord | undefined {
+  if (!plan || (plan.steps.length < 2 && !plan.steps.some(s => s.kind === 'tool')))
+    return undefined;
+  return {
+    goal: plan.goal,
+    source: plan.source,
+    steps: plan.steps.map(s => {
+      const st = steps.get(s.id);
+      return {
+        kind: s.kind,
+        name: s.kind === 'tool' ? s.tool : s.operation,
+        args: s.kind === 'tool' && Object.keys(s.args ?? {}).length ? s.args : undefined,
+        status: st?.status ?? 'pending',
+        result: st?.resultMessage,
+      };
+    }),
+  };
 }
