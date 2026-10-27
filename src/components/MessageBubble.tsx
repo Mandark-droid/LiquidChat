@@ -8,14 +8,12 @@ import ToolCallCard from './ToolCallCard';
 interface MessageBubbleProps {
   message: ChatMessage;
   isStreaming?: boolean;
-  autoExecuteTools?: boolean;
   onToolResult?: (result: ToolResult) => void;
 }
 
 const MessageBubble: React.FC<MessageBubbleProps> = ({
   message,
   isStreaming = false,
-  autoExecuteTools = true,
   onToolResult,
 }) => {
   const [expandedThinking, setExpandedThinking] = useState(false);
@@ -122,7 +120,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({
             <ToolCallCard
               key={idx}
               toolCall={tc}
-              autoExecute={autoExecuteTools}
+              canRun={!!message.toolCallsNeedConfirm}
               onResult={onToolResult}
             />
           ))}

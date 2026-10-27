@@ -7,7 +7,10 @@ import type { ToolCall, ToolResult } from '../types';
 
 interface ToolCallCardProps {
   toolCall: ToolCall;
+  /** Run on mount. Off by default: chat runs tool calls itself, once, from one gated place. */
   autoExecute?: boolean;
+  /** Offer an Execute button (for calls that were held back for confirmation). */
+  canRun?: boolean;
   onResult?: (result: ToolResult) => void;
 }
 
@@ -33,7 +36,12 @@ const TOOL_ICONS: Record<string, string> = {
   take_screenshot: '📱',
 };
 
-const ToolCallCard: React.FC<ToolCallCardProps> = ({ toolCall, autoExecute = true, onResult }) => {
+const ToolCallCard: React.FC<ToolCallCardProps> = ({
+  toolCall,
+  autoExecute = false,
+  canRun = false,
+  onResult,
+}) => {
   const [status, setStatus] = useState<ExecutionStatus>('pending');
   const [result, setResult] = useState<ToolResult | null>(null);
 
@@ -102,7 +110,7 @@ const ToolCallCard: React.FC<ToolCallCardProps> = ({ toolCall, autoExecute = tru
         </View>
       )}
 
-      {status === 'pending' && !autoExecute && (
+      {status === 'pending' && !autoExecute && canRun && (
         <TouchableOpacity style={styles.executeButton} onPress={handleExecute}>
           <Text style={styles.executeButtonText}>Execute</Text>
         </TouchableOpacity>

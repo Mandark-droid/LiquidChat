@@ -18,6 +18,11 @@ export interface ChatMessage extends Omit<CactusLMMessage, 'role'> {
   timeToFirstTokenMs?: number;
   tokensPerSecond?: number;
   toolCalls?: ToolCall[];
+  /**
+   * The tool calls were not run automatically (memory or document text was in the prompt, or
+   * auto-execute is off): the card offers to run them on the user's tap.
+   */
+  toolCallsNeedConfirm?: boolean;
   toolResult?: ToolResult;
 }
 

@@ -465,6 +465,10 @@ export default function ChatScreen({ chatId, onBack, onOpenModelSelector }: Chat
         timeToFirstTokenMs: turnMetrics?.timeToFirstTokenMs,
         tokensPerSecond: turnMetrics?.tokensPerSecond,
         toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
+        toolCallsNeedConfirm:
+          toolCalls.length > 0 && (!!memoryContext || settings?.autoExecuteTools === false)
+            ? true
+            : undefined,
       };
 
       const withAssistant = [...updatedMessages, assistantMessage];
