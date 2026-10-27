@@ -482,8 +482,9 @@ export default function ChatScreen({ chatId, onBack, onOpenModelSelector }: Chat
         rememberInteraction(text, responseText);
       }
 
-      // Execute tool calls if found and auto-execute is enabled
-      if (toolCalls.length > 0 && settings?.autoExecuteTools !== false) {
+      // Execute tool calls if found and auto-execute is enabled. Never when retrieved memory or
+      // document text was in the prompt: that text is data and must not be able to trigger tools.
+      if (toolCalls.length > 0 && settings?.autoExecuteTools !== false && !memoryContext) {
         await handleToolExecution(withAssistant, toolCalls);
       }
     } catch (error) {

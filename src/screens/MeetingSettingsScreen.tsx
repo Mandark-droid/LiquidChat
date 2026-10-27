@@ -22,6 +22,7 @@ import {
 } from '../meetings/settings';
 import { isWhisperModel } from '../meetings/Transcriber';
 import type { MeetingSettings } from '../meetings/types';
+import { autoIndexer } from '../memory/autoIndex';
 
 export default function MeetingSettingsScreen({ onBack }: { onBack: () => void }) {
   const [s, setS] = useState<MeetingSettings>(DEFAULT_MEETING_SETTINGS);
@@ -195,7 +196,13 @@ export default function MeetingSettingsScreen({ onBack }: { onBack: () => void }
             label="Make meetings searchable in chat"
             hint="Indexes minutes + transcript into on-device memory (needs the embedding model)."
             value={s.indexForChat}
-            onValueChange={v => update({ indexForChat: v })}
+            onValueChange={v => {
+              update({ indexForChat: v });
+              // Off removes every meeting from the chat index; on indexes them in the background.
+              (v ? autoIndexer.sweep() : autoIndexer.purgeAll()).catch(e =>
+                console.warn('[MeetingSettings] chat index update failed:', e),
+              );
+            }}
           />
           <ToggleRow
             label="Keep audio after transcription"

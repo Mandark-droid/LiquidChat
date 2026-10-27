@@ -57,10 +57,13 @@ class AutoIndexer {
     this.kick();
   }
 
-  /** Catch up: index what is missing or stale, drop what was deleted. */
+  /** Catch up: drop what was deleted (always), then index what is missing or stale. */
   async sweep(): Promise<void> {
     const settings = await getMeetingSettings();
-    if (!settings.indexForChat) return;
+    if (!settings.indexForChat) {
+      await this.purgeAll();
+      return;
+    }
     const indexed = await this.load();
     const metas: { id: string; version: string | null }[] = [];
     for (const e of await meetingStore.list()) {
@@ -68,15 +71,29 @@ class AutoIndexer {
       metas.push({ id: e.id, version: m ? meetingVersion(m) : null });
     }
     const plan = planIndexJobs(metas, indexed);
-    if (plan.remove.length) {
-      await memoryService.loadStores();
-      for (const id of plan.remove) {
-        memoryService.removeSource(indexFileName(id));
-        delete indexed[id];
-      }
+    for (const id of plan.remove) await this.forget(id);
+    for (const id of plan.index) this.enqueue(id);
+  }
+
+  /** A deleted meeting leaves the chat index at once. */
+  async forget(meetingId: string): Promise<void> {
+    this.queue = this.queue.filter(id => id !== meetingId);
+    await memoryService.loadStores();
+    memoryService.removeSource(indexFileName(meetingId));
+    const indexed = await this.load();
+    if (meetingId in indexed) {
+      delete indexed[meetingId];
       await this.store(indexed);
     }
-    for (const id of plan.index) this.enqueue(id);
+  }
+
+  /** Indexing turned off: no meeting stays searchable. */
+  async purgeAll(): Promise<void> {
+    this.queue = [];
+    await memoryService.loadStores();
+    const indexed = await this.load();
+    for (const id of Object.keys(indexed)) memoryService.removeSource(indexFileName(id));
+    await this.store({});
   }
 
   private kick(): void {
@@ -141,3 +158,6 @@ class AutoIndexer {
 }
 
 export const autoIndexer = new AutoIndexer();
+meetingStore.onDelete(id => {
+  autoIndexer.forget(id).catch(e => console.warn(`[AutoIndex] could not forget ${id}:`, e));
+});

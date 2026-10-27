@@ -118,3 +118,29 @@ describe('remember requests in chat', () => {
     create.mockRestore();
   });
 });
+
+describe('chat index privacy', () => {
+  it('a deleted meeting, or turning indexing off, removes meetings from the index', async () => {
+    const { memoryService } = require('../../src/services/MemoryService');
+    const { autoIndexer, indexFileName } = require('../../src/memory/autoIndex');
+    const { meetingStore } = require('../../src/meetings/MeetingStore');
+    const mod = require('@react-native-async-storage/async-storage');
+    const AsyncStorage = mod.default ?? mod;
+    await memoryService.init();
+    for (const id of ['mtg_a', 'mtg_b']) {
+      const path = `${RNFS.DocumentDirectoryPath}/${indexFileName(id)}`;
+      fs.writeFileSync(path, `Minutes of ${id}.`);
+      await memoryService.addDocument(path);
+    }
+    await AsyncStorage.setItem('@liquid_autoindex_v1', JSON.stringify({ mtg_a: 'v', mtg_b: 'v' }));
+
+    await meetingStore.delete('mtg_a'); // the store tells the indexer
+    await new Promise(r => setTimeout(r, 50));
+    expect(await memoryService.hasSource(indexFileName('mtg_a'))).toBe(false);
+    expect(await memoryService.hasSource(indexFileName('mtg_b'))).toBe(true);
+
+    await autoIndexer.purgeAll();
+    expect(await memoryService.hasSource(indexFileName('mtg_b'))).toBe(false);
+    expect(JSON.parse(await AsyncStorage.getItem('@liquid_autoindex_v1'))).toEqual({});
+  });
+});

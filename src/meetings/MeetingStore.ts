@@ -26,6 +26,7 @@ class MeetingStoreImpl {
   private writeChains = new Map<string, Promise<void>>();
   private indexChain: Promise<void> = Promise.resolve();
   private listeners = new Set<Listener>();
+  private deleteListeners = new Set<(id: string) => void>();
   private loaded = false;
 
   dir(id: string) {
@@ -42,6 +43,14 @@ class MeetingStoreImpl {
     const d = new Date();
     const stamp = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
     return `mtg_${stamp}_${Math.random().toString(36).slice(2, 8)}`;
+  }
+
+  /** Called after a meeting is deleted, so data derived from it (the chat index) goes too. */
+  onDelete(l: (id: string) => void): () => void {
+    this.deleteListeners.add(l);
+    return () => {
+      this.deleteListeners.delete(l);
+    };
   }
 
   subscribe(l: Listener): () => void {
@@ -128,6 +137,11 @@ class MeetingStoreImpl {
     } catch {}
     this.index = (this.index ?? []).filter(e => e.id !== id);
     await this.persistIndex();
+    for (const l of this.deleteListeners) {
+      try {
+        l(id);
+      } catch {}
+    }
     this.notify();
   }
 
