@@ -32,8 +32,10 @@ from pyannote.audio import Model as EmbeddingModel
 from silero_vad import get_speech_timestamps, load_silero_vad
 from sklearn.cluster import AgglomerativeClustering
 from transformers import (
+    AutoModelForCausalLM,
     AutoModelForMultimodalLM,
     AutoProcessor,
+    AutoTokenizer,
     WhisperForConditionalGeneration,
     WhisperProcessor,
 )
@@ -47,6 +49,9 @@ ASR_IDS = {
     "hinglish": "Oriserve/Whisper-Hindi2Hinglish-Prime",
 }
 LLM_ID = os.environ.get("LLM_ID", "google/gemma-4-12B-it")
+# LiquidAI LFM3-1.7B, offered for minutes/chat next to Gemma 4. Its modelling code ships in the repo
+# (trust_remote_code), so it is pinned to a reviewed commit.
+LFM3_ID, LFM3_REV = "LiquidAI/LFM3-1.7B", "40ebe0aa6662c9d40389c2f5d565b6a2c6aebacd"
 EMBEDDING_ID = "pyannote/wespeaker-voxceleb-resnet34-LM"  # the same speaker model the app uses on-device
 
 # Speaker windows and clustering (cosine similarity, average linkage, as in the app).
@@ -68,6 +73,10 @@ EMB = EmbeddingModel.from_pretrained(EMBEDDING_ID).to("cuda").eval()
 VAD = load_silero_vad()
 PROC = AutoProcessor.from_pretrained(LLM_ID)
 LLM = AutoModelForMultimodalLM.from_pretrained(LLM_ID, dtype=torch.bfloat16).to("cuda")
+LFM3_TOK = AutoTokenizer.from_pretrained(LFM3_ID, revision=LFM3_REV, trust_remote_code=True)
+LFM3 = AutoModelForCausalLM.from_pretrained(
+    LFM3_ID, revision=LFM3_REV, trust_remote_code=True, dtype=torch.bfloat16
+).to("cuda")
 
 
 # ---------------------------------------------------------------------------
@@ -143,7 +152,7 @@ def _windows(regions: list) -> list:
 
 
 def _embed_seconds(audio, windows):
-    return int(30 + len(windows) / 400)
+    return int(20 + len(windows) / 400)
 
 
 @spaces.GPU(duration=_embed_seconds)
@@ -262,7 +271,7 @@ def _clips(turns: list) -> list:
 
 
 def _asr_seconds(audio, clips, model, language, task):
-    return int(40 + sum(c["end"] - c["start"] for c in clips) / 60 * 8)
+    return int(25 + sum(c["end"] - c["start"] for c in clips) / 60 * 5)
 
 
 @spaces.GPU(duration=_asr_seconds)
@@ -310,13 +319,26 @@ def _clean(text: str) -> str:
     return re.sub(r"\b(\w+(?:\s+\w+){0,3})(?:\s+\1\b){3,}", r"\1 \1", t, flags=re.I)
 
 
-def _llm_seconds(messages, max_new_tokens, temperature=0.0):
-    return int(90 + max_new_tokens / 10)
+def _llm_seconds(messages, max_new_tokens, temperature=0.0, model="gemma"):
+    # Measured: Gemma 4 12B ~15 tok/s out plus ~10 s to read a 45-minute transcript; LFM3 is faster.
+    return int(30 + max_new_tokens / (40 if model == "lfm3" else 14))
 
 
 @spaces.GPU(duration=_llm_seconds)
-def _generate(messages: list, max_new_tokens: int, temperature: float = 0.0) -> str:
+def _generate(messages: list, max_new_tokens: int, temperature: float = 0.0, model: str = "gemma") -> str:
     t = time.time()
+    if model == "lfm3":
+        # Reasoning is on by default and spends the whole budget before writing minutes.
+        ids = LFM3_TOK.apply_chat_template(
+            messages, add_generation_prompt=True, return_tensors="pt", return_dict=True, enable_thinking=False
+        ).to("cuda")
+        sample = {"do_sample": True, "temperature": max(temperature, 0.1), "top_k": 50} if temperature > 0 else {"do_sample": False}
+        out = LFM3.generate(**ids, max_new_tokens=max_new_tokens, repetition_penalty=1.05, **sample)
+        n_in = ids["input_ids"].shape[-1]
+        print(f"_generate[lfm3]: {n_in} in, {out.shape[-1] - n_in} out tokens in {time.time() - t:.1f}s")
+        text = LFM3_TOK.decode(out[0][n_in:], skip_special_tokens=False)
+        text = text.split("</think>")[-1]  # the opening <think> is part of the prompt
+        return re.sub(r"<\|[^|>]*\|>", "", text).strip()
     inputs = PROC.apply_chat_template(
         messages,
         tokenize=True,
@@ -422,10 +444,27 @@ def _parse_json(raw: str) -> dict:
     start, end = raw.find("{"), raw.rfind("}")
     if start < 0 or end <= start:
         raise gr.Error("The model did not return minutes. Try again.")
-    return json.loads(raw[start : end + 1])
+    return _no_placeholders(json.loads(raw[start : end + 1]))
 
 
-def _minutes(segments: list, context: str) -> dict:
+_PLACEHOLDER = re.compile(r"^(empty|none|n/?a|null|unknown|-|not (mentioned|specified|stated))$", re.I)
+
+
+def _no_placeholders(v):
+    """Small models copy template words ("empty", "SPEAKER_00" as a name) into fields."""
+    if isinstance(v, dict):
+        out = {k: _no_placeholders(x) for k, x in v.items()}
+        if isinstance(out.get("speaker_names"), dict):
+            out["speaker_names"] = {k: ("" if n == k else n) for k, n in out["speaker_names"].items()}
+        return out
+    if isinstance(v, list):
+        return [_no_placeholders(x) for x in v]
+    if isinstance(v, str) and _PLACEHOLDER.match(v.strip()):
+        return ""
+    return v
+
+
+def _minutes(segments: list, context: str, model: str = "gemma") -> dict:
     prompt = f"""Meeting context (may be empty):
 {context or "-"}
 
@@ -445,7 +484,7 @@ Return JSON with exactly these keys:
  "next_steps": ["next step"]}}
 
 Rules: an action item is something a person committed to or was asked to do. The owner is the person who will do it: when someone says "I will" the owner is that line's speaker; when someone asks another person and they agree, the owner is the person who agreed. Use [] for empty lists."""
-    raw = _generate([{"role": "system", "content": MINUTES_SYSTEM}, {"role": "user", "content": prompt}], 2000)
+    raw = _generate([{"role": "system", "content": MINUTES_SYSTEM}, {"role": "user", "content": prompt}], 2000, 0.0, model)
     return _parse_json(raw)
 
 
@@ -547,12 +586,13 @@ def finish(job_id: str) -> bool:
     return JOBS.pop(job_id, None) is not None
 
 
-def minutes(transcript_json: str, meeting_context: str = "") -> dict:
+def minutes(transcript_json: str, meeting_context: str = "", model: str = "gemma") -> dict:
     """Write minutes of meeting (summary, decisions, action items with owners) from a transcript.
 
     Args:
         transcript_json: JSON from `transcribe`, or a list of {"start", "end", "speaker", "text"}.
         meeting_context: Optional title, date, attendees and agenda, as plain text.
+        model: "gemma" (Gemma 4 12B) or "lfm3" (LiquidAI LFM3-1.7B).
 
     Returns:
         {"title", "summary", "speaker_names", "key_points", "decisions", "action_items", "open_questions", "next_steps"}
@@ -562,7 +602,7 @@ def minutes(transcript_json: str, meeting_context: str = "") -> dict:
     if not segments:
         raise gr.Error("The transcript is empty.")
     t = time.time()
-    out = _minutes(segments, meeting_context)
+    out = _minutes(segments, meeting_context, "lfm3" if model == "lfm3" else "gemma")
     print(f"minutes: {len(segments)} segments, {time.time() - t:.1f}s")
     return out
 
@@ -625,13 +665,14 @@ def ask(question: str, transcript_json: str, notes: str = "") -> str:
     )
 
 
-def chat(messages_json: str, max_tokens: int = 1024, temperature: float = 0.3) -> str:
+def chat(messages_json: str, max_tokens: int = 1024, temperature: float = 0.3, model: str = "gemma") -> str:
     """General chat completion with Gemma 4 (the LiquidChat app routes requests that need a larger model here).
 
     Args:
         messages_json: JSON list of {"role": "system"|"user"|"assistant", "content": "..."}.
         max_tokens: Maximum tokens to generate (up to 4096).
         temperature: 0 for deterministic output.
+        model: "gemma" (Gemma 4 12B) or "lfm3" (LiquidAI LFM3-1.7B).
 
     Returns:
         The assistant's reply.
@@ -643,7 +684,9 @@ def chat(messages_json: str, max_tokens: int = 1024, temperature: float = 0.3) -
     ]
     if not msgs or msgs[-1]["role"] != "user":
         raise gr.Error("The last message must be from the user.")
-    return _generate(msgs, max(16, min(int(max_tokens or 1024), 4096)), float(temperature or 0))
+    return _generate(
+        msgs, max(16, min(int(max_tokens or 1024), 4096)), float(temperature or 0), "lfm3" if model == "lfm3" else "gemma"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -776,12 +819,13 @@ with gr.Blocks(title="LiquidChat", analytics_enabled=False, delete_cache=(1800, 
         gr.Button().click(start, [a_file, a_spk, a_n, a_max_spk], out_json, api_name="start")
         gr.Button().click(transcribe_part, [a_job, a_part, a_model, a_lang, a_task], out_json, api_name="transcribe_part")
         gr.Button().click(finish, [a_job], out_bool, api_name="finish")
-        gr.Button().click(minutes, [a_tr, a_ctx], out_json, api_name="minutes")
+        a_llm = gr.Textbox(value="gemma")
+        gr.Button().click(minutes, [a_tr, a_ctx, a_llm], out_json, api_name="minutes")
         gr.Button().click(process_meeting, [a_file, a_model, a_lang, a_task, a_n, a_ctx], out_json, api_name="process_meeting")
         gr.Button().click(ask, [a_q, a_tr, a_notes], out_text, api_name="ask")
         a_msgs = gr.Textbox()
         a_max = gr.Number(value=1024, precision=0)
         a_temp = gr.Number(value=0.3)
-        gr.Button().click(chat, [a_msgs, a_max, a_temp], out_text, api_name="chat")
+        gr.Button().click(chat, [a_msgs, a_max, a_temp, a_llm], out_text, api_name="chat")
 
 demo.queue(default_concurrency_limit=2).launch(mcp_server=True, ssr_mode=False, theme=THEME, css=CSS)
