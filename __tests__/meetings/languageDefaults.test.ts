@@ -48,13 +48,32 @@ describe('meeting language defaults', () => {
     );
     const s = await load()();
     expect(s).toMatchObject({ language: 'auto', task: 'translate', vocabulary: 'UPI' });
-    expect(JSON.parse((await AsyncStorage.getItem(KEY))!).defaultsVersion).toBe(2);
+    expect(JSON.parse((await AsyncStorage.getItem(KEY))!).defaultsVersion).toBe(3);
+  });
+
+  it('turns on chat indexing once for v2 settings, without touching the language choice', async () => {
+    await AsyncStorage.setItem(
+      KEY,
+      JSON.stringify({
+        language: 'hi',
+        task: 'transcribe',
+        indexForChat: false,
+        defaultsVersion: 2,
+      }),
+    );
+    const s = await load()();
+    expect(s).toMatchObject({ language: 'hi', task: 'transcribe', indexForChat: true });
+  });
+
+  it('keeps indexing off when the user turns it off after the migration', async () => {
+    await AsyncStorage.setItem(KEY, JSON.stringify({ indexForChat: false, defaultsVersion: 3 }));
+    expect((await load()()).indexForChat).toBe(false);
   });
 
   it('keeps a choice the user makes after the migration', async () => {
     await AsyncStorage.setItem(
       KEY,
-      JSON.stringify({ language: 'hi', task: 'transcribe', defaultsVersion: 2 }),
+      JSON.stringify({ language: 'hi', task: 'transcribe', defaultsVersion: 3 }),
     );
     const s = await load()();
     expect(s).toMatchObject({ language: 'hi', task: 'transcribe' });

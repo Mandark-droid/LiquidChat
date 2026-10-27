@@ -1,5 +1,7 @@
 import { CactusLM, type CactusLMMessage } from 'cactus-react-native';
 
+import { usageLedger } from '../observability/usageLedger';
+
 class VisionAgent {
   private vlm: CactusLM | null = null;
   private initialized = false;
@@ -46,6 +48,7 @@ class VisionAgent {
       messages,
       options: { temperature: 0.3, maxTokens: 512 },
     });
+    usageLedger.record('local', result.prefillTokens, result.decodeTokens);
 
     return result.response || '';
   }
@@ -67,6 +70,7 @@ class VisionAgent {
       messages,
       options: { temperature: 0.3, maxTokens: 512 },
     });
+    usageLedger.record('local', result.prefillTokens, result.decodeTokens);
 
     return result.response || '';
   }

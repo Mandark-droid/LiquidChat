@@ -4,6 +4,7 @@ import { Linking } from 'react-native';
 import { fmtDue } from '../meetings/documents';
 import { extractJson, resolveSummaryModel } from '../meetings/MinutesGenerator';
 import type { Meeting } from '../meetings/types';
+import { usageLedger } from '../observability/usageLedger';
 import { modelLifecycle } from '../services/ModelLifecycleManager';
 
 /**
@@ -206,6 +207,7 @@ async function run(
     messages,
     options: { temperature: 0.5, topP: 0.9, maxTokens: 700 },
   });
+  usageLedger.record('local', r.prefillTokens, r.decodeTokens);
   return r.response ?? '';
 }
 

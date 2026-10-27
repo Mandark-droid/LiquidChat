@@ -14,6 +14,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { theme } from '../config/theme';
+import { memoryManager } from '../memory/MemoryManager';
 import { exportForFineTuning } from '../services/chatExport';
 import { pushDatasetToHub, validateHFToken } from '../services/huggingfaceApi';
 import { memoryService } from '../services/MemoryService';
@@ -43,6 +44,7 @@ export default function SettingsScreen({ onOpenModelSelector }: SettingsScreenPr
     memoryCount: 0,
     documentCount: 0,
     documentFiles: [] as string[],
+    saved: 0,
   });
   const [docPath, setDocPath] = useState('');
   const [isImporting, setIsImporting] = useState(false);
@@ -164,12 +166,14 @@ export default function SettingsScreen({ onOpenModelSelector }: SettingsScreenPr
     ]);
   };
 
-  const refreshMemoryStats = () => {
+  const refreshMemoryStats = async () => {
     try {
-      const stats = memoryService.getStats();
-      setMemoryStats(stats);
-    } catch {
-      // Service may not be initialized yet
+      // Counts come from disk, so they are right before any chat has loaded the embedding model.
+      await memoryService.loadStores();
+      const saved = (await memoryManager.list({ limit: 100000 })).length;
+      setMemoryStats({ ...memoryService.getStats(), saved });
+    } catch (e) {
+      console.warn('[Settings] Memory stats unavailable:', e);
     }
   };
 
@@ -533,7 +537,8 @@ export default function SettingsScreen({ onOpenModelSelector }: SettingsScreenPr
                 <View style={styles.settingRow}>
                   <Text style={styles.settingLabel}>Memory Stats</Text>
                   <Text style={styles.memoryStatsText}>
-                    {memoryStats.memoryCount} memories, {memoryStats.documentCount} doc chunks
+                    {memoryStats.saved} saved memories, {memoryStats.memoryCount} remembered
+                    conversations, {memoryStats.documentCount} document chunks
                     {memoryStats.documentFiles.length > 0 &&
                       ` (${memoryStats.documentFiles.join(', ')})`}
                   </Text>

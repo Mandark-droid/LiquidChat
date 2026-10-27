@@ -606,6 +606,7 @@ describe('generateMinutes', () => {
         './Transcriber': '{ transcriber: { release: async () => {} } }',
         '../utils/engineMigration': "{ listDownloadedCactusModels: async () => [{ slug: 'lfm' }] }",
         'cactus-react-native': '{ CactusLM: class {} }',
+        '../observability/usageLedger': '{ usageLedger: { record: () => {} } }',
         './MeetingStore': `{
           meetingStore: {
             get: async () => globalThis.M,

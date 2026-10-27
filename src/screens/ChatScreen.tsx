@@ -39,6 +39,8 @@ import { askInCloud } from '../meetings/cloudMeeting';
 import { meetingContext } from '../meetings/meetingQA';
 import { meetingStore } from '../meetings/MeetingStore';
 import { getMeetingSettings } from '../meetings/settings';
+import { chatMemoryContext, saveIfRememberRequest } from '../memory/chatContext';
+import { usageLedger } from '../observability/usageLedger';
 import { actionLogger } from '../services/ActionLogger';
 import { isPlainChat } from '../services/IntentRouter';
 import { memoryService } from '../services/MemoryService';
@@ -119,7 +121,7 @@ export default function ChatScreen({ chatId, onBack, onOpenModelSelector }: Chat
   const { routeAndLoad } = useIntentRouter();
 
   // Memory hook
-  const { relevantMemories, recallForMessage, rememberInteraction, clearRecalled } = useMemory(
+  const { relevantMemories, showRecalled, rememberInteraction, clearRecalled } = useMemory(
     settings?.memoryEnabled ?? false,
     settings?.embeddingModel,
   );
@@ -344,6 +346,26 @@ export default function ChatScreen({ chatId, onBack, onOpenModelSelector }: Chat
     scrollToBottom();
 
     try {
+      // "Remember that …": saved at once (the user asked), no model needed.
+      if (settings?.memoryEnabled && text && !userMessage.images?.length) {
+        const saved = await saveIfRememberRequest(text).catch(e => {
+          console.warn('[Chat] could not save memory:', e);
+          return null;
+        });
+        if (saved) {
+          const reply: ChatMessage = {
+            role: 'assistant',
+            content: `Saved to memory: "${saved}". I'll use it in future chats (see Agent → Memory).`,
+            timestamp: Date.now(),
+          };
+          const withReply = [...updatedMessages, reply];
+          setMessages(withReply);
+          await saveMessages(withReply);
+          scrollToBottom();
+          return;
+        }
+      }
+
       // Meeting Q&A: the minutes plus the passages that match this question; no tools, no routing.
       if (settings?.meetingId) {
         setAgentState({ kind: 'generating' });
@@ -417,16 +439,10 @@ export default function ChatScreen({ chatId, onBack, onOpenModelSelector }: Chat
       }
       setAgentState({ kind: 'generating' });
 
-      // Recall relevant memories before generating
-      let memoryContext = '';
-      if (settings?.memoryEnabled) {
-        const memories = await recallForMessage(text);
-        if (memories.length > 0) {
-          memoryContext =
-            '\n\nRelevant context from previous interactions:\n' +
-            memories.map(m => `- ${m.text}`).join('\n');
-        }
-      }
+      // Saved memories, similar past conversations and matching document passages.
+      const memoryContext = settings?.memoryEnabled
+        ? await chatMemoryContext(text, showRecalled)
+        : '';
 
       const {
         text: responseText,
@@ -603,6 +619,13 @@ export default function ChatScreen({ chatId, onBack, onOpenModelSelector }: Chat
       setTimeout(() => setActionChainSteps([]), 2500);
     }
     if ((voice || settings?.autoTTS) && reply.content) speak(reply.content);
+    if (
+      settings?.memoryEnabled &&
+      settings?.autoRemember &&
+      result.state === 'COMPLETED' &&
+      reply.content
+    )
+      rememberInteraction(text, reply.content);
   };
 
   const generateResponse = async (
@@ -673,6 +696,7 @@ export default function ChatScreen({ chatId, onBack, onOpenModelSelector }: Chat
       onToken,
     });
     fullResponse = result.response || fullResponse;
+    usageLedger.record('local', result.prefillTokens, result.decodeTokens || tokenCount);
     const functionCalls:
       Array<{ name: string; arguments: string | Record<string, any> }> | undefined =
       result.functionCalls;

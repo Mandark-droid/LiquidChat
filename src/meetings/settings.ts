@@ -4,8 +4,8 @@ import { DEFAULT_SPACE_ID } from '../services/hfSpace';
 import type { MeetingSettings } from './types';
 
 const KEY = '@liquid_meeting_settings';
-/** v2: auto-detect the spoken language and translate to English. */
-export const MEETING_DEFAULTS_VERSION = 2;
+/** v2: auto-detect the spoken language and translate to English. v3: meetings indexed for chat. */
+export const MEETING_DEFAULTS_VERSION = 3;
 
 export const DEFAULT_MEETING_SETTINGS: MeetingSettings = {
   sttModel: 'whisper-small',
@@ -17,7 +17,7 @@ export const DEFAULT_MEETING_SETTINGS: MeetingSettings = {
   audioSource: 'voice_recognition',
   keepAudio: true,
   autoGenerateMinutes: true,
-  indexForChat: false,
+  indexForChat: true,
   engine: 'device',
   spaceId: DEFAULT_SPACE_ID,
   spaceAsrModel: 'hinglish',
@@ -44,10 +44,14 @@ export async function getMeetingSettings(): Promise<MeetingSettings> {
       ...parsed,
       letterhead: { ...DEFAULT_MEETING_SETTINGS.letterhead, ...(parsed.letterhead ?? {}) },
     };
-    if (raw && (parsed.defaultsVersion ?? 1) < MEETING_DEFAULTS_VERSION) {
-      // One-time move to auto-detect + English output; later user choices are kept.
-      merged.language = 'auto';
-      merged.task = 'translate';
+    const from = raw ? (parsed.defaultsVersion ?? 1) : MEETING_DEFAULTS_VERSION;
+    if (from < MEETING_DEFAULTS_VERSION) {
+      // One-time moves to new defaults; later user choices are kept.
+      if (from < 2) {
+        merged.language = 'auto';
+        merged.task = 'translate';
+      }
+      if (from < 3) merged.indexForChat = true; // background indexing keeps meetings searchable
       merged.defaultsVersion = MEETING_DEFAULTS_VERSION;
       await AsyncStorage.setItem(KEY, JSON.stringify(merged));
     }

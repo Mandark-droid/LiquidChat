@@ -2,13 +2,12 @@ import * as RNFS from '@dr.pogodin/react-native-fs';
 import { AppState, type EmitterSubscription } from 'react-native';
 
 import { getModelTier } from '../config/modelTiers';
-import { memoryService } from '../services/MemoryService';
+import { autoIndexer } from '../memory/autoIndex';
 import { modelLifecycle } from '../services/ModelLifecycleManager';
 import { storage } from '../utils/storage';
 import { minutesInCloud, processMeetingInCloud } from './cloudMeeting';
-import { buildMinutesMarkdown } from './documents';
 import { meetingStore } from './MeetingStore';
-import { defaultTitle, generateMinutes, transcriptPlain } from './MinutesGenerator';
+import { defaultTitle, generateMinutes } from './MinutesGenerator';
 import { ensureRecordingPermissions, Recorder, RecorderEvents } from './native';
 import { getMeetingSettings } from './settings';
 import { identifySpeakers } from './SpeakerIdentifier';
@@ -393,7 +392,7 @@ class MeetingSessionImpl {
       }
 
       if (!settings.keepAudio) await meetingStore.deleteAudio(id);
-      if (settings.indexForChat) await this.indexForChat(id).catch(e => warn('indexForChat', e));
+      if (settings.indexForChat) autoIndexer.enqueue(id);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       console.error(`[MeetingSession] Processing ${id} failed: ${msg}`);
@@ -456,7 +455,7 @@ class MeetingSessionImpl {
           }),
       );
       if (!settings.keepAudio) await meetingStore.deleteAudio(id);
-      if (settings.indexForChat) await this.indexForChat(id).catch(e => warn('indexForChat', e));
+      if (settings.indexForChat) autoIndexer.enqueue(id);
       return true;
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -502,6 +501,7 @@ class MeetingSessionImpl {
         { spaceId: settings.spaceId, token, asrModel: settings.spaceAsrModel },
         (label, p) => this.set({ progressLabel: label, progress: p }),
       );
+      if (settings.indexForChat) autoIndexer.enqueue(id);
       return true;
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -699,18 +699,11 @@ class MeetingSessionImpl {
   }
 
   /** Adds transcript + minutes to the RAG document store so chat can recall them. */
-  async indexForChat(id: string): Promise<void> {
-    const m = await meetingStore.get(id);
-    if (!m) return;
-    const path = `${meetingStore.exportsDir(id)}/${id}_index.txt`;
-    await RNFS.mkdir(meetingStore.exportsDir(id));
-    const body = `${buildMinutesMarkdown(m)}\n\n## Transcript\n${transcriptPlain(m)}`;
-    await RNFS.writeFile(path, body, 'utf8');
-    await memoryService.addDocument(path);
-  }
 }
 
 export const meetingSession = new MeetingSessionImpl();
+// Indexing waits while a meeting is recorded or processed.
+autoIndexer.setBusyCheck(() => meetingSession.isBusy());
 
 // Keep elapsed time honest when returning from background (level events pause in Doze).
 AppState.addEventListener('change', st => {

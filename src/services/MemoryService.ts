@@ -10,6 +10,11 @@ const RENAMED_EMBED_SLUGS: Record<string, string> = {
   'qwen3-0.6-embed': 'qwen3-embedding-0.6b',
 };
 
+export const MAX_CONVERSATIONS = 1500;
+export const MAX_DOCUMENT_CHUNKS = 3000;
+/** One very long file must not crowd everything else out of the document store. */
+export const MAX_CHUNKS_PER_DOCUMENT = 300;
+
 function generateId(): string {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 }
@@ -67,8 +72,12 @@ class MemoryService {
   private modelSlug = 'qwen3-embedding-0.6b';
 
   constructor() {
-    this.memoryStore = new VectorStore('memory');
-    this.documentStore = new VectorStore('documents');
+    // ~10 KB per entry (1024-d embedding as JSON): about 15 MB and 30 MB at most.
+    this.memoryStore = new VectorStore('memory', { maxEntries: MAX_CONVERSATIONS });
+    this.documentStore = new VectorStore('documents', {
+      maxEntries: MAX_DOCUMENT_CHUNKS,
+      groupBy: e => e.metadata?.sourceFile,
+    });
   }
 
   async init(model?: string): Promise<void> {
@@ -85,8 +94,7 @@ class MemoryService {
           );
       }
 
-      // Load persisted vector stores
-      await Promise.all([this.memoryStore.load(), this.documentStore.load()]);
+      await this.loadStores();
 
       // Use ModelLifecycleManager for robust download + native fallback support
       if (!modelLifecycle.initialized) await modelLifecycle.init();
@@ -102,6 +110,13 @@ class MemoryService {
     } finally {
       this.initializing = false;
     }
+  }
+
+  /** The saved vectors, without the embedding model (enough for counts and listing). */
+  loadStores(): Promise<void> {
+    return Promise.all([this.memoryStore.ensureLoaded(), this.documentStore.ensureLoaded()]).then(
+      () => undefined,
+    );
   }
 
   async destroy(): Promise<void> {
@@ -164,6 +179,10 @@ class MemoryService {
 
   // === Documents (RAG corpus) ===
 
+  /**
+   * Indexes a text file for retrieval. Indexing the same file name again replaces its earlier
+   * chunks (a meeting re-indexed after new minutes), so nothing is duplicated.
+   */
   async addDocument(filePath: string): Promise<number> {
     await this.ensureInit();
 
@@ -175,20 +194,36 @@ class MemoryService {
     const content = await RNFS.readFile(filePath, 'utf8');
     const fileName = filePath.split('/').pop() || filePath;
     const docId = generateId();
-    const chunks = chunkText(content);
+    const chunks = chunkText(content).slice(0, MAX_CHUNKS_PER_DOCUMENT);
 
-    for (let i = 0; i < chunks.length; i++) {
-      const chunkId = `${docId}_chunk_${i}`;
-      const embedding = await this.embed(chunks[i]);
-      await this.documentStore.add(chunkId, chunks[i], embedding, {
+    // Embed everything first: a failure halfway leaves the previous version in place.
+    const embedded: { text: string; embedding: number[] }[] = [];
+    for (const chunk of chunks) embedded.push({ text: chunk, embedding: await this.embed(chunk) });
+
+    this.removeSource(fileName);
+    for (let i = 0; i < embedded.length; i++) {
+      await this.documentStore.add(`${docId}_chunk_${i}`, embedded[i].text, embedded[i].embedding, {
         docId,
         sourceFile: fileName,
         chunkIndex: i,
-        totalChunks: chunks.length,
+        totalChunks: embedded.length,
       });
     }
 
-    return chunks.length;
+    return embedded.length;
+  }
+
+  /** Drops every chunk indexed from this file name. */
+  removeSource(fileName: string): number {
+    const stale = this.documentStore.getAll().filter(e => e.metadata?.sourceFile === fileName);
+    for (const e of stale) this.documentStore.remove(e.id);
+    return stale.length;
+  }
+
+  /** Whether chunks from this file name are indexed (without loading the embedding model). */
+  async hasSource(fileName: string): Promise<boolean> {
+    await this.loadStores();
+    return this.documentStore.getAll().some(e => e.metadata?.sourceFile === fileName);
   }
 
   async removeDocument(docId: string): Promise<void> {

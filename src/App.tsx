@@ -22,6 +22,7 @@ import { resolveSummaryModel } from './meetings/MinutesGenerator';
 import { getMeetingSettings } from './meetings/settings';
 import { watchSharedAudio } from './meetings/sharedAudio';
 import type { PickedAudio } from './meetings/types';
+import { autoIndexer } from './memory/autoIndex';
 import { platform } from './platform/android';
 import AgentDashboardScreen from './screens/AgentDashboardScreen';
 import AgentInsightsScreen from './screens/AgentInsightsScreen';
@@ -113,6 +114,10 @@ function AppContent() {
 
   useEffect(() => {
     checkEngineMigration();
+    // Background indexing catches up once the app has settled (not during start-up).
+    const indexTimer = setTimeout(() => {
+      autoIndexer.sweep().catch(e => console.warn('[LiquidChat] auto-index sweep failed:', e));
+    }, 45_000);
     const showRoutine = async (r: AgentResult | null) => {
       if (!r?.response) return;
       const rec = await agentRuntime.repo.get(r.executionId);
@@ -168,6 +173,7 @@ function AppContent() {
       if (st === 'active') agentRuntime.ingestNotifications().catch(() => {});
     });
     return () => {
+      clearTimeout(indexTimer);
       offLaunch();
       sub.remove();
     };

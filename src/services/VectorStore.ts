@@ -6,6 +6,15 @@ export interface VectorEntry {
   embedding: number[];
   metadata?: Record<string, any>;
   createdAt: number;
+  /** Last time a search returned it; drives eviction. */
+  usedAt?: number;
+}
+
+export interface VectorStoreLimits {
+  /** Most entries kept; the least recently used go first. */
+  maxEntries: number;
+  /** Evict whole groups (e.g. every chunk of one document) instead of single entries. */
+  groupBy?: (e: VectorEntry) => string | undefined;
 }
 
 export interface SearchResult {
@@ -36,14 +45,29 @@ export class VectorStore {
   private filePath: string;
   private saveTimer: ReturnType<typeof setTimeout> | null = null;
   private dirty = false;
+  private loading: Promise<void> | null = null;
 
-  constructor(name: string) {
+  constructor(
+    name: string,
+    private readonly limits?: VectorStoreLimits,
+  ) {
     this.name = name;
-    this.filePath = `${RNFS.CachesDirectoryPath}/vectorstore_${name}.json`;
+    // App documents, not the cache: Android may clear the cache at any time.
+    this.filePath = `${RNFS.DocumentDirectoryPath}/vectorstore_${name}.json`;
+  }
+
+  /** Loads once; later calls wait for the same load. */
+  ensureLoaded(): Promise<void> {
+    this.loading ??= this.load();
+    return this.loading;
   }
 
   async load(): Promise<void> {
     try {
+      const legacy = `${RNFS.CachesDirectoryPath}/vectorstore_${this.name}.json`;
+      if (!(await RNFS.exists(this.filePath)) && (await RNFS.exists(legacy))) {
+        await RNFS.moveFile(legacy, this.filePath);
+      }
       const exists = await RNFS.exists(this.filePath);
       if (exists) {
         const raw = await RNFS.readFile(this.filePath, 'utf8');
@@ -94,7 +118,36 @@ export class VectorStore {
       metadata,
       createdAt: Date.now(),
     });
+    this.enforceLimit();
     this.scheduleSave();
+  }
+
+  /** Drops the least recently used entries (or groups) until the store is within its limit. */
+  private enforceLimit(): void {
+    const max = this.limits?.maxEntries;
+    if (!max || this.entries.length <= max) return;
+    const lastUse = (e: VectorEntry) => e.usedAt ?? e.createdAt;
+    const groupOf = (e: VectorEntry) => this.limits?.groupBy?.(e) ?? `#${e.id}`;
+    const groups = new Map<string, number>();
+    for (const e of this.entries) {
+      const g = groupOf(e);
+      groups.set(g, Math.max(groups.get(g) ?? 0, lastUse(e)));
+    }
+    // The newest group is never evicted: it is what was just added.
+    const order = [...groups.entries()].sort((a, b) => a[1] - b[1]).map(([g]) => g);
+    const drop = new Set<string>();
+    let count = this.entries.length;
+    for (const g of order.slice(0, -1)) {
+      if (count <= max) break;
+      drop.add(g);
+      count -= this.entries.filter(e => groupOf(e) === g).length;
+    }
+    if (drop.size) {
+      this.entries = this.entries.filter(e => !drop.has(groupOf(e)));
+      console.log(
+        `[VectorStore:${this.name}] evicted ${drop.size} oldest item(s) to stay under ${max}`,
+      );
+    }
   }
 
   async query(
@@ -110,10 +163,17 @@ export class VectorStore {
       createdAt: entry.createdAt,
     }));
 
-    return scored
+    const top = scored
       .filter(r => r.score >= threshold)
       .sort((a, b) => b.score - a.score)
       .slice(0, topK);
+    if (top.length) {
+      const now = Date.now();
+      const ids = new Set(top.map(r => r.id));
+      for (const e of this.entries) if (ids.has(e.id)) e.usedAt = now;
+      this.scheduleSave();
+    }
+    return top;
   }
 
   remove(id: string): void {

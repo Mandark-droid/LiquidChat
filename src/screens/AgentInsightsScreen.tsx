@@ -23,6 +23,12 @@ import {
 import { theme } from '../config/theme';
 import { listEvalRuns, type StoredEvalRun } from '../observability/EvaluationRunner';
 import type { AgentMetrics } from '../observability/MetricsCollector';
+import {
+  REFERENCE_PRICE,
+  savedUsd,
+  usageLedger,
+  type UsageTotals,
+} from '../observability/usageLedger';
 
 const pct = (v: number | null | undefined) => (v == null ? '—' : `${Math.round(v * 100)}%`);
 const ms = (v: number | null | undefined) =>
@@ -35,9 +41,11 @@ export default function AgentInsightsScreen({ onBack }: { onBack: () => void }) 
   const [runs, setRuns] = useState<StoredEvalRun[]>([]);
   const [selected, setSelected] = useState<ExecutionRecord | null>(null);
   const [evalProgress, setEvalProgress] = useState<number | null>(null);
+  const [usage, setUsage] = useState<UsageTotals | null>(null);
 
   const load = useCallback(async () => {
     try {
+      setUsage(await usageLedger.get());
       await agentRuntime.ready();
       setMetrics(await agentRuntime.metrics.collect());
       setExecs(await agentRuntime.repo.list({ limit: 30 }));
@@ -79,6 +87,7 @@ export default function AgentInsightsScreen({ onBack }: { onBack: () => void }) 
         right={<HeaderButton label="Refresh" onPress={load} />}
       />
       <ScrollView contentContainerStyle={{ padding: theme.spacing.lg, paddingBottom: 60 }}>
+        {usage ? <OfflineSavings usage={usage} /> : null}
         {metrics ? (
           <>
             <View style={{ flexDirection: 'row', gap: 8 }}>
@@ -193,6 +202,41 @@ export default function AgentInsightsScreen({ onBack }: { onBack: () => void }) 
         )}
       </ScrollView>
     </SafeAreaView>
+  );
+}
+
+function compact(n: number): string {
+  if (n >= 1e6) return `${(n / 1e6).toFixed(n >= 1e7 ? 0 : 1)}M`;
+  if (n >= 1e3) return `${(n / 1e3).toFixed(n >= 1e4 ? 0 : 1)}K`;
+  return String(n);
+}
+
+/** Tokens the phone processed itself: what running offline kept off cloud models. */
+function OfflineSavings({ usage }: { usage: UsageTotals }) {
+  const local = usage.localInput + usage.localOutput;
+  const remote = usage.remoteInput + usage.remoteOutput;
+  const share = local + remote ? local / (local + remote) : 1;
+  const usd = savedUsd(usage);
+  return (
+    <Card style={{ marginBottom: 12 }}>
+      <Text style={ui.muted}>Kept on this phone</Text>
+      <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 8, marginTop: 4 }}>
+        <Text style={{ fontSize: 30, fontWeight: '800', color: theme.colors.success }}>
+          {compact(local)}
+        </Text>
+        <Text style={ui.body}>tokens processed offline</Text>
+      </View>
+      <Text style={[ui.muted, { marginTop: 4 }]}>
+        {compact(usage.localInput)} read · {compact(usage.localOutput)} written · {usage.localCalls}{' '}
+        on-device replies · {pct(share)} of all tokens
+        {remote ? ` (${compact(remote)} went to cloud models)` : ', none sent to the cloud'}
+      </Text>
+      <Text style={[ui.muted, { marginTop: 4 }]}>
+        ≈ ${usd < 0.01 && usd > 0 ? usd.toFixed(4) : usd.toFixed(2)} saved at{' '}
+        {REFERENCE_PRICE.label} prices (${REFERENCE_PRICE.inputPerM} / ${REFERENCE_PRICE.outputPerM}{' '}
+        per million tokens) · since {new Date(usage.since).toLocaleDateString('en-IN')}
+      </Text>
+    </Card>
   );
 }
 

@@ -1,6 +1,7 @@
 import { CactusLM } from 'cactus-react-native';
 
 import { getModelBySlug, LIQUID_MODELS, quantizationFor } from '../config/models';
+import { usageLedger } from '../observability/usageLedger';
 import { modelLifecycle } from '../services/ModelLifecycleManager';
 import { listDownloadedCactusModels } from '../utils/engineMigration';
 import { resolveDue, toIsoDate } from './dateResolver';
@@ -488,6 +489,7 @@ async function complete(lm: CactusLM, user: string, maxTokens: number): Promise<
     ],
     options: { temperature: 0.2, topP: 0.9, maxTokens },
   });
+  usageLedger.record('local', r.prefillTokens, r.decodeTokens);
   return r.response ?? '';
 }
 

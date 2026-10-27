@@ -11,6 +11,7 @@
  * routed from scratch, so a remote escalation never "captures" the workflow.
  */
 import { nullTracer, type Tracer } from '../observability/types';
+import { usageLedger } from '../observability/usageLedger';
 import type { CredentialStore, DeviceContextProvider } from '../platform/types';
 import { getDatabase, type SqlDb } from '../storage/db';
 import { CircuitBreaker } from './CircuitBreaker';
@@ -218,6 +219,7 @@ export class InferenceService {
           const started = Date.now();
           try {
             const result = await provider.complete(decision.model.providerModelId, request, signal);
+            usageLedger.record(decision.executionMode, result.inputTokens, result.outputTokens);
             const normalized: InferenceResult = {
               ...result,
               modelId: decision.selectedModelId,

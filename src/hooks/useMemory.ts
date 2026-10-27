@@ -10,6 +10,8 @@ export interface UseMemoryReturn {
   relevantMemories: MemoryResult[];
   recallForMessage: (text: string) => Promise<MemoryResult[]>;
   rememberInteraction: (userMsg: string, assistantMsg: string) => Promise<void>;
+  /** Shows memories recalled elsewhere (see chatMemoryContext) as chips. */
+  showRecalled: (memories: MemoryResult[]) => void;
   clearRecalled: () => void;
 }
 
@@ -71,7 +73,17 @@ export function useMemory(enabled: boolean, embeddingModel?: string): UseMemoryR
 
   const rememberInteraction = useCallback(
     async (userMsg: string, assistantMsg: string): Promise<void> => {
-      if (!enabled || !memoryService.isInitialized) return;
+      if (!enabled) return;
+      if (!memoryService.isInitialized) {
+        // The embedding model may still be loading (or failed once): try again rather than drop it.
+        try {
+          await memoryService.init(embeddingModel);
+          setIsReady(true);
+        } catch (e) {
+          console.warn('[useMemory] Not remembered, embedding model unavailable:', e);
+          return;
+        }
+      }
 
       try {
         // Create a concise summary for embedding
@@ -88,7 +100,7 @@ export function useMemory(enabled: boolean, embeddingModel?: string): UseMemoryR
         console.warn('[useMemory] Remember failed:', e);
       }
     },
-    [enabled],
+    [enabled, embeddingModel],
   );
 
   const clearRecalled = useCallback(() => {
@@ -103,5 +115,6 @@ export function useMemory(enabled: boolean, embeddingModel?: string): UseMemoryR
     recallForMessage,
     rememberInteraction,
     clearRecalled,
+    showRecalled: setRelevantMemories,
   };
 }
