@@ -3,6 +3,7 @@
  * stream. The Hugging Face token goes in `x-hf-authorization`, which is how ZeroGPU charges the
  * caller's own GPU quota (the same header the official gradio_client sends).
  */
+import { setContent, withSpan } from '../observability/spans';
 
 /** The public LiquidChat Space (source in /space). Anyone can use it with their own token. */
 export const DEFAULT_SPACE_ID = 'kshitijthakkar/LiquidChat';
@@ -107,7 +108,24 @@ export class SpaceClient {
   }
 
   /** Calls `api` with positional inputs and waits for its first output. */
-  async call<T>(api: string, data: unknown[]): Promise<T> {
+  call<T>(api: string, data: unknown[]): Promise<T> {
+    return withSpan(
+      `hf_space ${api}`,
+      {
+        'gen_ai.provider.name': 'hf_space',
+        'gen_ai.operation.name': api === 'chat' || api === 'ask' ? 'chat' : api,
+        'server.address': this.base.replace(/^https:\/\//, ''),
+        'liquidchat.space.api': api,
+      },
+      async span => {
+        const out = await this.request<T>(api, data);
+        setContent(span, 'gen_ai.output.messages', out);
+        return out;
+      },
+    );
+  }
+
+  private async request<T>(api: string, data: unknown[]): Promise<T> {
     const res = await this.fetchImpl(`${this.base}/gradio_api/call/${api}`, {
       method: 'POST',
       headers: this.headers({ 'Content-Type': 'application/json' }),

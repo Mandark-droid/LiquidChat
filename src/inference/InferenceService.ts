@@ -10,6 +10,8 @@
  * Nothing here is sticky across steps: the next step calls run() again and is
  * routed from scratch, so a remote escalation never "captures" the workflow.
  */
+import { traceGenAiCall } from '@traceverse/genai-otel-instrument-node/react-native';
+
 import { nullTracer, type Tracer } from '../observability/types';
 import { usageLedger } from '../observability/usageLedger';
 import type { CredentialStore, DeviceContextProvider } from '../platform/types';
@@ -218,7 +220,25 @@ export class InferenceService {
           }
           const started = Date.now();
           try {
-            const result = await provider.complete(decision.model.providerModelId, request, signal);
+            const call = () => provider.complete(decision.model.providerModelId, request, signal);
+            // Cloud calls get a GenAI span with usage (on-device calls are traced by the Cactus
+            // instrumentor); a no-op unless OpenTelemetry export is on.
+            const result =
+              decision.executionMode === 'remote'
+                ? await traceGenAiCall(
+                    {
+                      name: `chat ${decision.model.providerModelId}`,
+                      system: decision.providerId,
+                      model: decision.model.providerModelId,
+                    },
+                    async () => {
+                      const r = await call();
+                      return Object.assign(r, {
+                        usage: { prompt_tokens: r.inputTokens, completion_tokens: r.outputTokens },
+                      });
+                    },
+                  )
+                : await call();
             usageLedger.record(decision.executionMode, result.inputTokens, result.outputTokens);
             const normalized: InferenceResult = {
               ...result,

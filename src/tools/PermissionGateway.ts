@@ -9,6 +9,7 @@
  * models, and skill/plan "requiresApproval: false" can only add friction, never
  * remove the gateway's own approval requirements.
  */
+import { traceTool } from '../observability/spans';
 import type { Tracer } from '../observability/types';
 import { nullTracer } from '../observability/types';
 import type { PermissionChecker } from '../platform/types';
@@ -48,11 +49,32 @@ export class PermissionGateway {
     this.tracer = deps.tracer ?? nullTracer;
   }
 
-  async invoke(
+  invoke(
     name: string,
     rawArgs: unknown,
     ctx: ToolContext,
     opts: InvokeOptions = {},
+  ): Promise<ToolResult> {
+    const tool = this.deps.registry.get(name);
+    const mcp = /^mcp\.([^.]+)\./.exec(name);
+    return traceTool(
+      name,
+      {
+        executionId: ctx.executionId,
+        callId: ctx.toolCallId,
+        risk: tool?.riskLevel,
+        mcpServer: mcp?.[1],
+      },
+      rawArgs,
+      () => this.invokeTool(name, rawArgs, ctx, opts),
+    );
+  }
+
+  private async invokeTool(
+    name: string,
+    rawArgs: unknown,
+    ctx: ToolContext,
+    opts: InvokeOptions,
   ): Promise<ToolResult> {
     const started = Date.now();
     const tool = this.deps.registry.get(name);

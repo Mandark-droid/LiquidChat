@@ -7,6 +7,7 @@ import { modelLifecycle } from '../services/ModelLifecycleManager';
 import { storage } from '../utils/storage';
 import { minutesInCloud, processMeetingInCloud } from './cloudMeeting';
 import { meetingStore } from './MeetingStore';
+import { traceMeeting } from './meetingTrace';
 import { defaultTitle, generateMinutes } from './MinutesGenerator';
 import { ensureRecordingPermissions, Recorder, RecorderEvents } from './native';
 import { getMeetingSettings } from './settings';
@@ -334,7 +335,11 @@ class MeetingSessionImpl {
   // ---------------------------------------------------------------------
   // Post-processing (also used for recovery and "retry")
 
-  async processMeeting(id: string, opts: { forceMinutes?: boolean } = {}): Promise<void> {
+  processMeeting(id: string, opts: { forceMinutes?: boolean } = {}): Promise<void> {
+    return traceMeeting(id, 'process', () => this.processMeetingTraced(id, opts));
+  }
+
+  private async processMeetingTraced(id: string, opts: { forceMinutes?: boolean }): Promise<void> {
     if (this.processing.has(id)) return;
     const settings = await getMeetingSettings();
     if (settings.engine === 'space') {
@@ -414,7 +419,11 @@ class MeetingSessionImpl {
    * meeting only once everything has come back. Returns false when it did not complete; with
    * `fallback` the caller then processes on the phone, and the meeting says why.
    */
-  async processInCloud(id: string, opts: { fallback?: boolean } = {}): Promise<boolean> {
+  processInCloud(id: string, opts: { fallback?: boolean } = {}): Promise<boolean> {
+    return traceMeeting(id, 'process_space', () => this.processInCloudTraced(id, opts));
+  }
+
+  private async processInCloudTraced(id: string, opts: { fallback?: boolean }): Promise<boolean> {
     if (this.processing.has(id)) return false;
     const settings = await getMeetingSettings();
     const token = (await storage.getSettings())?.hfToken?.trim() ?? '';

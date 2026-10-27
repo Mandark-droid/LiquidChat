@@ -1,6 +1,6 @@
 {
   "name": "LiquidChat",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "private": true,
   "scripts": {
     "android": "react-native run-android",
@@ -20,7 +20,9 @@
   "dependencies": {
     "@dr.pogodin/react-native-fs": "^2.36.1",
     "@op-engineering/op-sqlite": "^18.2.5",
+    "@opentelemetry/api": "1.9.1",
     "@react-native-async-storage/async-storage": "^2.1.0",
+    "@traceverse/genai-otel-instrument-node": "0.1.0-alpha.1",
     "cactus-react-native": "^1.13.1",
     "jszip": "^3.10.2",
     "react": "19.1.0",

@@ -3,6 +3,7 @@
  * search), similar earlier conversations, and passages from imported documents and meetings
  * marked searchable (both by embedding similarity). Any source that is unavailable is skipped.
  */
+import { setContent, withSpan } from '../observability/spans';
 import { memoryService } from '../services/MemoryService';
 import type { MemoryResult } from '../types';
 import { MemoryManager, memoryManager } from './MemoryManager';
@@ -14,9 +15,21 @@ const fence = (t: string) => t.replace(/</g, '‹').replace(/>/g, '›');
 const CONVERSATION_MIN_SCORE = 0.7;
 const DOCUMENT_MIN_SCORE = 0.5;
 
-export async function chatMemoryContext(
+export function chatMemoryContext(
   text: string,
   /** Shown to the user as chips under the reply. */
+  onRecalled?: (past: MemoryResult[]) => void,
+): Promise<string> {
+  return withSpan('retrieve chat_context', { 'gen_ai.operation.name': 'retrieve' }, async span => {
+    const ctx = await buildContext(text, onRecalled);
+    span.setAttribute('liquidchat.retrieval.context_chars', ctx.length);
+    setContent(span, 'liquidchat.retrieval.context', ctx);
+    return ctx;
+  });
+}
+
+async function buildContext(
+  text: string,
   onRecalled?: (past: MemoryResult[]) => void,
 ): Promise<string> {
   const parts: string[] = [];

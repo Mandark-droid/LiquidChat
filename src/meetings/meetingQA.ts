@@ -3,6 +3,9 @@
  * relevant to it, instead of the first few minutes of transcript. Small on-device models only
  * attend to a short window, so what goes in the prompt has to be chosen, not truncated.
  */
+import { trace } from '@opentelemetry/api';
+
+import { setContent } from '../observability/spans';
 import { transcriptLines } from './MinutesGenerator';
 import type { Meeting } from './types';
 
@@ -102,6 +105,24 @@ export function notes(m: Meeting): string {
  */
 // On the phone the model reads ~20 tokens/s, so ~3000 characters (~750 tokens) keeps answers under a minute.
 export function meetingContext(m: Meeting, question: string, budgetChars = 3000): string {
+  const span = trace.getTracer('liquidchat').startSpan('retrieve meeting', {
+    attributes: {
+      'gen_ai.operation.name': 'retrieve',
+      'liquidchat.retrieval.method': 'bm25',
+      'liquidchat.meeting.id': m.id,
+    },
+  });
+  try {
+    const ctx = buildMeetingContext(m, question, budgetChars);
+    span.setAttribute('liquidchat.retrieval.context_chars', ctx.length);
+    setContent(span, 'liquidchat.retrieval.context', ctx);
+    return ctx;
+  } finally {
+    span.end();
+  }
+}
+
+function buildMeetingContext(m: Meeting, question: string, budgetChars: number): string {
   const head = notes(m).slice(0, Math.floor(budgetChars * 0.45));
   let room = budgetChars - head.length;
   const ranked = rank(question, passages(transcriptLines(m)));

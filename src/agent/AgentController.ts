@@ -5,6 +5,7 @@
  * specific model.
  */
 import { MemoryManager, type MemoryProposal } from '../memory/MemoryManager';
+import { traceAgentRun } from '../observability/spans';
 import type { Tracer } from '../observability/types';
 import { nullTracer } from '../observability/types';
 import type { ApprovalManager } from '../security/ApprovalManager';
@@ -51,7 +52,7 @@ export class AgentControllerImpl implements IAgentController {
       this.deps.newId?.() ??
       `exe_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
     const record = await this.deps.repo.create(id, request);
-    return this.drive(record, onEvent ?? (() => {}), false);
+    return this.traced(record, () => this.drive(record, onEvent ?? (() => {}), false));
   }
 
   async resume(executionId: string, onEvent?: (e: AgentEvent) => void): Promise<AgentResult> {
@@ -60,7 +61,20 @@ export class AgentControllerImpl implements IAgentController {
     if (isTerminal(record.state)) return toResult(record);
     if (this.active.has(executionId))
       throw new AgentError('ALREADY_RUNNING', 'Execution is already running');
-    return this.drive(record, onEvent ?? (() => {}), true);
+    return this.traced(record, () => this.drive(record, onEvent ?? (() => {}), true));
+  }
+
+  /** OpenTelemetry: one invoke_agent span per run (a no-op unless export is on). */
+  private traced(record: ExecutionRecord, run: () => Promise<AgentResult>): Promise<AgentResult> {
+    return traceAgentRun(
+      record.id,
+      {
+        text: record.request.text,
+        source: record.request.source,
+        skillName: record.request.skillId,
+      },
+      run,
+    );
   }
 
   async cancel(executionId: string): Promise<void> {

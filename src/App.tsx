@@ -23,6 +23,7 @@ import { getMeetingSettings } from './meetings/settings';
 import { watchSharedAudio } from './meetings/sharedAudio';
 import type { PickedAudio } from './meetings/types';
 import { autoIndexer } from './memory/autoIndex';
+import { applyOtel } from './observability/otelExport';
 import { platform } from './platform/android';
 import AgentDashboardScreen from './screens/AgentDashboardScreen';
 import AgentInsightsScreen from './screens/AgentInsightsScreen';
@@ -114,6 +115,8 @@ function AppContent() {
 
   useEffect(() => {
     checkEngineMigration();
+    // OpenTelemetry export, if the user turned it on (never throws).
+    applyOtel();
     // Background indexing catches up once the app has settled (not during start-up).
     const indexTimer = setTimeout(() => {
       autoIndexer.sweep().catch(e => console.warn('[LiquidChat] auto-index sweep failed:', e));

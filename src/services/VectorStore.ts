@@ -1,5 +1,7 @@
 import * as RNFS from '@dr.pogodin/react-native-fs';
 
+import { recordScores, withSpan } from '../observability/spans';
+
 export interface VectorEntry {
   id: string;
   text: string;
@@ -150,11 +152,29 @@ export class VectorStore {
     }
   }
 
-  async query(
-    embedding: number[],
-    topK: number = 5,
-    threshold: number = 0.0,
-  ): Promise<SearchResult[]> {
+  query(embedding: number[], topK: number = 5, threshold: number = 0.0): Promise<SearchResult[]> {
+    return withSpan(
+      `query ${this.name}`,
+      {
+        'db.system.name': 'liquidchat.vectorstore',
+        'db.operation.name': 'query',
+        'db.collection.name': this.name,
+        'db.vector.query.top_k': topK,
+        'liquidchat.vectorstore.entries': this.entries.length,
+        'gen_ai.embeddings.dimension.count': embedding.length,
+      },
+      async span => {
+        const top = this.search(embedding, topK, threshold);
+        recordScores(
+          span,
+          top.map(r => r.score),
+        );
+        return top;
+      },
+    );
+  }
+
+  private search(embedding: number[], topK: number, threshold: number): SearchResult[] {
     const scored = this.entries.map(entry => ({
       id: entry.id,
       text: entry.text,

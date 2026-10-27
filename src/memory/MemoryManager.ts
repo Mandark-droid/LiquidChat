@@ -9,6 +9,7 @@
  * Memory is context, never authority: retrieval returns text the controller
  * places in the model context as data, and permissions are unaffected by it.
  */
+import { setContent, withSpan } from '../observability/spans';
 import { fromJson, ftsQuery, getDatabase, type Row, type SqlDb } from '../storage/db';
 
 export type MemoryKind = 'profile' | 'episodic' | 'procedural';
@@ -155,7 +156,26 @@ export class MemoryManager {
   }
 
   /** Full-text retrieval ranked by BM25, nudged by pinning and recency. */
-  async retrieve(query: string, opts: RetrieveOptions = {}): Promise<Memory[]> {
+  retrieve(query: string, opts: RetrieveOptions = {}): Promise<Memory[]> {
+    return withSpan(
+      'retrieve memory',
+      {
+        'gen_ai.operation.name': 'retrieve',
+        'db.system.name': 'sqlite',
+        'db.collection.name': 'memories',
+        'liquidchat.retrieval.method': 'bm25',
+        'db.vector.query.top_k': opts.limit ?? 5,
+      },
+      async span => {
+        setContent(span, 'liquidchat.retrieval.query', query);
+        const found = await this.retrieveRanked(query, opts);
+        span.setAttribute('db.response.returned_rows', found.length);
+        return found;
+      },
+    );
+  }
+
+  private async retrieveRanked(query: string, opts: RetrieveOptions): Promise<Memory[]> {
     const db = await this.db();
     const limit = opts.limit ?? 5;
     const match = ftsQuery(query);

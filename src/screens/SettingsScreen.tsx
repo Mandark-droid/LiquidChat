@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import OtelSettingsCard from '../components/OtelSettingsCard';
 import { theme } from '../config/theme';
 import { memoryManager } from '../memory/MemoryManager';
 import { exportForFineTuning } from '../services/chatExport';
@@ -607,6 +608,8 @@ export default function SettingsScreen({ onOpenModelSelector }: SettingsScreenPr
             )}
           </>,
         )}
+
+        {renderSection('OpenTelemetry Export', <OtelSettingsCard bare />)}
 
         {renderSection(
           'HuggingFace Hub',
