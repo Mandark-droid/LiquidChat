@@ -74,13 +74,29 @@ LLM = AutoModelForMultimodalLM.from_pretrained(LLM_ID, dtype=torch.bfloat16).to(
 # Audio
 
 
+# Real audio/video containers only. Playlists (hls), concat lists and similar formats make ffmpeg open
+# other files or URLs, which a public Space must never do.
+ALLOWED_FORMATS = {"mov", "mp4", "m4a", "3gp", "3g2", "mj2", "mp3", "wav", "ogg", "flac", "aac", "matroska", "webm", "amr", "asf"}
+
+
 def load_audio(path: str) -> np.ndarray:
-    """Any format ffmpeg reads -> 16 kHz mono float32. The upload is deleted right after."""
+    """Any common audio format -> 16 kHz mono float32. The upload is deleted right after."""
+    only_this_file = ["-protocol_whitelist", "file"]
     try:
+        probe = subprocess.run(
+            ["ffprobe", "-v", "error", *only_this_file, "-show_entries", "format=format_name", "-of", "csv=p=0", path],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        formats = set(probe.stdout.strip().split(","))
+        if probe.returncode != 0 or not formats & ALLOWED_FORMATS:
+            raise gr.Error("That file is not a supported recording (m4a, mp3, wav, aac, ogg, flac, webm).")
         raw = subprocess.run(
-            ["ffmpeg", "-nostdin", "-v", "error", "-i", path, "-ac", "1", "-ar", str(RATE), "-f", "f32le", "-"],
+            ["ffmpeg", "-nostdin", "-v", "error", *only_this_file, "-i", path, "-ac", "1", "-ar", str(RATE), "-f", "f32le", "-"],
             check=True,
             capture_output=True,
+            timeout=900,
         ).stdout
     finally:
         try:
