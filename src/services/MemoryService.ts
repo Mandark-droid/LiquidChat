@@ -11,6 +11,18 @@ const RENAMED_EMBED_SLUGS: Record<string, string> = {
 };
 
 export const MAX_CONVERSATIONS = 1500;
+/** The embedding model is released after this long without use. */
+export const EMBED_IDLE_MS = 20_000;
+const MAX_PENDING = 50;
+
+/** The embedding model would not fit next to the loaded chat models right now. */
+export class EmbedderBusyError extends Error {
+  constructor() {
+    super('Not enough memory for the embedding model right now');
+    this.name = 'EmbedderBusyError';
+  }
+}
+
 export const MAX_DOCUMENT_CHUNKS = 3000;
 /** One very long file must not crowd everything else out of the document store. */
 export const MAX_CHUNKS_PER_DOCUMENT = 300;
@@ -95,11 +107,8 @@ class MemoryService {
       }
 
       await this.loadStores();
-
-      // Use ModelLifecycleManager for robust download + native fallback support
+      // The embedding model loads on first use, only when it fits (see embed()).
       if (!modelLifecycle.initialized) await modelLifecycle.init();
-      this.managedModel = await modelLifecycle.ensure(this.modelSlug);
-
       this.initialized = true;
       console.log('[MemoryService] Initialized successfully');
     } catch (e) {
@@ -137,12 +146,55 @@ class MemoryService {
     }
   }
 
+  /**
+   * Embeds with the model loaded on demand. It only loads when it fits in the RAM budget next to
+   * the chat models (loading it anyway got the app killed by Android), and it is released after
+   * EMBED_IDLE_MS without use.
+   */
   private async embed(text: string): Promise<number[]> {
-    if (!this.managedModel?.instance) {
-      throw new Error('Embedding model not initialized');
+    if (!this.managedModel?.instance || modelLifecycle.getModelState(this.modelSlug) !== 'ready') {
+      if (!modelLifecycle.fitsInBudget(this.modelSlug)) throw new EmbedderBusyError();
+      this.managedModel = await modelLifecycle.ensure(this.modelSlug);
+      this.flushPendingSoon();
     }
+    if (!this.managedModel?.instance) throw new Error('Embedding model not initialized');
+    this.scheduleRelease();
     const result = await this.managedModel.instance.embed({ text });
     return result.embedding;
+  }
+
+  private releaseTimer: ReturnType<typeof setTimeout> | null = null;
+
+  private scheduleRelease(): void {
+    if (this.releaseTimer) clearTimeout(this.releaseTimer);
+    this.releaseTimer = setTimeout(() => {
+      this.releaseTimer = null;
+      this.managedModel = null;
+      modelLifecycle.release(this.modelSlug).catch(() => undefined);
+    }, EMBED_IDLE_MS);
+  }
+
+  // Conversations to remember while the embedding model did not fit; embedded on its next load.
+  private pending: { text: string; metadata?: Record<string, any> }[] = [];
+  private flushing = false;
+
+  private flushPendingSoon(): void {
+    if (this.flushing || !this.pending.length) return;
+    this.flushing = true;
+    setTimeout(async () => {
+      try {
+        while (this.pending.length) {
+          const p = this.pending[0];
+          const embedding = await this.embed(p.text);
+          await this.memoryStore.add(generateId(), p.text, embedding, p.metadata);
+          this.pending.shift();
+        }
+      } catch {
+        // Model gone again: the rest wait for the next load.
+      } finally {
+        this.flushing = false;
+      }
+    }, 0);
   }
 
   // === Memory (auto-remember interactions) ===
@@ -150,8 +202,15 @@ class MemoryService {
   async remember(text: string, metadata?: Record<string, any>): Promise<string> {
     await this.ensureInit();
     const id = generateId();
-    const embedding = await this.embed(text);
-    await this.memoryStore.add(id, text, embedding, metadata);
+    try {
+      const embedding = await this.embed(text);
+      await this.memoryStore.add(id, text, embedding, metadata);
+    } catch (e) {
+      if (!(e instanceof EmbedderBusyError)) throw e;
+      this.pending.push({ text, metadata });
+      this.pending = this.pending.slice(-MAX_PENDING);
+      return '';
+    }
     return id;
   }
 

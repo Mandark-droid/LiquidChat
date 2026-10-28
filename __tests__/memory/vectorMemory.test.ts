@@ -144,3 +144,33 @@ describe('chat index privacy', () => {
     expect(JSON.parse(await AsyncStorage.getItem('@liquid_autoindex_v1'))).toEqual({});
   });
 });
+
+describe('embedding model and the RAM budget', () => {
+  it('never loads it over budget: remembers later, and releases it when idle', async () => {
+    jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate'] });
+    const { memoryService, EMBED_IDLE_MS } = require('../../src/services/MemoryService');
+    const { modelLifecycle } = require('../../src/services/ModelLifecycleManager');
+    await memoryService.init();
+    const before = memoryService.getStats().memoryCount;
+
+    const fits = jest.spyOn(modelLifecycle, 'fitsInBudget').mockReturnValue(false);
+    const ensure = jest.spyOn(modelLifecycle, 'ensure');
+    const release = jest.spyOn(modelLifecycle, 'release').mockResolvedValue(undefined);
+    jest.spyOn(modelLifecycle, 'getModelState').mockReturnValue('unloaded');
+    (memoryService as any).managedModel = null;
+    expect(await memoryService.remember('User asked about LiteLLM')).toBe('');
+    expect(ensure).not.toHaveBeenCalled();
+    expect(memoryService.getStats().memoryCount).toBe(before);
+
+    // Room again: the next embedding call loads the model and the queued item is stored too.
+    fits.mockReturnValue(true);
+    await memoryService.remember('User asked about Netscope');
+    await jest.runOnlyPendingTimersAsync();
+    expect(memoryService.getStats().memoryCount).toBe(before + 2);
+
+    await jest.advanceTimersByTimeAsync(EMBED_IDLE_MS + 10);
+    expect(release).toHaveBeenCalledWith('qwen3-embedding-0.6b');
+    jest.restoreAllMocks();
+    jest.useRealTimers();
+  });
+});

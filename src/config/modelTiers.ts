@@ -14,7 +14,8 @@ const MODEL_TIER_CONFIG: Record<string, ModelTier> = {
   'lfm2.5-350m': 'hot',
   // Warm: kept loaded when budget allows
   'whisper-small': 'warm',
-  'qwen3-embedding-0.6b': 'warm',
+  // Loaded per use and released when idle (MemoryService): never worth crowding out a chat model.
+  'qwen3-embedding-0.6b': 'cold',
   'lfm2-vl-450m': 'warm',
   // Cold: loaded on demand, first to evict
   'lfm2-1.2b': 'cold',

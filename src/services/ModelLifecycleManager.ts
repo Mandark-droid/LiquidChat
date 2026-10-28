@@ -250,6 +250,21 @@ class ModelLifecycleManager {
     return this.getLoadedModels().reduce((sum, m) => sum + m.ramMb, 0);
   }
 
+  /**
+   * Whether `slug` can be loaded without going over the RAM budget, counting what could be evicted
+   * (loaded, not hot, not generating). Already loaded counts as yes. Without a device profile, yes.
+   */
+  fitsInBudget(slug: string): boolean {
+    if (!this.profile) return true;
+    if (this.models.get(slug)?.state === 'ready') return true;
+    const def = getModelBySlug(slug);
+    const needed = def ? Math.round(def.sizeMb * RAM_MULTIPLIER) : 500;
+    const evictable = this.getLoadedModels()
+      .filter(m => m.tier !== 'hot' && m.slug !== slug)
+      .reduce((sum, m) => sum + m.ramMb, 0);
+    return this.profile.ramBudgetMb - this.getTotalLoadedRamMb() + evictable >= needed;
+  }
+
   getRamBudgetMb(): number {
     return this.profile?.ramBudgetMb ?? 0;
   }
