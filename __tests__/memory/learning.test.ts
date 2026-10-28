@@ -133,6 +133,28 @@ describe('no duplicate memories', () => {
     expect(await m.list({ kind: 'profile' })).toHaveLength(1);
   });
 
+  it('a merge keeps a sensitive flag, and the user saving it outranks having learned it', async () => {
+    const m = new MemoryManager();
+    await m.create({
+      kind: 'profile',
+      title: '',
+      content: 'Seeing Dr Rao on Fridays',
+      source: 'execution',
+      confidence: 0.6,
+    });
+    const merged = await m.create({
+      kind: 'profile',
+      title: '',
+      content: 'seeing dr rao on fridays',
+      source: 'user',
+      sensitive: true,
+    });
+    expect(merged.sensitive).toBe(true);
+    expect(merged.source).toBe('user');
+    expect(merged.confidence).toBe(1);
+    expect(await m.list({ kind: 'profile' })).toHaveLength(1);
+  });
+
   it('cleans up copies already stored, keeping the user-saved one, and memory-block text', async () => {
     const m = new MemoryManager();
     const db = await (m as any).db();

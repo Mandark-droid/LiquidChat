@@ -94,7 +94,22 @@ export class MemoryManager {
       const tags = [
         ...new Set([...same.tags, ...(input.tags ?? []).map(t => t.trim().toLowerCase())]),
       ];
-      return (await this.update(same.id, { tags, pinned: same.pinned || !!input.pinned })) ?? same;
+      // A merge never loses a sensitive flag, from either side.
+      const sensitive =
+        same.sensitive || (input.sensitive ?? SENSITIVE_RE.test(`${input.title} ${content}`));
+      if (input.source === 'user' && same.source !== 'user') {
+        // The user saying it outranks having learned it.
+        const db = await this.db();
+        await db.execute('UPDATE memories SET source = ?, confidence = ? WHERE id = ?', [
+          'user',
+          Math.max(same.confidence, input.confidence ?? 1),
+          same.id,
+        ]);
+      }
+      return (
+        (await this.update(same.id, { tags, sensitive, pinned: same.pinned || !!input.pinned })) ??
+        same
+      );
     }
     const db = await this.db();
     const now = Date.now();
