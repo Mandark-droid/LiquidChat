@@ -143,6 +143,16 @@ describe('tool relevance for the fast path', () => {
     expect(names('Turn on the flashlight')).toContain('turn_on_flashlight');
     expect(names('Turn on the flashlight').length).toBeLessThanOrEqual(8);
   });
+  it('offers only the flashlight tools for a flashlight request, not ones that share a word fragment', () => {
+    expect(names('Turn on the flashlight').sort()).toEqual([
+      'turn_off_flashlight',
+      'turn_on_flashlight',
+    ]);
+  });
+  it('still offers every close match for a vaguer request', () => {
+    const offered = names('search what we discussed');
+    expect(offered).toEqual(expect.arrayContaining(['meetings.search', 'memory.search']));
+  });
   it('finds alarm and timer tools', () => {
     expect(names('set an alarm for 7am')).toContain('set_alarm');
     expect(names('start a 5 minute timer')).toContain('set_timer');

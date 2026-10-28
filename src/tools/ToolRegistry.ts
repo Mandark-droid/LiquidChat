@@ -106,8 +106,12 @@ export class ToolRegistry {
       }
       return { t, score };
     });
+    // A tool needs at least half the best score: a clear match ("flashlight" in its name) leaves
+    // out tools that only share a fragment of a word ("turn" in "returns"). A small model offered
+    // those as well sometimes answered in prose instead of calling the tool that was asked for.
+    const best = Math.max(0, ...scored.map(s => s.score));
     return scored
-      .filter(s => s.score > 0)
+      .filter(s => s.score > 0 && s.score * 2 >= best)
       .sort((a, b) => b.score - a.score)
       .slice(0, k)
       .map(s => s.t);
