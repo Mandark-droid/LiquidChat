@@ -55,9 +55,14 @@ export async function withSpan<T>(
   fn: (span: Span) => Promise<T>,
   parent?: Context,
 ): Promise<T> {
-  const span = trace
-    .getTracer(TRACER)
-    .startSpan(name, { attributes: clean(attrs) }, parent ?? context.active());
+  const outer = parent ?? context.active();
+  const span = trace.getTracer(TRACER).startSpan(name, { attributes: clean(attrs) }, outer);
+  // Active for everything fn awaits, so the SDK's model-call spans (a Cactus completion or
+  // transcription) become children of this span rather than traces of their own.
+  return context.with(trace.setSpan(outer, span), () => runInSpan(span, fn));
+}
+
+async function runInSpan<T>(span: Span, fn: (span: Span) => Promise<T>): Promise<T> {
   try {
     const result = await fn(span);
     return result;

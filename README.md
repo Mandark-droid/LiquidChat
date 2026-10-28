@@ -177,9 +177,11 @@ Arize accepts OTLP/HTTP directly:
 
 Both values are in Arize under **Settings → API Keys** (the space ID is also in the space URL). They are saved encrypted on the phone and never written to logs or spans.
 
-Arize files every trace under a **project** and rejects traces that don't name one (`HTTP 400: trace export requires project routing`). For an Arize endpoint, LiquidChat adds `x-project-name=liquidchat` automatically. To use a different project, add your own `x-project-name=<project>` to the headers.
+The export SDK handles what Arize needs, so nothing else has to be configured:
 
-Arize classifies spans by the OpenInference attribute `openinference.span.kind`. Every span LiquidChat exports carries it next to the GenAI attributes (`AGENT`, `TOOL`, `LLM` for completions and transcription, `EMBEDDING`, `RETRIEVER`, `CHAIN` for pipelines and model loads), along with `llm.model_name`, `llm.token_count.*`, `input.value` and `output.value`. Without these, Arize shows the span kind as *unknown*.
+- **Project.** Arize files every trace under a project and rejects traces that name none (`HTTP 400: trace export requires project routing`). The SDK puts `openinference.project.name` (here `liquidchat`) on every trace. To use a different project, add `x-project-name=<project>` to the headers.
+- **Span kinds.** Arize classifies spans by `openinference.span.kind`. The SDK sets it on every span next to the GenAI attributes: `AGENT`, `TOOL`, `LLM` for completions and transcription, `EMBEDDING`, `RETRIEVER`, and `CHAIN` for pipelines and model loads. Without it, Arize shows the span kind as *unknown*.
+- **Nesting.** Model calls nest under the agent run, tool call or meeting pipeline that made them, so a meeting is one trace rather than one per transcription.
 
 To check your keys from a computer before configuring the phone:
 

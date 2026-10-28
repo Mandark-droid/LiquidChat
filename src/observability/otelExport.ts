@@ -20,7 +20,6 @@ import { AppState } from 'react-native';
 
 import { isSafeBaseUrl } from '../inference/ModelRegistry';
 import { credentials } from '../platform/android';
-import { OpenInferenceSpanProcessor } from './openinference';
 import { setContentCapture } from './spans';
 
 const KEY = '@liquid_otel_v1';
@@ -55,22 +54,6 @@ export function parseHeaders(raw: string): Record<string, string> {
     if (k && v) out[k] = v;
   }
   return out;
-}
-
-/**
- * Arize rejects traces it cannot file under a project (HTTP 400, "requires project routing"). Unless
- * the user named one, an Arize endpoint gets the project "liquidchat".
- */
-export function withProjectRouting(endpoint: string, headers: Record<string, string>) {
-  let host = '';
-  try {
-    host = new URL(endpoint.trim()).hostname;
-  } catch {
-    return headers;
-  }
-  const isArize = host === 'arize.com' || host.endsWith('.arize.com');
-  const named = Object.keys(headers).some(k => k.toLowerCase() === 'x-project-name');
-  return isArize && !named ? { ...headers, 'x-project-name': 'liquidchat' } : headers;
 }
 
 /** https only, except a collector on this phone, the PC (adb reverse) or the local network. */
@@ -173,15 +156,9 @@ export async function applyOtel(s?: OtelSettings): Promise<boolean> {
       serviceName: 'liquidchat',
       endpoint: settings.endpoint.trim(),
       fetch: mirrorOk
-        ? mirroringFetch(
-            settings.endpoint,
-            mirror,
-            withProjectRouting(mirror, parseHeaders(await getOtelMirrorHeaders())),
-          )
+        ? mirroringFetch(settings.endpoint, mirror, parseHeaders(await getOtelMirrorHeaders()))
         : undefined,
-      headers: withProjectRouting(settings.endpoint, parseHeaders(await getOtelHeaders())),
-      // Span kinds and llm.* attributes for OpenInference backends (Arize shows "unknown" without).
-      spanProcessors: [new OpenInferenceSpanProcessor()],
+      headers: parseHeaders(await getOtelHeaders()),
       enableContentCapture: settings.captureContent,
       // Flush when the app leaves the foreground: a backgrounded app can be killed.
       appState: AppState,
