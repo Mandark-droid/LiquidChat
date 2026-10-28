@@ -9,6 +9,7 @@ import {
   getOtelHeaders,
   getOtelMirrorHeaders,
   getOtelSettings,
+  nextHeaders,
   type OtelSettings,
   saveOtelSettings,
 } from '../observability/otelExport';
@@ -21,11 +22,17 @@ export default function OtelSettingsCard({ bare = false }: { bare?: boolean }) {
   const [hasHeaders, setHasHeaders] = useState(false);
   const [mirrorHeaders, setMirrorHeaders] = useState('');
   const [hasMirrorHeaders, setHasMirrorHeaders] = useState(false);
+  const [removeHeaders, setRemoveHeaders] = useState(false);
+  const [removeMirrorHeaders, setRemoveMirrorHeaders] = useState(false);
+  const [saved, setSaved] = useState<OtelSettings>(DEFAULT_OTEL);
   const [dirty, setDirty] = useState(false);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    getOtelSettings().then(setS);
+    getOtelSettings().then(v => {
+      setS(v);
+      setSaved(v);
+    });
     getOtelHeaders().then(h => setHasHeaders(!!h));
     getOtelMirrorHeaders().then(h => setHasMirrorHeaders(!!h));
   }, []);
@@ -46,15 +53,21 @@ export default function OtelSettingsCard({ bare = false }: { bare?: boolean }) {
     }
     setBusy(true);
     try {
-      await saveOtelSettings(
-        s,
-        headers.trim() ? headers : null,
-        mirrorHeaders.trim() ? mirrorHeaders : null,
+      const mainHeaders = nextHeaders(headers, removeHeaders, saved.endpoint, s.endpoint);
+      const secondHeaders = nextHeaders(
+        mirrorHeaders,
+        removeMirrorHeaders,
+        saved.mirrorEndpoint,
+        s.mirrorEndpoint,
       );
-      if (headers.trim()) setHasHeaders(true);
-      if (mirrorHeaders.trim()) setHasMirrorHeaders(true);
+      await saveOtelSettings(s, mainHeaders, secondHeaders);
+      if (mainHeaders !== null) setHasHeaders(!!mainHeaders.trim());
+      if (secondHeaders !== null) setHasMirrorHeaders(!!secondHeaders.trim());
       setHeaders('');
       setMirrorHeaders('');
+      setRemoveHeaders(false);
+      setRemoveMirrorHeaders(false);
+      setSaved(s);
       setDirty(false);
     } finally {
       setBusy(false);
@@ -102,9 +115,21 @@ export default function OtelSettingsCard({ bare = false }: { bare?: boolean }) {
         }}
         autoCapitalize="none"
         secureTextEntry
-        placeholder={hasHeaders ? '•••• saved (type to replace)' : 'Authorization=Bearer …'}
-        hint="Comma-separated key=value, e.g. for an API key. Stored in Android Keystore-encrypted storage."
+        placeholder={
+          hasHeaders && !removeHeaders ? '•••• saved (type to replace)' : 'Authorization=Bearer …'
+        }
+        hint="Comma-separated key=value, e.g. for an API key. Stored in Android Keystore-encrypted storage, and removed if the URL moves to another host."
       />
+      {hasHeaders ? (
+        <RemoveHeaders
+          pending={removeHeaders}
+          onPress={() => {
+            setRemoveHeaders(true);
+            setHeaders('');
+            setDirty(true);
+          }}
+        />
+      ) : null}
       <Field
         label="Second destination (optional)"
         value={s.mirrorEndpoint}
@@ -124,8 +149,22 @@ export default function OtelSettingsCard({ bare = false }: { bare?: boolean }) {
           }}
           autoCapitalize="none"
           secureTextEntry
-          placeholder={hasMirrorHeaders ? '•••• saved (type to replace)' : 'Authorization=Bearer …'}
+          placeholder={
+            hasMirrorHeaders && !removeMirrorHeaders
+              ? '•••• saved (type to replace)'
+              : 'Authorization=Bearer …'
+          }
           hint="Comma-separated key=value. Stored in Android Keystore-encrypted storage."
+        />
+      ) : null}
+      {s.mirrorEndpoint.trim() && hasMirrorHeaders ? (
+        <RemoveHeaders
+          pending={removeMirrorHeaders}
+          onPress={() => {
+            setRemoveMirrorHeaders(true);
+            setMirrorHeaders('');
+            setDirty(true);
+          }}
         />
       ) : null}
       <ToggleRow
@@ -158,5 +197,21 @@ export default function OtelSettingsCard({ bare = false }: { bare?: boolean }) {
       <SectionTitle>OpenTelemetry export</SectionTitle>
       <Card>{body}</Card>
     </>
+  );
+}
+
+function RemoveHeaders({ pending, onPress }: { pending: boolean; onPress: () => void }) {
+  return pending ? (
+    <Text style={[ui.muted, { marginTop: -4, marginBottom: 8 }]}>
+      Saved headers will be removed when you save.
+    </Text>
+  ) : (
+    <Text
+      style={[ui.muted, { marginTop: -4, marginBottom: 8, textDecorationLine: 'underline' }]}
+      onPress={onPress}
+      accessibilityRole="button"
+    >
+      Remove saved headers
+    </Text>
   );
 }

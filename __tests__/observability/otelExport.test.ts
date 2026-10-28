@@ -22,6 +22,7 @@ import * as sdk from '@traceverse/genai-otel-instrument-node/react-native';
 import {
   applyOtel,
   endpointProblem,
+  nextHeaders,
   parseHeaders,
   saveOtelSettings,
 } from '../../src/observability/otelExport';
@@ -84,5 +85,16 @@ describe('OpenTelemetry export settings', () => {
         enableContentCapture: true,
       }),
     );
+  });
+
+  it('saved headers stay with their backend: removed on request or when the endpoint moves host', () => {
+    const arize = 'https://otlp.arize.com';
+    const ngrok = 'https://x.ngrok-free.dev';
+    expect(nextHeaders('api_key=new', false, arize, arize)).toBe('api_key=new');
+    expect(nextHeaders('', false, arize, `${arize}/`)).toBeNull(); // same host: keep
+    expect(nextHeaders('', false, arize, ngrok)).toBe(''); // another host: never sent there
+    expect(nextHeaders('', true, arize, arize)).toBe(''); // asked to remove
+    expect(nextHeaders('', false, ngrok, '')).toBe(''); // destination cleared
+    expect(nextHeaders('', false, '', arize)).toBeNull(); // first save, nothing typed
   });
 });

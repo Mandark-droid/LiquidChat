@@ -76,6 +76,28 @@ export async function getOtelMirrorHeaders(): Promise<string> {
   return (await credentials.get(MIRROR_HEADERS_KEY).catch(() => null)) ?? '';
 }
 
+function hostOf(url: string): string {
+  const m = /^[a-z]+:\/\/([^/:?#]+)/i.exec(url.trim());
+  return m ? m[1].toLowerCase() : url.trim().toLowerCase();
+}
+
+/**
+ * What to store for a destination's headers on save: what was typed; '' (remove) when the user
+ * asked, the destination was cleared, or its endpoint moved to another host, since saved headers
+ * belong to the backend they were entered for and must never be sent to another; else null (keep).
+ */
+export function nextHeaders(
+  typed: string,
+  remove: boolean,
+  savedEndpoint: string,
+  newEndpoint: string,
+): string | null {
+  if (typed.trim()) return typed;
+  if (remove || !newEndpoint.trim()) return '';
+  if (savedEndpoint.trim() && hostOf(savedEndpoint) !== hostOf(newEndpoint)) return '';
+  return null;
+}
+
 async function storeHeaders(key: string, headers: string | null): Promise<void> {
   if (headers === null) return;
   if (headers.trim()) await credentials.set(key, headers.trim());
