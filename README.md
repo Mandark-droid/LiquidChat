@@ -1,376 +1,266 @@
 <p align="center">
-  <img src="LiquidChatIcon.jpg" width="200" alt="LiquidChat Icon"/>
+  <img src="LiquidChatIcon.jpg" width="180" alt="LiquidChat icon"/>
 </p>
 
 <h1 align="center">LiquidChat</h1>
 
 <p align="center">
-  Fully local personal agent — on-device LLM inference with real native Android tool execution.
+  <b>A personal agent that lives on your phone.</b><br/>
+  Liquid AI's LFM2.5 models chat, plan, use tools, transcribe meetings and remember things on the device, with no cloud account needed.
 </p>
 
 <p align="center">
-  <a href="https://www.liquid.ai"><img src="https://img.shields.io/badge/Powered%20by-Liquid%20AI-6366f1?style=flat-square" alt="Liquid AI"/></a>
-  <a href="https://github.com/cactus-compute/cactus"><img src="https://img.shields.io/badge/Runtime-Cactus%20Engine-22c55e?style=flat-square" alt="Cactus Engine"/></a>
-  <a href="https://huggingface.co/kshitijthakkar"><img src="https://img.shields.io/badge/Models-Hugging%20Face-ff9d00?style=flat-square&logo=huggingface&logoColor=white" alt="Hugging Face"/></a>
-  <img src="https://img.shields.io/badge/Platform-Android-3ddc84?style=flat-square&logo=android&logoColor=white" alt="Android"/>
-  <img src="https://img.shields.io/badge/React%20Native-0.81.1-61dafb?style=flat-square&logo=react&logoColor=white" alt="React Native"/>
+  <a href="https://www.liquid.ai"><img src="https://img.shields.io/badge/Powered%20by-Liquid%20AI%20LFM2.5-6366f1?style=flat-square" alt="Powered by Liquid AI"/></a>
+  <a href="https://github.com/cactus-compute/cactus"><img src="https://img.shields.io/badge/Runtime-Cactus%201.13-22c55e?style=flat-square" alt="Cactus engine"/></a>
+  <a href="https://huggingface.co/spaces/kshitijthakkar/LiquidChat"><img src="https://img.shields.io/badge/HF%20Space-LiquidChat-ff9d00?style=flat-square&logo=huggingface&logoColor=white" alt="LiquidChat Space"/></a>
+  <a href="https://www.npmjs.com/package/@traceverse/genai-otel-instrument-node"><img src="https://img.shields.io/badge/OpenTelemetry-GenAI%20semconv-425cc7?style=flat-square&logo=opentelemetry&logoColor=white" alt="OpenTelemetry"/></a>
+  <img src="https://img.shields.io/badge/Android-7%2B-3ddc84?style=flat-square&logo=android&logoColor=white" alt="Android 7+"/>
+  <a href="https://github.com/Mandark-droid/LiquidChat/releases/latest"><img src="https://img.shields.io/github/v/release/Mandark-droid/LiquidChat?style=flat-square" alt="Latest release"/></a>
 </p>
 
 <p align="center">
-  <img src="docs/demo/liquidchat-v1.1-demo.gif" width="300" alt="LiquidChat v1.1 demo: streaming chat, model routing, Hugging Face search, speaker-labelled meeting minutes, creating and running a skill, agent dashboard"/>
+  <img src="docs/demo/liquidchat-v1.1-demo.gif" width="300" alt="LiquidChat demo: streaming chat, model routing, Hugging Face search, speaker-labelled meeting minutes, creating and running a skill, agent dashboard"/>
   <br/>
-  <sub>v1.1 on a Nothing Phone 2a, sped up: chat on LFM2.5-350M → tool request routed to LFM2.5-1.2B (Hugging Face search) → 5-speaker meeting with owners → a skill created from one sentence and run → loaded models and MCP settings.</sub>
+  <sub>On a Nothing Phone 2a (sped up): chat on LFM2.5-350M → a tool request routed to LFM2.5-1.2B → a 5-speaker meeting with owners → a skill created from one sentence → the agent dashboard.</sub>
 </p>
 
 ---
 
-## Overview
+## Why LiquidChat
 
-LiquidChat is a React Native mobile application and personal agent platform built on the [Cactus React Native](https://github.com/cactus-compute/cactus) inference engine. All model execution happens entirely on-device — no cloud APIs, no network required.
+Most "AI assistants" are a thin client over someone else's GPU. LiquidChat shows how far a phone can go on its own with small, fast foundation models:
 
-The working prototype (v0.x) demonstrates the core loop: a LoRA fine-tuned LFM2.5-1.2B-Instruct model translates natural language into structured function calls that execute real Android device actions. The v1.0 roadmap expands this into a full multi-model orchestrator with voice input, vision pipeline, persistent semantic memory, and 30+ native tools.
+- **Private by default.** Chat, tool calls, meeting audio, transcripts, memory and documents stay on the phone. Nothing leaves unless you configure a destination and allow it.
+- **Fast enough to feel native.** LFM2.5-350M answers casual chat with the first token in about a second. LFM2.5-1.2B handles tool calls and planning. A router picks the model for each step.
+- **It does things.** The phone runs 35+ real Android actions (flashlight, alarms, DnD, Bluetooth, calendar, contacts, settings, UI automation) behind a permission gateway.
+- **Bigger models only when you choose them.** For long meetings or hard questions, the free [LiquidChat Hugging Face Space](https://huggingface.co/spaces/kshitijthakkar/LiquidChat) runs on *your* ZeroGPU quota. Anyone who forks the app can do the same.
+- **You can see every step.** Every model call, agent run, tool, MCP call, retrieval and meeting can be exported as OpenTelemetry spans to your own backend.
 
-> **Current release: v1.2**
-> A local-first agent: streaming on-device chat, 35+ native tools, a permission-gated multi-step agent runtime with visible plans, meeting recording with speaker-labelled transcripts and client-ready minutes (on the phone, or high accuracy on your own free Hugging Face Space), memory and document search, tasks, an email drafter, MCP servers (Hugging Face built in) and OpenTelemetry export. See [What's new in v1.2](#whats-new-in-v12).
+## Get started in two minutes
 
-## What's new in v1.2
+1. Download the APK from the [latest release](https://github.com/Mandark-droid/LiquidChat/releases/latest) (or `release/LiquidChat.apk`) and install it on Android 7+.
+2. Open **Models** and download **LFM2.5-350M** and **LFM2.5-1.2B-Instruct**. The download is about 1 GB on Wi-Fi.
+3. Start a chat. Try *"Turn on the flashlight"*, *"Remember that I prefer meetings at 11 am"*, or *"Search Hugging Face for LFM2 models"*.
+4. Optional: open **Meetings → ⏺** and record your next meeting.
 
-**Meetings: high-accuracy mode on your own LiquidChat Space**
-- **[LiquidChat Space](https://huggingface.co/spaces/kshitijthakkar/LiquidChat)** (source in `space/`): speakers first (Silero VAD + WeSpeaker clustering), then each speaker turn is transcribed by Whisper (a Hindi/English fine-tune, or large-v3) and Gemma 4 12B writes the minutes. A 52-minute Hinglish meeting takes about 5 minutes instead of an hour, with names, owners and real action items. It runs on ZeroGPU with *your* Hugging Face token, so it is free within your daily quota; only open, ungated models; the Space keeps nothing.
-- **Meeting settings → Processing:** on this phone (default, private and offline) or the LiquidChat Space, with automatic fallback to the phone; or *⋯ → Process with LiquidChat Space* on any meeting. "Regenerate minutes" in Space mode reuses the transcript.
-- **Share or save a recording** as one M4A file for other tools.
-- **Ask about this meeting** works: answers come from the minutes and the passages that match the question (Gemma 4 reads the whole meeting in Space mode).
+## What it can do
 
-**Agent, memory and search**
-- **Every step is visible:** replies that used tools or several steps keep the plan: the goal, each step (🔧 tool with its arguments, 🧠 reasoning/summarizing), ✓/✗ and the result.
-- **Memory and document search that work:** "remember that …" is saved at once; replies use saved memories, similar earlier conversations and matching passages from imported documents and meetings. Meetings are indexed in the background; stores are capped and evict least-recently-used entries; deleting a meeting removes it from the index.
-- The on-device model now reads prompts up to 4,096 tokens (it only saw the last 512 before).
-- **Insights → Kept on this phone:** tokens processed on-device versus sent to cloud models, and the cost avoided.
-- The LiquidChat Space can also serve as a free cloud model (Gemma 4) in Agent settings, under your cloud privacy rules.
+### Chat and agent
+- **Streaming on-device chat** with live tokens, tokens/s and time to first token.
+- **Per-step model routing.** Chat stays on LFM2.5-350M. Tools, planning and structured output go to LFM2.5-1.2B-Instruct. With your approval, a single hard reasoning step can go to a cloud model you configured (Anthropic, OpenAI-compatible, Gemini, or the LiquidChat Space). Routing considers battery, heat and RAM.
+- **Multi-step agent runtime.**
+  - Plans are validated, run through a permission gateway, verified (DnD is read back after enabling it) and retried.
+  - Runs can be cancelled, and they resume after the app is killed without repeating a send.
+  - Each step is shown in the chat: the goal, 🔧 tools with their arguments, 🧠 reasoning, ✓/✗ and the result.
+- **Skills and routines.** Five built-in skills: meeting prep, morning brief, focus mode, meeting follow-up and end of day. You can also describe a new one in a sentence. Skills are declarative and cannot run code.
+- **MCP servers.** The read-only Hugging Face MCP server is preinstalled. Add any other server in Agent settings.
 
-**OpenTelemetry**
-- **Settings → OpenTelemetry Export** (off by default): spans for every on-device model call, agent run, skill, tool and MCP call, retrieval, vector-store query, Space call and meeting, sent over OTLP/HTTP to your collector, via [`@traceverse/genai-otel-instrument-node`](https://mandark-droid.github.io/genai-otel-instrument-node-docs/). Prompts, results and transcripts are included only if you turn that on.
+### Meetings
+- **Record, upload or share audio.** A foreground service records 16 kHz audio and transcribes it while the meeting is still going, with Whisper, Parakeet TDT v3 or Moonshine. Language is auto-detected (good with Hindi/English code-switching) and translated to English by default.
+- **Speakers and owners.** Voice fingerprints separate speakers. Names come from introductions. Action-item owners come from who actually said "I'll…".
+- **Client-ready minutes.** Summary, decisions, open questions, next steps and action items with real due dates. Export as PDF, Word, Markdown or text, or email them to attendees.
+- **High-accuracy mode on the LiquidChat Space** (optional, free with your HF token): Silero VAD + WeSpeaker diarization, Whisper per speaker turn, and Gemma 4 12B for the minutes. A 52-minute Hinglish meeting takes about 5 minutes. If the Space is unavailable, processing falls back to the phone. Source is in [`space/`](space/).
+- **Ask about a meeting.** Answers come from the minutes and the passages that match your question.
 
-**Fixes**
-- Tool calls run once, from one gated place (a tool could run twice, and reopening a chat could re-run old calls); retrieved text never triggers tools; personal data sent to a network tool always asks.
-- Recorder *Stop* label no longer clipped; a missing meeting no longer spins forever.
+### Memory and documents
+- *"Remember that…"* saves a memory immediately. Replies draw on saved memories, similar past conversations, and passages from imported documents and meetings, all embedded on the device with Qwen3-Embedding-0.6B.
+- Indexing runs in the background with capped stores and least-recently-used eviction. Deleting a meeting removes it from the index.
+- The embedding model loads only when it fits next to the chat models and is released when idle, so memory never pushes the app over its RAM budget.
 
-## What's new in v1.1
+### Tasks, email and the rest
+- **Tasks:** one list for your to-dos and every meeting's action items, with natural-language quick add (`send Acme proposal by Friday !high @Acme`).
+- **Email drafter:** follow-ups, new emails and replies, with a tone you choose.
+- **Agent Insights:** completion, routing, latency, cost, and **Kept on this phone**, which counts tokens processed on-device versus sent to the cloud and the cost avoided.
 
-**Chat & agent**
-- **Fast, streaming chat.** Plain conversation answers directly with a short prompt and streams tokens (first word in about a second on a mid-range phone). Tool and task requests go to the agent runtime. Live tokens, speed and time-to-first-token are shown.
-- **Smarter tool use.** The agent asks for details it wasn't given (an email address, a phone number) instead of inventing them; near-miss tool names from small models are repaired; alarms, timers, contacts and settings pages work on Android 11+ (they were silently failing).
-- **Hugging Face MCP server built in.** Search models, datasets and Spaces and read repo details from chat; uses your Hugging Face token if you saved one. Add any other MCP server in Agent settings.
-- **Task-based model routing.** Quick chat replies stay on the small LFM2.5-350M; tool calls, planning and structured work go to LFM2.5-1.2B. Only tools relevant to the request are sent to the model, which cut the wait before the first word from ~17 s to ~6 s.
-- **Skills from one sentence.** "Every evening summarize my open tasks" becomes a reviewed, schedulable skill in seconds; the five built-in skills (meeting prep, morning brief, focus mode, meeting follow-up, end of day) are unchanged.
-- **Updated model weights.** Chat, speech, embedding and speaker models use the v1.14 weights that match the Cactus 1.13 engine; the app replaces older copies once.
+## The models
 
-**Meetings**
-- **Speaker identification.** Voice fingerprints separate speakers; names come from introductions ("I'm Priya") and from who answers whom; rename a speaker once and every line and the minutes follow. Action-item owners come from who actually said "I'll…".
-- **Upload or share a recording.** Pick any audio or video file (m4a, aac, mp3, wav, ogg, opus, amr, 3gp, mp4) or use *Share → LiquidChat* from your recorder app, then get the transcript and minutes.
-- **Auto-detect language, translate to English by default** (Whisper; Hindi/English code-switching), with an English fallback.
-- **Every exported MoM carries the LiquidChat footer** — logo, name and "Generated using LiquidChat" — on PDF, Word, Markdown and shared text.
-- Hardened transcription: loops, punctuation stalls and copied template text are filtered, with a sampling retry.
+| Role | Model | Where it runs |
+|---|---|---|
+| Chat | [LFM2.5-350M](https://huggingface.co/LiquidAI/LFM2.5-350M) | Phone (always loaded) |
+| Tools, planning, structured output | [LFM2.5-1.2B-Instruct](https://huggingface.co/LiquidAI/LFM2.5-1.2B-Instruct) | Phone (always loaded) |
+| Mobile-actions fine-tune | [LFM2.5-1.2B-Instruct-mobile-actions](https://huggingface.co/kshitijthakkar/LFM2.5-1.2B-Instruct-mobile-actions) | Phone |
+| Reasoning, vision, larger chat | LFM2.5-1.2B-Thinking, LFM2-VL-450M, LFM2.5-VL-1.6B, LFM2-2.6B, LFM2-8B-A1B | Phone, loaded on demand |
+| Speech to text | Whisper (small/medium), Parakeet TDT v3, Moonshine | Phone |
+| Embeddings | Qwen3-Embedding-0.6B | Phone, loaded per use |
+| Diarization, long-form ASR, minutes | Silero VAD, WeSpeaker, Whisper large-v3 / Hinglish fine-tune, Gemma 4 12B | LiquidChat Space (optional) |
 
-**Tasks, email & the rest**
-- Tasks: calendar hand-off works, due dates and quick-add are reliable, editing sheet fixed. Email drafter uses a model that fits in memory and never leaves `[Your Name]` placeholders.
-- Speech speed setting (text-to-speech was playing at about 3×).
-- Text no longer clips under Android's *Bold text* setting; bottom bars clear the navigation bar; every dialog closes with Back; long menus use a proper sheet; Back navigates instead of exiting.
+All on-device models run on the [Cactus](https://github.com/cactus-compute/cactus) engine (INT4/INT8). The prompt window is raised to 4,096 tokens.
 
-## How It Works
+`ModelLifecycleManager` keeps the two LFM2.5 models resident and loads everything else on demand. It evicts least-recently-used models to stay within a RAM budget it picks for each device class.
 
-1. User sends a natural language command (e.g., *"Turn on the flashlight"*)
-2. The on-device LLM processes the request with tool definitions in the system prompt
-3. The model outputs a structured function call (e.g., `[{"name": "turn_on_flashlight", "arguments": {}}]`)
-4. The app parses the function call and executes the real native Android action
-5. The tool result is displayed in the chat
+**Fine-tuning.** The mobile-actions model was trained with LoRA (r=16, α=16) via Unsloth on Hugging Face Jobs, using [31,550 examples](https://huggingface.co/datasets/kshitijthakkar/liquidchat-lora-dataset). Three Claude Code skills in `.claude/skills/` automate the loop from training to the Cactus format to the APK: `/unsloth-jobs-training`, `/lora-to-cactus-hub` and `/build-apk-liquidchat`. Chats can be exported as JSONL datasets to feed the next round.
 
-## Tools
+LFM3 will be added as soon as Cactus can run it.
 
-### Core tools
+## Observability with OpenTelemetry
 
-| Tool | Description | Implementation |
-|------|-------------|----------------|
-| `turn_on_flashlight` | Turns the device flashlight on | `react-native-torch` |
-| `turn_off_flashlight` | Turns the device flashlight off | `react-native-torch` |
-| `open_wifi_settings` | Opens Android Wi-Fi settings | `Linking.sendIntent` |
-| `create_calendar_event` | Creates a calendar event | Calendar content intent |
-| `send_email` | Composes an email | `mailto:` URL scheme |
-| `show_map` | Shows a location on the map | `geo:` URL scheme |
-| `create_contact` | Creates a new contact | Contacts content intent |
+LiquidChat exports traces and metrics over **OTLP/HTTP** using [`@traceverse/genai-otel-instrument-node`](https://www.npmjs.com/package/@traceverse/genai-otel-instrument-node) ([docs](https://mandark-droid.github.io/genai-otel-instrument-node-docs/)). Spans follow the OpenTelemetry GenAI semantic conventions, so any OTLP backend can read them. Export is **off by default**.
 
-### System controls
+### What gets traced
 
-| Tool | Description |
-|------|-------------|
-| `set_brightness` | Set screen brightness (0–100) |
-| `set_volume` | Set volume for a given stream |
-| `toggle_bluetooth` | Enable/disable Bluetooth |
-| `toggle_airplane_mode` | Toggle airplane mode |
-| `toggle_dnd` | Toggle Do Not Disturb |
-| `set_alarm` | Set an alarm by time and label |
-| `set_timer` | Start a countdown timer |
-| `take_screenshot` | Capture the current screen |
-| `toggle_rotation_lock` | Lock/unlock screen rotation |
-| `open_settings_page` | Open any Android settings page |
+| Span | What it covers |
+|---|---|
+| `cactus.complete`, `cactus.embed`, `cactus.stt.transcribe`, `cactus.init`, `cactus.download` | Every on-device model call: tokens, time to first token, decode speed, memory, tool calls |
+| `invoke_agent liquidchat` / `invoke_agent skill:<name>` | One agent run or skill, the parent of its steps |
+| `execute_tool <tool>` | A tool call through the permission gateway; MCP calls carry `mcp.server.name` |
+| `retrieve memory`, `retrieve chat_context`, `retrieve` | Memory, chat-context and meeting retrieval |
+| `query <store>` | Vector-store searches with `rag.result.score_max/min/mean/margin` |
+| `hf_space <api>` | Calls to the LiquidChat Space |
+| `meeting.process`, `meeting.process_space` | The meeting pipeline, on the phone or on the Space |
+| Remote model calls | Cloud and Space chat calls, with the same token and cost attributes |
 
-### UI automation (sideload build)
+Prompts, replies, tool arguments and results, and transcripts are attached **only** when *Include prompts and replies* is on. Error messages follow the same rule; otherwise only the error type is sent.
 
-`tap_element`, `long_press_element`, `scroll_screen`, `swipe_screen`, `type_text`, `read_screen`, `find_element`, `go_back`, `go_home` and `open_recents` run through an Android Accessibility Service. They are only in the `full` flavor; the `play` flavor (Play Store policy) does not declare the service.
+### Settings → OpenTelemetry Export
 
-### Agent, memory and context tools
+| Field | What to enter |
+|---|---|
+| **Export telemetry** | On to start exporting |
+| **Collector URL** | The OTLP/HTTP base URL. The app adds `/v1/traces` and `/v1/metrics`. Use `https://`; plain `http://` is accepted only for a collector on your local network. |
+| **Headers** | Comma-separated `key=value` pairs (the `OTEL_EXPORTER_OTLP_HEADERS` format). Stored in Android Keystore-encrypted storage; the field shows only `•••• saved` afterwards. |
+| **Include prompts and replies** | Adds message text, tool I/O and transcripts to spans |
+| **Send now** / **Save** | Flush buffered telemetry immediately / apply the settings |
 
-`tasks.add`, `tasks.list`, `meetings.latest`, `meetings.search`, `memory.search`, `memory.remember`, `device.context`, `notifications.recent`, `time.now`, `dates.resolve` — plus any tools from connected MCP servers.
+The app also flushes whenever it goes to the background.
 
-### Planned
+### Route 1: your own OpenTelemetry Collector (standard OTLP)
 
-- **App navigation:** launch apps, open URLs, share text, web search, phone calls, SMS, file open, set wallpaper
+Any collector with the OTLP/HTTP receiver works:
 
-## Model Details
-
-| Parameter | Value |
-|-----------|-------|
-| **Base model** | [LiquidAI/LFM2.5-1.2B-Instruct](https://huggingface.co/LiquidAI/LFM2.5-1.2B-Instruct) |
-| **Fine-tuned model** | [kshitijthakkar/LFM2.5-1.2B-Instruct-mobile-actions](https://huggingface.co/kshitijthakkar/LFM2.5-1.2B-Instruct-mobile-actions) |
-| **Training dataset** | [kshitijthakkar/liquidchat-lora-dataset](https://huggingface.co/datasets/kshitijthakkar/liquidchat-lora-dataset) (31,550 train / 643 eval) |
-| **Method** | SFT with LoRA (r=16, alpha=16) via Unsloth on HF Jobs |
-| **Eval accuracy** | 100% on 20 held-out examples |
-| **Training scripts** | [GitHub](https://github.com/Mandark-droid/LFM2.5-1.2B-Instruct-mobile-actions) |
-
-## Meetings, Tasks & Email (new)
-
-Everything below runs on the phone; audio, transcripts and drafts never leave it.
-
-- **Meeting recorder** — tap record, lock the phone. A foreground service captures 16 kHz mono audio, cuts it into ~20–30 s segments at pauses, and transcribes each one while the meeting is still going (Whisper, Parakeet TDT v3 or Moonshine). Client and attendee names are fed to Whisper as context; Language is auto-detected per segment and translated to English by default (Hindi, Marathi, Gujarati, Tamil, Telugu, Bengali and more with Whisper). Pause/resume/stop from the notification; mark important moments with ★.
-- **Minutes of meeting** — when you stop, an on-device LLM writes a summary, key points, decisions, open questions, next steps and action items (owner + due date, "by Friday" resolved to a real date). Long meetings are summarised in windows and merged. Everything is editable before it goes to a client.
-- **Speaker identification** — each transcript line carries a speaker; names are suggested from introductions and attendee lists, can be renamed in one tap, and action-item owners come from who spoke.
-- **Upload or share recordings** — pick an audio/video file (including `.aac`/`.m4a` from your phone's recorder) or share it to LiquidChat, then get a transcript and minutes.
-- **Import transcripts** — paste from Zoom, Google Meet, Teams, Otter or a `.vtt` file and get the same minutes.
-- **Client-ready documents** — export the MoM as **PDF**, **Word (.docx)**, Markdown or text, with a LiquidChat footer on every export — logo, name and *Generated using LiquidChat* (optional organisation letterhead in Meeting settings). Share to any app, save to `Downloads/LiquidChat`, or email it to attendees with the file attached.
-- **Tasks** — one list for your own to-dos and every meeting's action items. Natural-language quick add (`send Acme proposal by Friday !high @Acme`), voice add, Today / Upcoming / Done views, "Mine" and per-client filters, add to calendar.
-- **Email drafter** — follow-up after a meeting, a new email from one line of intent, or a reply to a pasted email. Pick a tone, refine with instructions ("shorter", "more formal"), then open it in your mail app or send it with the MoM PDF attached.
-- **Ask about a meeting** — opens a chat grounded in that meeting's minutes and transcript.
-
-## Agent runtime (new)
-
-LiquidChat is now a local-first agent, not just a chat with tools. Spec: [`docs/spec/LiquidChat-Mobile-Agent-Runtime-PRD.md`](docs/spec/LiquidChat-Mobile-Agent-Runtime-PRD.md); implementation map: [`docs/agent-runtime.md`](docs/agent-runtime.md); Android layer: [`docs/android-native.md`](docs/android-native.md).
-
-- **Multi-step tasks** — requests are planned into validated steps, executed through a permission gateway, verified (e.g. DnD read back after enabling it), retried, cancellable, and resumable after the app is killed — without ever repeating a send.
-- **Per-step hybrid routing** — every model step is routed on its own: planning and phone actions stay on-device; a single hard reasoning step can go to a cloud model you configured (Anthropic, OpenAI-compatible, Gemini) if your privacy policy and budget allow, then control returns on-device. Modes: on-device only / hybrid / cloud first; battery, heat and RAM aware.
-- **Privacy** — only public data may leave the phone by default; personal data needs your policy *and* a first-time approval per provider; notification content is on-device-only. Keys live in Keystore-encrypted storage; the agent database is SQLCipher-encrypted.
-- **Approvals** — anything sensitive asks first (spoken in voice mode); sending is never "always allowed".
-- **Memory** — remembers preferences and past outcomes only with your OK; inspect, edit, pin, export or wipe it.
-- **Skills & routines** — Meeting preparation, Morning briefing, Focus mode, Meeting follow-up, End of day; create your own in plain language, save a workflow that worked, import/export. Skills are declarative — they cannot run code.
-- **MCP servers** as extra tools — the read-only **Hugging Face** server (model/dataset/Space search and repo details) is preinstalled and can be disabled or removed; calls that leave the phone follow your privacy and approval settings.
-- **Notification summaries** (opt-in), **insights** (completion, routing, latency, cost) and an **offline evaluation set**.
-
-### Code quality
-
-`npm run check` runs strict TypeScript, ESLint (incl. import sorting and hooks rules), Prettier and Jest — the equivalents of mypy, pylint, isort, black and pytest. CI runs it plus Android debug builds for both flavors (`full`, `play`) and Android lint.
-
-## Features
-
-- **On-device inference** — All model execution happens locally on the device via Cactus framework
-- **Token streaming** — Real-time token-by-token generation display
-- **Tool call parsing** — Supports both JSON (`google/mobile-actions` format) and native LFM2.5 `<|tool_call_start|>` format
-- **Auto tool execution** — Parsed function calls are automatically executed as native device actions
-- **Multi-model support** — Browse and download Liquid AI models (LFM2 350M to 2.6B, vision, audio) with tier-based lifecycle management
-- **Custom model loading** — Load Cactus weight folders or GGUF files from device storage
-- **Configurable system prompt** — Edit the system prompt with tool definitions from Settings
-- **Chat history** — Persistent chat storage with multiple conversations
-- **HuggingFace Hub export** — Push chat history as JSONL datasets for LoRA retraining
-- **Inference metrics** — Live tokens/second, time-to-first-token display
-- **Text-to-speech** — Optional auto-speak for assistant responses
-- **Haptic feedback** — Vibration on send and tool execution
-- **Agent dashboard** — Loaded model states, RAM usage, action history
-- **Speech speed** — adjustable text-to-speech rate with a voice preview
-- **Share to LiquidChat** — send audio from other apps straight into a new meeting
-
-## Project Structure
-
-```
-LiquidChat/
-├── src/
-│   ├── App.tsx                             # Entry point, tab navigation
-│   ├── screens/
-│   │   ├── ChatScreen.tsx                  # Main chat with streaming + tool calling
-│   │   ├── ChatListScreen.tsx              # Chat history list
-│   │   ├── ModelSelectionScreen.tsx        # Model browser + downloads + tier badges
-│   │   ├── SettingsScreen.tsx              # Configuration + HF Hub export
-│   │   └── AgentDashboardScreen.tsx        # Model states, RAM, action log (Phase 5)
-│   ├── components/
-│   │   ├── MessageBubble.tsx               # Chat message rendering
-│   │   ├── ToolCallCard.tsx                # Tool call display + execution status
-│   │   ├── ModelCard.tsx                   # Model info card + tier badge
-│   │   ├── MetricsBar.tsx                  # Live token/s display
-│   │   ├── ActionChainProgress.tsx         # Multi-step action progress (Phase 5)
-│   │   ├── VoiceInputButton.tsx            # Voice recording button (Phase 2)
-│   │   ├── ScreenshotPreview.tsx           # Screenshot preview (Phase 4)
-│   │   └── MemoryChips.tsx                 # Recalled memory context (Phase 3)
-│   ├── tools/
-│   │   ├── registry.ts                     # Tool definitions (7 → 30+ tools)
-│   │   ├── flashlight.ts                   # Flashlight on/off
-│   │   ├── wifiSettings.ts                 # Open WiFi settings
-│   │   ├── calendarEvent.ts                # Create calendar events
-│   │   ├── email.ts                        # Send emails
-│   │   ├── maps.ts                         # Show maps
-│   │   ├── contacts.ts                     # Create contacts
-│   │   └── [Phase 1-3 tools]               # brightness, volume, bluetooth, alarm, ...
-│   ├── services/
-│   │   ├── huggingfaceApi.ts               # HF Hub push-to-hub API
-│   │   ├── chatExport.ts                   # Chat history JSONL export
-│   │   ├── ModelLifecycleManager.ts        # Hot/warm/cold tier loading + LRU eviction
-│   │   ├── IntentRouter.ts                 # Route intents to action/query/reason/chat
-│   │   ├── MemoryService.ts                # CactusIndex + embedding for recall (Phase 3)
-│   │   ├── VisionAgent.ts                  # See-then-act with LFM2-VL-450M (Phase 4)
-│   │   └── ActionChainExecutor.ts          # Multi-step action planning + execution
-│   ├── hooks/
-│   │   ├── useVoiceAgent.ts                # VAD + STT pipeline (Phase 2)
-│   │   ├── useModelManager.ts              # Model lifecycle hook
-│   │   └── useMemory.ts                    # Memory recall hook (Phase 3)
-│   ├── utils/
-│   │   ├── storage.ts                      # AsyncStorage persistence
-│   │   ├── toolParser.ts                   # Parse tool calls (dual format + chains)
-│   │   ├── chatHelpers.ts                  # ID generation, timestamps
-│   │   ├── deviceMetrics.ts                # Battery, memory, RAM tier detection
-│   │   ├── haptics.ts                      # Haptic feedback
-│   │   └── ttsManager.ts                   # Text-to-speech
-│   ├── config/
-│   │   ├── models.ts                       # Liquid AI model registry + tier assignments
-│   │   ├── modelTiers.ts                   # Hot/warm/cold tier configuration
-│   │   └── theme.ts                        # Desert/cactus themed design
-│   └── types/
-│       └── index.ts                        # TypeScript types
-├── android/
-│   └── app/src/main/java/.../
-│       ├── SystemControlsModule.java       # Native bridge for Phase 1 tools
-│       └── LiquidChatAccessibilityService.java  # UI automation (Phase 3)
-├── .claude/
-│   └── skills/
-│       ├── unsloth-jobs-training/          # /unsloth-jobs-training — submit LoRA training to HF Jobs
-│       ├── lora-to-cactus-hub/             # /lora-to-cactus-hub — convert to Cactus format + push Hub
-│       └── build-apk-liquidchat/           # /build-apk-liquidchat — build debug/release APK
-├── release/
-│   └── LiquidChat.apk                     # Pre-built release APK
-├── package.json
-├── metro.config.js
-└── react-native.config.js
+```yaml
+# otel-collector config
+receivers:
+  otlp:
+    protocols:
+      http:
+        endpoint: 0.0.0.0:4318
+exporters:
+  otlp/jaeger:
+    endpoint: jaeger:4317
+    tls: { insecure: true }
+service:
+  pipelines:
+    traces: { receivers: [otlp], exporters: [otlp/jaeger] }
 ```
 
-## Multi-Model Architecture
+In the app:
 
-LiquidChat v1.0 orchestrates up to 9 specialized models, loaded on demand based on available device RAM:
+- **Collector URL:** `https://otel.example.com` (or `http://192.168.1.20:4318` on your Wi-Fi)
+- **Headers:** whatever your collector requires, e.g. `Authorization=Bearer <token>`, or leave empty
 
-| Tier | Model | Size (INT8) | Purpose |
-|------|-------|-------------|---------|
-| **Hot** | LFM2.5-1.2B-Instruct + LoRA | ~750MB | Core brain — every interaction |
-| **Hot** | LFM2-350M | 272MB | Fast chat fallback |
-| **Hot** | silero-vad | ~5MB | Always-on voice detection |
-| **Warm** | whisper-small | 210MB | Speech-to-text |
-| **Warm** | Qwen3-Embedding-0.6B | 394MB | Memory embeddings + RAG |
-| **Warm** | LFM2-VL-450M | 420MB | Vision — screenshot understanding |
-| **Warm** | LFM2-1.2B-Tool | 722MB | Structured API / tool-heavy tasks |
-| **Cold** | LFM2.5-1.2B-Thinking | ~750MB | Multi-step planning |
-| **Cold** | LFM2.5-VL-1.6B | 1440MB | Detailed image analysis |
+**Reaching a private collector from a phone on mobile data.** We test with a tunnel in front of a reverse proxy:
 
-The `ModelLifecycleManager` handles LRU eviction of warm/cold models to stay within the device RAM budget. Hot tier models are never evicted.
+```
+phone ──https──▶ ngrok tunnel ──▶ nginx :9099 ──▶ HAProxy :443 ──▶ collector :4318 ──▶ Jaeger
+```
 
-## Roadmap
+If the same proxy also serves a web UI, route the OTLP paths to the collector *before* the catch-all `location /`. Otherwise `/v1/traces` is answered by the UI (typically a redirect to a sign-in page):
 
-### Phase 0 — Foundation (Done)
-LoRA trained, 7 tools working, token streaming, HF Hub export, APK shipping.
+```nginx
+location ~ ^/v1/(traces|metrics|logs)$ {
+    proxy_pass http://127.0.0.1:4318;   # or the TLS front door that forwards to the collector
+    client_max_body_size 32m;
+}
+```
 
-### Phase 1 — System Controls (Done)
-+10 system control tools, `SystemControlsModule` native bridge, compound actions through the agent runtime. LoRA retrain on the expanded dataset is still open.
+Check the route with `curl -X POST -H 'Content-Type: application/json' -d '{"resourceSpans":[]}' https://<your-host>/v1/traces`. It should return `200`. Over USB, `adb reverse tcp:4318 tcp:4318` lets `http://localhost:4318` on the phone reach a collector on your computer.
 
-### Phase 2 — Voice Input
-Integrate `useCactusVAD` + `useCactusSTT` hooks, `VoiceInputButton` component, full voice loop via existing `ttsManager.ts`.
+### Route 2: Arize (SaaS)
 
-### Phase 3 — Memory & RAG
-`MemoryService.ts` with CactusIndex + Qwen3-Embedding-0.6B, RAG corpus manager in Settings, `LFM2-1.2B-RAG` for document Q&A.
+Arize accepts OTLP/HTTP directly:
 
-### Phase 4 — Vision + UI Automation
-LFM2-VL-450M see-then-act pattern, `LiquidChatAccessibilityService.java` + React Native bridge, 10 UI automation tools.
+| Field | Value |
+|---|---|
+| **Collector URL** | `https://otlp.arize.com` |
+| **Headers** | `space_id=<your Arize space ID>,api_key=<your Arize API key>` |
+| **Include prompts and replies** | On, if you want the content in Arize |
 
-### Phase 5 — Model Orchestration
-`ModelLifecycleManager` + `IntentRouter` + `AgentDashboard`, `LFM2.5-1.2B-Thinking` for multi-step planning, device-adaptive model configs.
+Both values are in Arize under **Settings → API Keys** (the space ID is also in the space URL). They are saved encrypted on the phone and never written to logs or spans.
 
-### Phase 6 — iOS Parity
-iOS native modules, Shortcuts/Intents integration, XCUITest-style automation.
+Arize files every trace under a **project** and rejects traces that don't name one (`HTTP 400: trace export requires project routing`). For an Arize endpoint, LiquidChat adds `x-project-name=liquidchat` automatically. To use a different project, add your own `x-project-name=<project>` to the headers.
 
-> **LoRA Improvement Loop:** The HF Hub export feature (`chatExport.ts` + `huggingfaceApi.ts`) creates a continuous flywheel: real user interactions are exported as JSONL, curated, and fed back into LoRA training after each phase. Target dataset grows from 31,550 → ~41,000+ samples.
-
-## Training Pipeline
-
-LoRA training uses [Unsloth](https://github.com/unslothai/unsloth) on Hugging Face Jobs cloud GPUs. Three Claude Code skills automate the full model-to-APK pipeline:
-
-| Skill | Command | Purpose |
-|-------|---------|---------|
-| Unsloth Jobs Training | `/unsloth-jobs-training` | Submit LoRA fine-tuning job to HF Jobs (A10G/A100) |
-| LoRA to Cactus Hub | `/lora-to-cactus-hub` | Merge adapter + convert to Cactus binary format + push Hub |
-| Build APK | `/build-apk-liquidchat` | Build debug or release Android APK |
-
-Training defaults: LFM2.5-1.2B-Instruct base, LoRA r=16/alpha=16, batch size 8 (effective 32), 3 epochs, 2e-4 LR, A100 80GB. Monitoring via [Trackio](https://huggingface.co/spaces/kshitijthakkar/trackio).
-
-## Installation
-
-### Pre-built APK
-
-Download and install `release/LiquidChat.apk` on your Android device (Android 7+).
-
-### Build from Source
-
-**Prerequisites:**
-- Node.js >= 20
-- JDK 17+
-- Android SDK with NDK 27.1.12297006
-- `ANDROID_HOME` environment variable set
+To check your keys from a computer before configuring the phone:
 
 ```bash
-# Install dependencies
+curl -s -w ' %{http_code}\n' https://otlp.arize.com/v1/traces \
+  -H "space_id: $ARIZE_SPACE_ID" -H "api_key: $ARIZE_API_KEY" \
+  -H 'x-project-name: liquidchat' -H 'Content-Type: application/json' \
+  -d '{"resourceSpans":[]}'
+# → {} 200
+```
+
+The app sends to one destination at a time. To fan out to several backends (Arize *and* your Jaeger, say), point the app at your collector and add an exporter per backend there.
+
+## Privacy and security
+
+- Only data you mark as public may leave the phone by default. Sending personal data to a cloud model needs your privacy policy to allow it *and* a first-time approval per provider. Notification content never leaves the phone.
+- Anything sensitive asks first, and sending is never "always allowed". Retrieved text can never trigger a tool.
+- API keys and telemetry headers live in Keystore-encrypted storage. The agent database is SQLCipher-encrypted.
+- The LiquidChat Space keeps nothing and uses only open, ungated models. Its GPU time is charged to the caller's own HF token.
+
+## Architecture
+
+```
+src/
+├── agent/          Planner, executor, verifier, state machine, plan validation
+├── inference/      Model router, routing policy, cloud providers (incl. LiquidChat Space), cost ledger
+├── services/       Model lifecycle (RAM budget, eviction), memory + vector store, HF Space client
+├── tools/          35+ native tools and the permission gateway
+├── mcp/            MCP client, server store, tool adapter
+├── skills/         Skill registry, generator, validator, built-in skills
+├── meetings/       Recorder session, transcriber, speaker ID, minutes, documents, Space pipeline
+├── memory/         Retrieval, auto-indexing, chat context
+├── observability/  OpenTelemetry export and spans, insights, usage ledger, evaluation set
+├── security/       Approvals
+├── storage/        Encrypted agent database
+└── screens/, components/
+space/              The LiquidChat Hugging Face Space (Gradio, ZeroGPU)
+android/            Native modules: system controls, accessibility service, audio/meeting docs
+docs/               Agent runtime, Android layer and spec
+```
+
+More detail: [`docs/agent-runtime.md`](docs/agent-runtime.md), [`docs/android-native.md`](docs/android-native.md), [`docs/spec/`](docs/spec/).
+
+## Build from source
+
+Prerequisites: Node.js 20+, JDK 17+, Android SDK with NDK 27.1.12297006, and `ANDROID_HOME` set.
+
+```bash
 npm install
+npm run android                     # debug build on a connected device
+npm run check                       # TypeScript (strict), ESLint, Prettier, Jest
 
-# Debug build (run on connected device)
-npm run android
-
-# Release APKs (two flavors: `full` = sideload with UI automation, `play` = Play Store policy-safe)
+# Release APKs: `full` (sideload, includes UI automation) or `play` (Play Store policy-safe)
 cd android && ./gradlew assembleFullRelease -PreactNativeArchitectures=arm64-v8a
 ```
 
-APK output: `android/app/build/outputs/apk/full/release/app-full-release.apk`. Release builds are currently signed with the debug keystore (fine for sideloading; add your own keystore before publishing to Play).
+The APK is written to `android/app/build/outputs/apk/full/release/app-full-release.apk`. Release builds are signed with the debug keystore, which is fine for sideloading; add your own keystore before publishing.
 
-### Model Setup
+CI runs `npm run check`, debug builds of both flavors and Android lint.
 
-Models are downloaded in-app via the Model Selection screen. Cactus stores weights in `files/cactus/models/<slug>-<int4|int8>`; after upgrading from the 1.7 engine the app offers a one-time re-download. For manual sideloading:
+## Release history
 
-```bash
-adb push weights/lfm25-mobile-actions/ /data/local/tmp/lfm25-mobile-actions/
-adb shell run-as com.liquidchat cp -r /data/local/tmp/lfm25-mobile-actions /data/user/0/com.liquidchat/files/models/
-```
+| Version | Highlights |
+|---|---|
+| **v1.2** | LiquidChat Space for meetings and larger models, audio export, Q&A that works on real meetings, visible agent plans, memory and RAG with auto-indexing and limits, a 4K prompt window, the *Kept on this phone* insight, OpenTelemetry export |
+| **v1.1** | Streaming chat, task-based routing, Hugging Face MCP, skills from one sentence, speaker identification, upload/share recordings, auto language detection |
+| **v1.0** | Agent runtime with permissions, meetings, tasks, email drafter, memory, skills |
+| **v0.x** | LoRA-tuned LFM2.5-1.2B turning requests into native Android actions |
 
-## Tech Stack
+## What's next
 
-| Component | Technology |
-|-----------|-----------|
-| **Framework** | React Native 0.81.1 |
-| **LLM Runtime** | Cactus React Native 1.13.1 (on-device inference) |
-| **Model Format** | Cactus binary format (CACT header + quantized tensors) |
-| **State** | React hooks + AsyncStorage |
-| **Navigation** | Custom state-based (no react-navigation dependency) |
-| **Flashlight** | react-native-torch |
-| **Camera/Images** | react-native-image-picker |
-| **File System** | @dr.pogodin/react-native-fs |
-| **TTS** | react-native-tts |
-| **Haptics** | react-native-haptic-feedback |
-| **Training** | Unsloth + TRL on Hugging Face Jobs |
-| **Model Hub** | Hugging Face Hub (datasets + model weights) |
+- **LFM3** on the device, once the Cactus engine supports it.
+- **iOS parity:** native modules and Shortcuts integration.
+- Retraining the mobile-actions LoRA on the expanded tool set and on exported real conversations.
+
+## Acknowledgements
+
+Built on [Liquid AI](https://www.liquid.ai) LFM models, the [Cactus](https://github.com/cactus-compute/cactus) on-device engine, [Hugging Face](https://huggingface.co) (Hub, Spaces, ZeroGPU, Jobs) and [OpenTelemetry](https://opentelemetry.io).
 
 ## License
 
-This project is for research and testing purposes. The base model ([LiquidAI/LFM2.5-1.2B-Instruct](https://huggingface.co/LiquidAI/LFM2.5-1.2B-Instruct)) is subject to Liquid AI's license terms.
+For research and testing. The model weights are subject to their own licenses, including Liquid AI's LFM license.
 
 ## Author
 
-Developed by **Kshitij Thakkar**
-
-*github.com/Mandark-droid · huggingface.co/kshitijthakkar*
+**Kshitij Thakkar**: [github.com/Mandark-droid](https://github.com/Mandark-droid) · [huggingface.co/kshitijthakkar](https://huggingface.co/kshitijthakkar)
