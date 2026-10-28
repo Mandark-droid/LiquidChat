@@ -111,8 +111,8 @@ export default function OtelSettingsCard({ bare = false }: { bare?: boolean }) {
         onChangeText={v => change({ mirrorEndpoint: v })}
         autoCapitalize="none"
         keyboardType="url"
-        placeholder="https://otlp.arize.com"
-        hint="Another OTLP/HTTP endpoint that gets the same telemetry, e.g. a SaaS backend next to your own collector. Leave empty for one destination."
+        placeholder="https://otel.example.com"
+        hint="Another OTLP/HTTP endpoint that gets the same telemetry, e.g. a hosted backend next to your own collector. Leave empty for one destination."
       />
       {s.mirrorEndpoint.trim() ? (
         <Field
@@ -124,7 +124,7 @@ export default function OtelSettingsCard({ bare = false }: { bare?: boolean }) {
           }}
           autoCapitalize="none"
           secureTextEntry
-          placeholder={hasMirrorHeaders ? '•••• saved (type to replace)' : 'space_id=…,api_key=…'}
+          placeholder={hasMirrorHeaders ? '•••• saved (type to replace)' : 'Authorization=Bearer …'}
           hint="Comma-separated key=value. Stored in Android Keystore-encrypted storage."
         />
       ) : null}
