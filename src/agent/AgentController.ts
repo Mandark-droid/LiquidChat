@@ -87,20 +87,14 @@ export class AgentControllerImpl implements IAgentController {
   }
 
   /** In the background: learning must never slow down or fail a run. */
-  private learnFrom(
-    record: ExecutionRecord,
-    plan: Plan,
-    response: string,
-    ok: boolean,
-    errorCode?: string,
-  ): void {
-    if (!this.deps.learn || record.request.source === 'eval') return;
+  private learnFrom(record: ExecutionRecord, plan: Plan, ok: boolean, errorCode?: string): void {
+    if (!this.deps.learn) return;
     this.deps
       .learn({
         request: record.request.text,
+        source: record.request.source,
         goal: plan.goal,
         ok,
-        response,
         tools: plan.steps.flatMap(s => (s.kind === 'tool' && s.tool ? [s.tool] : [])),
         errorCode,
       })
@@ -258,13 +252,13 @@ export class AgentControllerImpl implements IAgentController {
         await this.deps.repo.finish(record.id, response, undefined);
         const proposal = MemoryManager.proposeFromRequest(record.request.text);
         if (proposal && this.deps.onMemoryProposal) this.deps.onMemoryProposal(proposal, record.id);
-        this.learnFrom(record, plan, response, true);
+        this.learnFrom(record, plan, true);
       } else {
         const error = outcome.failed[0]?.error;
         record.error = error;
         await setState('FAILED', error?.code);
         await this.deps.repo.finish(record.id, response, error);
-        this.learnFrom(record, plan, response, false, error?.code);
+        this.learnFrom(record, plan, false, error?.code);
       }
       return toResult(record);
     } catch (e) {

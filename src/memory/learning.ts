@@ -11,16 +11,20 @@
  * - Procedural: once the same sequence of tools has worked twice, the workflow itself, with the
  *   requests it served.
  *
- * Requests that look sensitive (passwords, health, money) are never learned from.
+ * Requests that look sensitive (passwords, health, money) are never learned from. Only what the
+ * user typed or said is stored, with the outcome and the tool names: never the reply or a tool's
+ * output, which can carry text from outside (a web page, an MCP server) that would otherwise come
+ * back into later prompts as "memory".
  */
 import { type Memory, MemoryManager } from './MemoryManager';
 
 export interface RunSummary {
+  /** What the user typed or said. */
   request: string;
+  /** Who asked: only the user's own requests (chat, voice) are learned from. */
+  source: string;
   goal: string;
   ok: boolean;
-  /** What the user was told. */
-  response: string;
   /** Tools the plan called, in order. */
   tools: string[];
   errorCode?: string;
@@ -49,9 +53,11 @@ function sequenceTag(tools: string[]): string {
   return `tools:${tools.join('>')}`.toLowerCase();
 }
 
+const USER_SOURCES = new Set(['chat', 'voice']);
+
 export async function learnFromRun(memory: MemoryManager, run: RunSummary): Promise<void> {
-  const text = `${run.request} ${run.goal}`;
-  if (SENSITIVE_RE.test(text)) return;
+  if (!USER_SOURCES.has(run.source)) return;
+  if (SENSITIVE_RE.test(`${run.request} ${run.goal}`)) return;
   await learnPreference(memory, run.request);
   if (!run.tools.length && run.ok) return; // a plain answer: nothing was done to remember
   await learnEpisode(memory, run);
@@ -90,7 +96,7 @@ async function learnEpisode(memory: MemoryManager, run: RunSummary): Promise<voi
   const outcome = run.ok
     ? `done${run.tools.length ? ` with ${run.tools.join(', ')}` : ''}`
     : `failed${run.errorCode ? ` (${run.errorCode})` : ''}`;
-  const content = `${run.request.trim()} — ${outcome}: ${run.response.trim()}`.slice(0, 600);
+  const content = `${run.request.trim()} — ${outcome}`.slice(0, 600);
   const tags = [
     'task',
     run.ok ? 'succeeded' : 'failed',

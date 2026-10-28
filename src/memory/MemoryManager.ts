@@ -121,6 +121,9 @@ export class MemoryManager {
     const cur = await this.get(id);
     if (!cur) return null;
     const next = { ...cur, ...patch, updatedAt: Date.now() };
+    // New text is classified again, unless the caller set the flag itself; never cleared silently.
+    if (patch.sensitive === undefined && (patch.title !== undefined || patch.content !== undefined))
+      next.sensitive = cur.sensitive || SENSITIVE_RE.test(`${next.title} ${next.content}`);
     const db = await this.db();
     await db.execute(
       'UPDATE memories SET kind = ?, title = ?, content = ?, tags = ?, sensitive = ?, pinned = ?, updated_at = ? WHERE id = ?',

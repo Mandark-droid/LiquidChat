@@ -9,9 +9,9 @@ beforeEach(() => {
 
 const run = (over: Partial<Parameters<typeof learnFromRun>[1]> = {}) => ({
   request: 'Set an alarm for 7 am',
+  source: 'chat',
   goal: 'Set an alarm for 7 am',
   ok: true,
-  response: 'Alarm set for 07:00',
   tools: ['set_alarm'],
   ...over,
 });
@@ -20,10 +20,10 @@ describe('memory the agent learns on its own', () => {
   it('a task it acted on becomes an episode, updated (not duplicated) when it comes back', async () => {
     const m = new MemoryManager();
     await learnFromRun(m, run());
-    await learnFromRun(m, run({ response: 'Alarm set for 07:00 - "Gym"' }));
+    await learnFromRun(m, run({ request: 'Set an alarm for 7 am labelled Gym' }));
     const episodes = await m.list({ kind: 'episodic' });
     expect(episodes).toHaveLength(1);
-    expect(episodes[0].content).toContain('Gym');
+    expect(episodes[0].content).toContain('labelled Gym');
     expect(episodes[0].tags).toEqual(
       expect.arrayContaining(['task', 'succeeded', 'tools:set_alarm']),
     );
@@ -32,10 +32,7 @@ describe('memory the agent learns on its own', () => {
 
   it('a failure is remembered too, with why', async () => {
     const m = new MemoryManager();
-    await learnFromRun(
-      m,
-      run({ ok: false, errorCode: 'PERMISSION_DENIED', response: 'Not allowed' }),
-    );
+    await learnFromRun(m, run({ ok: false, errorCode: 'PERMISSION_DENIED' }));
     const [e] = await m.list({ kind: 'episodic' });
     expect(e.tags).toContain('failed');
     expect(e.content).toContain('PERMISSION_DENIED');
@@ -64,10 +61,7 @@ describe('memory the agent learns on its own', () => {
 
   it('a stated preference becomes a profile memory; a plain answer adds no episode', async () => {
     const m = new MemoryManager();
-    await learnFromRun(
-      m,
-      run({ request: 'I prefer short answers', goal: 'answer', tools: [], response: 'Okay.' }),
-    );
+    await learnFromRun(m, run({ request: 'I prefer short answers', goal: 'answer', tools: [] }));
     const profile = await m.list({ kind: 'profile' });
     expect(profile.map(p => p.content)).toEqual(['I prefer short answers']);
     expect(profile[0].confidence).toBeLessThan(1);
@@ -91,5 +85,32 @@ describe('memory the agent learns on its own', () => {
     const episodes = await m.list({ kind: 'episodic', limit: 1000 });
     expect(episodes.filter(e => e.source === 'execution')).toHaveLength(MAX_EPISODIC);
     expect(episodes.some(e => e.title === 'Mine')).toBe(true);
+  });
+
+  it('stores only what the user asked, never text that came back from a tool or the reply', async () => {
+    const m = new MemoryManager();
+    await learnFromRun(m, run({ request: 'Search the web for LFM2', tools: ['web.search'] }));
+    const [e] = await m.list({ kind: 'episodic' });
+    expect(e.content).toBe('Search the web for LFM2 — done with web.search');
+  });
+
+  it('learns only from what the user typed or said, not routines, skills or notifications', async () => {
+    const m = new MemoryManager();
+    for (const source of ['schedule', 'skill', 'notification', 'eval'])
+      await learnFromRun(m, run({ source, request: 'I prefer tea', goal: 'x' }));
+    expect(await m.list()).toHaveLength(0);
+  });
+
+  it('an update is classified again, so new sensitive text is flagged', async () => {
+    const m = new MemoryManager();
+    const created = await m.create({
+      kind: 'episodic',
+      title: 'Call',
+      content: 'Called the clinic',
+      source: 'execution',
+    });
+    expect(created.sensitive).toBe(false);
+    const updated = await m.update(created.id, { content: 'Discussed the medical report' });
+    expect(updated?.sensitive).toBe(true);
   });
 });
