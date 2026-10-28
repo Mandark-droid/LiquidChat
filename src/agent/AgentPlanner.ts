@@ -34,9 +34,19 @@ export interface PlannerDeps {
 export interface PlanContext {
   executionId: string;
   memoryContext?: string;
+  /**
+   * Only the memories the search matched (no always-included pinned profile). Used when the
+   * request is an action: a small model copied unrelated preferences into tool arguments.
+   */
+  matchedMemoryContext?: string;
   signal?: AbortSignal;
   approve?: InferenceRunOptions['approve'];
   onToken?: (t: string) => void;
+}
+
+/** The memory an action sees: what matched the request, when the caller told us. */
+function actionMemory(ctx: PlanContext): string | undefined {
+  return ctx.matchedMemoryContext ?? ctx.memoryContext;
 }
 
 const MULTI_STEP_RE =
@@ -90,7 +100,8 @@ export class AgentPlanner {
       'You are a helpful assistant with access to device functions. Call one only when the request needs it; otherwise answer directly.';
     // Saved memories go next to the question: small models overlook facts at the end of a long
     // system prompt full of tool descriptions, but use them when they sit in the user's turn.
-    const userText = ctx.memoryContext ? `${ctx.memoryContext}\n\n${request.text}` : request.text;
+    const memory = hits.length ? actionMemory(ctx) : ctx.memoryContext;
+    const userText = memory ? `${memory}\n\n${request.text}` : request.text;
     const { result } = await this.deps.inference.run(
       {
         executionId: ctx.executionId,
@@ -176,7 +187,7 @@ export class AgentPlanner {
       request.text,
       this.deps.registry.catalog(tools),
       now,
-      ctx.memoryContext,
+      relevant.length ? actionMemory(ctx) : ctx.memoryContext,
     );
 
     let prompt = base;

@@ -35,6 +35,11 @@ export interface InferenceRunner {
 
 export interface MemoryPort {
   retrieve(query: string, opts: { limit?: number; excludeSensitive?: boolean }): Promise<Memory[]>;
+  /** With which hits the search matched (the rest are pinned profile memories, always included). */
+  retrieveScored?(
+    query: string,
+    opts: { limit?: number; excludeSensitive?: boolean },
+  ): Promise<{ memory: Memory; matched: boolean }[]>;
 }
 
 export interface SkillMatch {

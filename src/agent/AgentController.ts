@@ -154,10 +154,21 @@ export class AgentControllerImpl implements IAgentController {
       }
 
       let memoryContext = '';
+      let matchedMemoryContext: string | undefined;
       if (this.deps.memory && record.request.source !== 'eval') {
         try {
-          const mems = await this.deps.memory.retrieve(record.request.text, { limit: 5 });
+          const memory = this.deps.memory;
+          const hits = memory.retrieveScored
+            ? await memory.retrieveScored(record.request.text, { limit: 5 })
+            : (await memory.retrieve(record.request.text, { limit: 5 })).map(m => ({
+                memory: m,
+                matched: true,
+              }));
+          const mems = hits.map(h => h.memory);
           memoryContext = MemoryManager.asContext(mems);
+          matchedMemoryContext = MemoryManager.asContext(
+            hits.filter(h => h.matched).map(h => h.memory),
+          );
           if (mems.length) this.tracer.record(record.id, 'memory.retrieve', { count: mems.length });
         } catch {}
       }
@@ -168,6 +179,7 @@ export class AgentControllerImpl implements IAgentController {
         const outcome = await this.deps.planner.plan(record.request, {
           executionId: record.id,
           memoryContext,
+          matchedMemoryContext,
           signal: cancel.signal,
           onToken: token => emit({ type: 'token', executionId: record.id, stepId: 'plan', token }),
         });

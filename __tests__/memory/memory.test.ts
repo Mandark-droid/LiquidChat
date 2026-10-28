@@ -54,6 +54,29 @@ describe('MemoryManager (SQLite + FTS5)', () => {
     expect((await m.retrieve('weather tomorrow')).map(x => x.title)).toEqual(['Language']);
   });
 
+  it('says which hits the search matched and which are only there because they are pinned', async () => {
+    const m = new MemoryManager();
+    await m.create({
+      kind: 'profile',
+      title: 'Language',
+      content: 'Reply in English',
+      source: 'user',
+      pinned: true,
+    });
+    await m.create({
+      kind: 'episodic',
+      title: 'Weather',
+      content: 'Check weather before cycling',
+      source: 'user',
+    });
+    const hits = await m.retrieveScored('weather tomorrow');
+    const byTitle = Object.fromEntries(hits.map(h => [h.memory.title, h]));
+    expect(byTitle.Language.matched).toBe(false);
+    expect(byTitle.Language.score).toBeUndefined();
+    expect(byTitle.Weather.matched).toBe(true);
+    expect(typeof byTitle.Weather.score).toBe('number');
+  });
+
   it('survives FTS syntax in queries', async () => {
     const m = new MemoryManager();
     await m.create({

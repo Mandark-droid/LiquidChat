@@ -39,6 +39,14 @@ export interface MemoryProposal {
   reason: string;
 }
 
+export interface ScoredMemory {
+  memory: Memory;
+  /** BM25 relevance, higher is better; absent when the search did not find it. */
+  score?: number;
+  /** Found by the search, rather than included because it is a pinned profile memory. */
+  matched: boolean;
+}
+
 export interface RetrieveOptions {
   kinds?: MemoryKind[];
   limit?: number;
@@ -157,6 +165,15 @@ export class MemoryManager {
 
   /** Full-text retrieval ranked by BM25, nudged by pinning and recency. */
   retrieve(query: string, opts: RetrieveOptions = {}): Promise<Memory[]> {
+    return this.retrieveScored(query, opts).then(hits => hits.map(h => h.memory));
+  }
+
+  /**
+   * Hits in rank order. `matched` is false for a pinned profile memory that is only there because
+   * pinned preferences are always in scope: right for a question, noise for an action ("Set an
+   * alarm" must not pick up "I prefer meetings after 11 am").
+   */
+  retrieveScored(query: string, opts: RetrieveOptions = {}): Promise<ScoredMemory[]> {
     return withSpan(
       'retrieve memory',
       {
@@ -180,16 +197,13 @@ export class MemoryManager {
           })),
           query,
         );
-        return found.map(f => f.memory);
+        return found;
       },
     );
   }
 
   /** Hits in rank order; `score` is the BM25 relevance (higher is better), absent for pinned profile entries. */
-  private async retrieveRanked(
-    query: string,
-    opts: RetrieveOptions,
-  ): Promise<{ memory: Memory; score?: number }[]> {
+  private async retrieveRanked(query: string, opts: RetrieveOptions): Promise<ScoredMemory[]> {
     const db = await this.db();
     const limit = opts.limit ?? 5;
     const match = ftsQuery(query);
@@ -218,14 +232,20 @@ export class MemoryManager {
       params,
     );
     const seen = new Set<string>();
-    const out: { memory: Memory; score?: number }[] = [];
+    const out: ScoredMemory[] = [];
+    // A pinned memory the search also found counts as matched, with its score.
+    const ranks = new Map(rows.map(r => [String(r.id), (r as { rank?: unknown }).rank]));
     for (const row of [...pinned.rows, ...rows]) {
       const m = toMemory(row);
       if (seen.has(m.id)) continue;
       seen.add(m.id);
       // SQLite's bm25() is lower-is-better; negated so a higher score ranks higher.
-      const rank = (row as { rank?: unknown }).rank;
-      out.push({ memory: m, score: typeof rank === 'number' ? -rank : undefined });
+      const rank = ranks.get(m.id);
+      out.push({
+        memory: m,
+        score: typeof rank === 'number' ? -rank : undefined,
+        matched: ranks.has(m.id),
+      });
       if (out.length >= limit) break;
     }
     if (out.length) {
