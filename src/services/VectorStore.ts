@@ -1,6 +1,6 @@
 import * as RNFS from '@dr.pogodin/react-native-fs';
 
-import { recordScores, withSpan } from '../observability/spans';
+import { recordDocuments, recordScores, withSpan } from '../observability/spans';
 
 export interface VectorEntry {
   id: string;
@@ -168,6 +168,15 @@ export class VectorStore {
         recordScores(
           span,
           top.map(r => r.score),
+        );
+        recordDocuments(
+          span,
+          top.map(r => ({
+            id: r.id,
+            score: r.score,
+            content: r.text,
+            metadata: r.metadata?.sourceFile ? { source: r.metadata.sourceFile } : undefined,
+          })),
         );
         return top;
       },

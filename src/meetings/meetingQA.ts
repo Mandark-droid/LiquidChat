@@ -5,7 +5,7 @@
  */
 import { trace } from '@opentelemetry/api';
 
-import { setContent } from '../observability/spans';
+import { recordDocuments, setContent } from '../observability/spans';
 import { transcriptLines } from './MinutesGenerator';
 import type { Meeting } from './types';
 
@@ -113,8 +113,18 @@ export function meetingContext(m: Meeting, question: string, budgetChars = 3000)
     },
   });
   try {
-    const ctx = buildMeetingContext(m, question, budgetChars);
+    const { ctx, picked } = buildMeetingContext(m, question, budgetChars);
     span.setAttribute('liquidchat.retrieval.context_chars', ctx.length);
+    recordDocuments(
+      span,
+      picked.map(({ p, score }) => ({
+        id: `${m.id}#${p.order}`,
+        score,
+        content: p.text,
+        metadata: { position: p.order },
+      })),
+      question,
+    );
     setContent(span, 'liquidchat.retrieval.context', ctx);
     return ctx;
   } finally {
@@ -122,19 +132,25 @@ export function meetingContext(m: Meeting, question: string, budgetChars = 3000)
   }
 }
 
-function buildMeetingContext(m: Meeting, question: string, budgetChars: number): string {
+/** The context, and the passages chosen for it in rank order (best first). */
+function buildMeetingContext(
+  m: Meeting,
+  question: string,
+  budgetChars: number,
+): { ctx: string; picked: { p: Passage; score: number }[] } {
   const head = notes(m).slice(0, Math.floor(budgetChars * 0.45));
   let room = budgetChars - head.length;
   const ranked = rank(question, passages(transcriptLines(m)));
   const matched = ranked.some(r => r.score > 0) ? ranked.filter(r => r.score > 0) : ranked;
-  const picked: Passage[] = [];
-  for (const { p } of matched) {
-    if (p.text.length + 2 > room) continue;
-    picked.push(p);
-    room -= p.text.length + 2;
+  const picked: { p: Passage; score: number }[] = [];
+  for (const hit of matched) {
+    if (hit.p.text.length + 2 > room) continue;
+    picked.push(hit);
+    room -= hit.p.text.length + 2;
   }
-  const excerpts = picked.sort((a, b) => a.order - b.order).map(p => p.text);
-  return `\n\n## Meeting notes\n${head}${
+  const excerpts = [...picked].sort((a, b) => a.p.order - b.p.order).map(h => h.p.text);
+  const ctx = `\n\n## Meeting notes\n${head}${
     excerpts.length ? `\n\n## Transcript excerpts\n${excerpts.join('\n…\n')}` : ''
   }`;
+  return { ctx, picked };
 }

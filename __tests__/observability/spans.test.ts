@@ -95,6 +95,45 @@ describe('LiquidChat spans', () => {
     });
     expect(q.attributes['rag.result.score_margin']).toBeCloseTo(0.4);
   });
+
+  it('records the retrieved documents in rank order; their text and source only with content capture', async () => {
+    const store = new VectorStore('docs_test');
+    await store.add('a', 'Prefers meetings at 11 am', [1, 0, 0], { sourceFile: 'notes.md' });
+    await store.add('b', 'Asked about LiteLLM', [0.6, 0.8, 0]);
+
+    await store.query([1, 0, 0], 2);
+    const bare = spans().find(s => s.name === 'query docs_test')!.attributes;
+    expect(bare).toMatchObject({
+      'retrieval.documents.0.document.id': 'a',
+      'retrieval.documents.0.document.score': 1,
+      'retrieval.documents.1.document.id': 'b',
+      'retrieval.document_count': 2,
+    });
+    expect(Object.keys(bare).some(k => k.endsWith('.content') || k.includes('.metadata.'))).toBe(
+      false,
+    );
+
+    exporter.reset();
+    setContentCapture(true);
+    await store.query([1, 0, 0], 2);
+    expect(spans().find(s => s.name === 'query docs_test')!.attributes).toMatchObject({
+      'retrieval.documents.0.document.content': 'Prefers meetings at 11 am',
+      'retrieval.documents.0.document.metadata.source': 'notes.md',
+      'retrieval.documents.1.document.content': 'Asked about LiteLLM',
+    });
+  });
+
+  it('puts the tool description on tool spans', async () => {
+    await traceTool(
+      'set_alarm',
+      { description: 'Sets an alarm at a given time.' },
+      {},
+      async () => ({ success: true }),
+    );
+    expect(spans().find(s => s.name === 'execute_tool set_alarm')!.attributes).toMatchObject({
+      'gen_ai.tool.description': 'Sets an alarm at a given time.',
+    });
+  });
 });
 
 describe('errors and content capture', () => {

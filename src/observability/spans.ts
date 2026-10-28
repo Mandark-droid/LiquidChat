@@ -16,6 +16,10 @@ import {
   SpanStatusCode,
   trace,
 } from '@opentelemetry/api';
+import {
+  addRetrievalAttributes,
+  type RetrievedDocument,
+} from '@traceverse/genai-otel-instrument-node/react-native';
 
 const TRACER = 'liquidchat';
 const MAX_CONTENT = 8000;
@@ -125,7 +129,13 @@ export async function traceAgentRun<
 /** One tool call through the permission gateway (MCP tools included). */
 export function traceTool<T extends { success: boolean; error?: { code?: string } }>(
   tool: string,
-  info: { executionId?: string; callId?: string; risk?: string; mcpServer?: string },
+  info: {
+    executionId?: string;
+    callId?: string;
+    risk?: string;
+    mcpServer?: string;
+    description?: string;
+  },
   args: unknown,
   fn: () => Promise<T>,
 ): Promise<T> {
@@ -136,6 +146,7 @@ export function traceTool<T extends { success: boolean; error?: { code?: string 
       'gen_ai.tool.name': tool,
       'gen_ai.tool.type': info.mcpServer ? 'extension' : 'function',
       'gen_ai.tool.call.id': info.callId,
+      'gen_ai.tool.description': info.description,
       'liquidchat.tool.risk': info.risk,
       'mcp.server.name': info.mcpServer,
       'mcp.method.name': info.mcpServer ? 'tools/call' : undefined,
@@ -164,4 +175,20 @@ export function recordScores(span: Span, scores: number[]): void {
   span.setAttribute('rag.result.score_min', ordered[ordered.length - 1]);
   span.setAttribute('rag.result.score_mean', scores.reduce((a, b) => a + b, 0) / scores.length);
   if (ordered.length > 1) span.setAttribute('rag.result.score_margin', ordered[0] - ordered[1]);
+}
+
+/**
+ * What a retrieval returned, in rank order (the first five). Ids and scores always, so the
+ * ranking is visible; the query, document text and source only with content capture, as they
+ * are the user's own data.
+ */
+export function recordDocuments(span: Span, documents: RetrievedDocument[], query?: string): void {
+  if (captureContent) {
+    addRetrievalAttributes(span, documents, { query });
+  } else {
+    addRetrievalAttributes(
+      span,
+      documents.map(d => ({ id: d.id, score: d.score })),
+    );
+  }
 }

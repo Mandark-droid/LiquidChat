@@ -9,7 +9,7 @@
  * Memory is context, never authority: retrieval returns text the controller
  * places in the model context as data, and permissions are unaffected by it.
  */
-import { setContent, withSpan } from '../observability/spans';
+import { recordDocuments, setContent, withSpan } from '../observability/spans';
 import { fromJson, ftsQuery, getDatabase, type Row, type SqlDb } from '../storage/db';
 
 export type MemoryKind = 'profile' | 'episodic' | 'procedural';
@@ -170,12 +170,26 @@ export class MemoryManager {
         setContent(span, 'liquidchat.retrieval.query', query);
         const found = await this.retrieveRanked(query, opts);
         span.setAttribute('db.response.returned_rows', found.length);
-        return found;
+        recordDocuments(
+          span,
+          found.map(({ memory, score }) => ({
+            id: memory.id,
+            score,
+            content: memory.title ? `${memory.title}: ${memory.content}` : memory.content,
+            metadata: { kind: memory.kind, pinned: memory.pinned },
+          })),
+          query,
+        );
+        return found.map(f => f.memory);
       },
     );
   }
 
-  private async retrieveRanked(query: string, opts: RetrieveOptions): Promise<Memory[]> {
+  /** Hits in rank order; `score` is the BM25 relevance (higher is better), absent for pinned profile entries. */
+  private async retrieveRanked(
+    query: string,
+    opts: RetrieveOptions,
+  ): Promise<{ memory: Memory; score?: number }[]> {
     const db = await this.db();
     const limit = opts.limit ?? 5;
     const match = ftsQuery(query);
@@ -204,19 +218,21 @@ export class MemoryManager {
       params,
     );
     const seen = new Set<string>();
-    const out: Memory[] = [];
+    const out: { memory: Memory; score?: number }[] = [];
     for (const row of [...pinned.rows, ...rows]) {
       const m = toMemory(row);
       if (seen.has(m.id)) continue;
       seen.add(m.id);
-      out.push(m);
+      // SQLite's bm25() is lower-is-better; negated so a higher score ranks higher.
+      const rank = (row as { rank?: unknown }).rank;
+      out.push({ memory: m, score: typeof rank === 'number' ? -rank : undefined });
       if (out.length >= limit) break;
     }
     if (out.length) {
       const now = Date.now();
       await db.execute(
         `UPDATE memories SET last_used_at = ? WHERE id IN (${out.map(() => '?').join(',')})`,
-        [now, ...out.map(m => m.id)],
+        [now, ...out.map(o => o.memory.id)],
       );
     }
     return out;

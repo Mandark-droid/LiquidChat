@@ -64,6 +64,7 @@ export class PermissionGateway {
         callId: ctx.toolCallId,
         risk: tool?.riskLevel,
         mcpServer: mcp?.[1],
+        description: tool?.description,
       },
       rawArgs,
       () => this.invokeTool(name, rawArgs, ctx, opts),
