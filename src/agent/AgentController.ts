@@ -97,6 +97,7 @@ export class AgentControllerImpl implements IAgentController {
         ok,
         tools: plan.steps.flatMap(s => (s.kind === 'tool' && s.tool ? [s.tool] : [])),
         errorCode,
+        skillId: record.request.skillId,
       })
       .catch(e => console.warn('[Memory] learning from the run failed:', e));
   }

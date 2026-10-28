@@ -4,6 +4,7 @@
  */
 import { resolveDue, toIsoDate } from '../../meetings/dateResolver';
 import type { MemoryManager } from '../../memory/MemoryManager';
+import { isMemoryBlockText } from '../../memory/MemoryManager';
 import type { DeviceContextProvider } from '../../platform/types';
 import type { AgentTool, JsonSchema } from '../types';
 import { toolError } from '../types';
@@ -226,12 +227,23 @@ export function createAppTools(deps: AppToolDeps): AgentTool[] {
       idempotent: false,
       describeCall: a => `Remember: "${String(a.content).slice(0, 160)}"`,
       execute: async a => {
-        const m = await deps.memory.create({
-          kind: 'profile',
-          title: '',
-          content: String(a.content),
-          source: 'user',
-        });
+        // A small model sometimes passes back the memory block it was shown; that is not a fact.
+        const content = String(a.content)
+          .split('\n')
+          .filter(line => !isMemoryBlockText(line))
+          .join('\n')
+          .replace(/^\s*-\s*\[\w+\]\s*/, '')
+          .trim();
+        if (content.length < 3)
+          return {
+            success: false,
+            error: {
+              code: 'NOTHING_TO_REMEMBER',
+              message: 'Nothing to remember in that.',
+              recoverable: false,
+            },
+          };
+        const m = await deps.memory.create({ kind: 'profile', title: '', content, source: 'user' });
         return { success: true, data: { id: m.id }, display: 'Saved to memory' };
       },
     },

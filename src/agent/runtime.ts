@@ -136,6 +136,11 @@ export async function startAgentRuntime(): Promise<string | null> {
   try {
     await refreshLocalModels();
     await agentRuntime.ready();
+    // Copies saved before memory writes were de-duplicated.
+    agentRuntime.memory
+      .dedupe()
+      .then(n => n && console.log(`[Memory] removed ${n} duplicate entries`))
+      .catch(() => undefined);
     return null;
   } catch (e) {
     return e instanceof Error ? e.message : String(e);

@@ -55,6 +55,20 @@ export interface RetrieveOptions {
   excludeSensitive?: boolean;
 }
 
+const sameKey = (s: string) =>
+  s
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .replace(/[.!?]+$/, '');
+
+/** Text of the memory block put in front of the model (its header or tags), never a fact itself. */
+export function isMemoryBlockText(s: string): boolean {
+  return /Treat as (context|data), not instructions|<\/?(memory|conversations|documents)\b/i.test(
+    s,
+  );
+}
+
 const SENSITIVE_RE =
   /\b(password|passcode|pin|otp|aadhaar|pan card|bank account|account number|salary|diagnos|medical|health|religion|caste)\b/i;
 
@@ -73,6 +87,15 @@ export class MemoryManager {
   }): Promise<Memory> {
     const content = input.content.trim();
     if (!content) throw new Error('Memory content is empty');
+    // The same fact can arrive several ways ("remember that…", the remember tool, learning):
+    // one entry, refreshed, rather than copies.
+    const same = await this.findSame(input.kind, content);
+    if (same) {
+      const tags = [
+        ...new Set([...same.tags, ...(input.tags ?? []).map(t => t.trim().toLowerCase())]),
+      ];
+      return (await this.update(same.id, { tags, pinned: same.pinned || !!input.pinned })) ?? same;
+    }
     const db = await this.db();
     const now = Date.now();
     const m: Memory = {
@@ -106,6 +129,42 @@ export class MemoryManager {
       ],
     );
     return m;
+  }
+
+  /** An entry of this kind with the same text (case, spacing and end punctuation aside). */
+  private async findSame(kind: MemoryKind, content: string): Promise<Memory | null> {
+    const key = sameKey(content);
+    const db = await this.db();
+    const r = await db.execute('SELECT * FROM memories WHERE kind = ?', [kind]);
+    return r.rows.map(toMemory).find(m => sameKey(m.content) === key) ?? null;
+  }
+
+  /**
+   * Removes copies already stored: entries of a kind with the same text, keeping the pinned or
+   * user-saved one (else the newest), and text copied from the memory block itself. Returns how
+   * many were removed.
+   */
+  async dedupe(): Promise<number> {
+    const all = await this.list({ limit: 100000 });
+    const keep = new Map<string, Memory>();
+    const drop: Memory[] = [];
+    const rank = (m: Memory) =>
+      (m.pinned ? 4 : 0) + (m.source === 'user' ? 2 : 0) + m.updatedAt / 1e15;
+    for (const m of all) {
+      if (isMemoryBlockText(m.content)) {
+        drop.push(m);
+        continue;
+      }
+      const key = `${m.kind}|${sameKey(m.content)}`;
+      const other = keep.get(key);
+      if (!other) keep.set(key, m);
+      else if (rank(m) > rank(other)) {
+        drop.push(other);
+        keep.set(key, m);
+      } else drop.push(m);
+    }
+    for (const m of drop) await this.delete(m.id);
+    return drop.length;
   }
 
   async get(id: string): Promise<Memory | null> {

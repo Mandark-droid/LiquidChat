@@ -236,7 +236,10 @@ export class AgentRuntime {
       memory: this.memory,
       tracer: this.tracer,
       onMemoryProposal: deps.onMemoryProposal,
-      learn: run => learnFromRun(this.memory, run),
+      learn: async run => {
+        const skill = run.skillId ? await this.skills.get(run.skillId).catch(() => null) : null;
+        await learnFromRun(this.memory, { ...run, skillName: skill?.manifest.name ?? run.skillId });
+      },
       approvals: this.approvals,
     });
   }
