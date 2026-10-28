@@ -18,6 +18,8 @@ import {
 } from '@opentelemetry/api';
 import {
   addRetrievalAttributes,
+  flushTelemetry,
+  isInstrumented,
   type RetrievedDocument,
 } from '@traceverse/genai-otel-instrument-node/react-native';
 
@@ -98,7 +100,7 @@ export async function traceAgentRun<
   fn: () => Promise<T>,
 ): Promise<T> {
   const agent = request.skillName ? `skill:${request.skillName}` : 'liquidchat';
-  return withSpan(
+  const run = withSpan(
     `invoke_agent ${agent}`,
     {
       'gen_ai.operation.name': 'invoke_agent',
@@ -124,6 +126,15 @@ export async function traceAgentRun<
       }
     },
   );
+  // Send the run's trace now, whole. A tool that opens another app (the Clock for an alarm)
+  // puts LiquidChat in the background, where the batch timer stalls: the tool and run spans
+  // ended there and only left the phone when the app came back.
+  run
+    .finally(() => {
+      if (isInstrumented()) flushTelemetry(10).catch(() => undefined);
+    })
+    .catch(() => undefined);
+  return run;
 }
 
 /** One tool call through the permission gateway (MCP tools included). */
