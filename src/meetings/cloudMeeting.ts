@@ -136,7 +136,8 @@ export async function processMeetingInCloud(
       segments.push(...r.segments);
     }
   } finally {
-    client.call('finish', [job.job_id]).catch(() => undefined);
+    // Awaited (about a second): a call still open when the next one starts would hold it in its trace.
+    await client.call('finish', [job.job_id]).catch(() => undefined);
   }
   if (!segments.length) throw new Error('No speech was found in the recording.');
 

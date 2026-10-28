@@ -1,4 +1,5 @@
 import * as RNFS from '@dr.pogodin/react-native-fs';
+import { detached } from '@traceverse/genai-otel-instrument-node/react-native';
 
 import { getModelBySlug } from '../config/models';
 import type { DocumentResult, MemoryResult } from '../types';
@@ -157,15 +158,18 @@ class MemoryService {
    * the chat models (loading it anyway got the app killed by Android), and it is released after
    * EMBED_IDLE_MS without use.
    */
-  private async embed(text: string): Promise<number[]> {
+  private async embed(text: string, background = false): Promise<number[]> {
+    // Background work (indexing) stays out of whatever the user is running meanwhile.
+    const call = <T>(fn: () => Promise<T>) => (background ? detached(fn) : fn());
     if (!this.managedModel?.instance || modelLifecycle.getModelState(this.modelSlug) !== 'ready') {
       if (!modelLifecycle.fitsInBudget(this.modelSlug)) throw new EmbedderBusyError();
-      this.managedModel = await modelLifecycle.ensure(this.modelSlug);
+      this.managedModel = await call(() => modelLifecycle.ensure(this.modelSlug));
       this.flushPendingSoon();
     }
-    if (!this.managedModel?.instance) throw new Error('Embedding model not initialized');
+    const instance = this.managedModel?.instance;
+    if (!instance) throw new Error('Embedding model not initialized');
     this.scheduleRelease();
-    const result = await this.managedModel.instance.embed({ text });
+    const result = await call(() => instance.embed({ text }));
     return result.embedding;
   }
 
@@ -191,7 +195,7 @@ class MemoryService {
       try {
         while (this.pending.length) {
           const p = this.pending[0];
-          const embedding = await this.embed(p.text);
+          const embedding = await this.embed(p.text, true);
           await this.memoryStore.add(generateId(), p.text, embedding, p.metadata);
           this.pending.shift();
         }
@@ -265,7 +269,7 @@ class MemoryService {
 
     // Embed everything first: a failure halfway leaves the previous version in place.
     const embedded: { text: string; embedding: number[] }[] = [];
-    for (const chunk of chunks) embedded.push({ text: chunk, embedding: await this.embed(chunk) });
+    for (const chunk of chunks) embedded.push({ text: chunk, embedding: await this.embed(chunk, true) });
 
     this.removeSource(fileName);
     for (let i = 0; i < embedded.length; i++) {
