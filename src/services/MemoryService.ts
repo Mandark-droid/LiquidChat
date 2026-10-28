@@ -216,6 +216,8 @@ class MemoryService {
 
   async recall(query: string, topK: number = 3): Promise<MemoryResult[]> {
     await this.ensureInit();
+    // Nothing stored: no reason to load a 750 MB model to search it.
+    if (!this.memoryStore.count) return [];
     const embedding = await this.embed(query);
     const results = await this.memoryStore.query(embedding, topK, 0.0);
     return results.map(r => ({
@@ -297,6 +299,7 @@ class MemoryService {
 
   async queryDocuments(query: string, topK: number = 3): Promise<DocumentResult[]> {
     await this.ensureInit();
+    if (!this.documentStore.count) return [];
     const embedding = await this.embed(query);
     const results = await this.documentStore.query(embedding, topK, 0.0);
     return results.map(r => ({
