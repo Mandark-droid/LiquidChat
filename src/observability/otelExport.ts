@@ -20,6 +20,7 @@ import { AppState } from 'react-native';
 
 import { isSafeBaseUrl } from '../inference/ModelRegistry';
 import { credentials } from '../platform/android';
+import { OpenInferenceSpanProcessor } from './openinference';
 import { setContentCapture } from './spans';
 
 const KEY = '@liquid_otel_v1';
@@ -179,6 +180,8 @@ export async function applyOtel(s?: OtelSettings): Promise<boolean> {
           )
         : undefined,
       headers: withProjectRouting(settings.endpoint, parseHeaders(await getOtelHeaders())),
+      // Span kinds and llm.* attributes for OpenInference backends (Arize shows "unknown" without).
+      spanProcessors: [new OpenInferenceSpanProcessor()],
       enableContentCapture: settings.captureContent,
       // Flush when the app leaves the foreground: a backgrounded app can be killed.
       appState: AppState,

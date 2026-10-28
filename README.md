@@ -179,6 +179,8 @@ Both values are in Arize under **Settings → API Keys** (the space ID is also i
 
 Arize files every trace under a **project** and rejects traces that don't name one (`HTTP 400: trace export requires project routing`). For an Arize endpoint, LiquidChat adds `x-project-name=liquidchat` automatically. To use a different project, add your own `x-project-name=<project>` to the headers.
 
+Arize classifies spans by the OpenInference attribute `openinference.span.kind`. Every span LiquidChat exports carries it next to the GenAI attributes (`AGENT`, `TOOL`, `LLM` for completions and transcription, `EMBEDDING`, `RETRIEVER`, `CHAIN` for pipelines and model loads), along with `llm.model_name`, `llm.token_count.*`, `input.value` and `output.value`. Without these, Arize shows the span kind as *unknown*.
+
 To check your keys from a computer before configuring the phone:
 
 ```bash
