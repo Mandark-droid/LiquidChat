@@ -23,6 +23,7 @@ import {
   applyOtel,
   endpointProblem,
   nextHeaders,
+  originOf,
   parseHeaders,
   saveOtelSettings,
 } from '../../src/observability/otelExport';
@@ -96,5 +97,21 @@ describe('OpenTelemetry export settings', () => {
     expect(nextHeaders('', true, arize, arize)).toBe(''); // asked to remove
     expect(nextHeaders('', false, ngrok, '')).toBe(''); // destination cleared
     expect(nextHeaders('', false, '', arize)).toBeNull(); // first save, nothing typed
+  });
+
+  it('an endpoint that only looks like the same host does not keep the headers', () => {
+    const arize = 'https://otlp.arize.com';
+    for (const tricky of [
+      'https://otlp.arize.com:x@evil.example',
+      'https://otlp.arize.com@evil.example',
+      'https://user:pass@otlp.arize.com',
+      'http://otlp.arize.com', // another scheme
+      'https://otlp.arize.com:8443', // another port
+      'not a url',
+    ])
+      expect(nextHeaders('', false, arize, tricky)).toBe('');
+    expect(nextHeaders('', false, arize, 'HTTPS://OTLP.ARIZE.COM:443/')).toBeNull();
+    expect(originOf('https://otlp.arize.com:x@evil.example')).toBeNull();
+    expect(endpointProblem('https://key@otel.example.com')).toMatch(/headers/);
   });
 });

@@ -55,6 +55,8 @@ export function parseHeaders(raw: string): Record<string, string> {
 export function endpointProblem(endpoint: string): string | null {
   const e = endpoint.trim();
   if (!e) return 'Enter the collector URL.';
+  if (/^[a-z][a-z0-9+.-]*:\/\/[^/?#]*@/i.test(e))
+    return 'Put credentials in the headers, not in the URL.';
   if (!isSafeBaseUrl(e))
     return 'Use https:// (plain http only for a collector on your local network).';
   return null;
@@ -76,14 +78,27 @@ export async function getOtelMirrorHeaders(): Promise<string> {
   return (await credentials.get(MIRROR_HEADERS_KEY).catch(() => null)) ?? '';
 }
 
-function hostOf(url: string): string {
-  const m = /^[a-z]+:\/\/([^/:?#]+)/i.exec(url.trim());
-  return m ? m[1].toLowerCase() : url.trim().toLowerCase();
+/**
+ * The origin (scheme://host:port) of an endpoint, or null when it has user-info (`a@b`: the host
+ * is what follows the @) or cannot be read. React Native's URL does not implement `hostname`, so
+ * the authority is parsed here, strictly.
+ */
+export function originOf(url: string): string | null {
+  const m = /^([a-z][a-z0-9+.-]*):\/\/([^/?#]*)/i.exec(url.trim());
+  if (!m) return null;
+  const authority = m[2];
+  if (!authority || authority.includes('@')) return null;
+  const hp = /^(\[[0-9a-f:.]+\]|[a-z0-9.-]+)(?::(\d{1,5}))?$/i.exec(authority);
+  if (!hp) return null;
+  const scheme = m[1].toLowerCase();
+  const host = hp[1].toLowerCase().replace(/\.$/, '');
+  const port = hp[2] ?? (scheme === 'https' ? '443' : scheme === 'http' ? '80' : '');
+  return `${scheme}://${host}:${port}`;
 }
 
 /**
  * What to store for a destination's headers on save: what was typed; '' (remove) when the user
- * asked, the destination was cleared, or its endpoint moved to another host, since saved headers
+ * asked, the destination was cleared, or its endpoint moved to another origin, since saved headers
  * belong to the backend they were entered for and must never be sent to another; else null (keep).
  */
 export function nextHeaders(
@@ -94,7 +109,11 @@ export function nextHeaders(
 ): string | null {
   if (typed.trim()) return typed;
   if (remove || !newEndpoint.trim()) return '';
-  if (savedEndpoint.trim() && hostOf(savedEndpoint) !== hostOf(newEndpoint)) return '';
+  if (!savedEndpoint.trim()) return null;
+  // Another origin, or one that cannot be read safely: the headers are not carried over.
+  const from = originOf(savedEndpoint);
+  const to = originOf(newEndpoint);
+  if (!from || !to || from !== to) return '';
   return null;
 }
 
