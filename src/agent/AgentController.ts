@@ -4,8 +4,10 @@
  * persisting every state transition. It depends only on ports, never on a
  * specific model.
  */
+import { traceAgent } from '@traceverse/genai-otel-instrument-node/react-native';
+
+import type { RunSummary } from '../memory/learning';
 import { MemoryManager, type MemoryProposal } from '../memory/MemoryManager';
-import { traceAgentRun } from '../observability/spans';
 import type { Tracer } from '../observability/types';
 import { nullTracer } from '../observability/types';
 import type { ApprovalManager } from '../security/ApprovalManager';
@@ -33,8 +35,10 @@ export interface ControllerDeps {
   repo: ExecutionRepository;
   memory?: MemoryPort;
   tracer?: Tracer;
-  /** Called with proposals the user may approve; nothing is stored automatically. */
+  /** Called with proposals the user may approve. */
   onMemoryProposal?: (p: MemoryProposal, executionId: string) => void;
+  /** What the agent learns from a finished run (episodes, workflows, stated preferences). */
+  learn?: (run: RunSummary) => Promise<void>;
   approvals?: Pick<ApprovalManager, 'denyAllFor'>;
   newId?: () => string;
 }
@@ -66,15 +70,41 @@ export class AgentControllerImpl implements IAgentController {
 
   /** OpenTelemetry: one invoke_agent span per run (a no-op unless export is on). */
   private traced(record: ExecutionRecord, run: () => Promise<AgentResult>): Promise<AgentResult> {
-    return traceAgentRun(
-      record.id,
+    const { text, source, skillId } = record.request;
+    return traceAgent(
+      skillId ? `skill:${skillId}` : 'liquidchat',
       {
-        text: record.request.text,
-        source: record.request.source,
-        skillName: record.request.skillId,
+        id: record.id,
+        conversationId: record.id,
+        input: text,
+        output: r => r.response,
+        failure: r => (r.state === 'FAILED' ? (r.error?.code ?? 'failed') : undefined),
+        attributes: { 'liquidchat.request.source': source, 'liquidchat.skill.name': skillId },
+        resultAttributes: r => ({ 'liquidchat.execution.state': r.state }),
       },
       run,
     );
+  }
+
+  /** In the background: learning must never slow down or fail a run. */
+  private learnFrom(
+    record: ExecutionRecord,
+    plan: Plan,
+    response: string,
+    ok: boolean,
+    errorCode?: string,
+  ): void {
+    if (!this.deps.learn || record.request.source === 'eval') return;
+    this.deps
+      .learn({
+        request: record.request.text,
+        goal: plan.goal,
+        ok,
+        response,
+        tools: plan.steps.flatMap(s => (s.kind === 'tool' && s.tool ? [s.tool] : [])),
+        errorCode,
+      })
+      .catch(e => console.warn('[Memory] learning from the run failed:', e));
   }
 
   async cancel(executionId: string): Promise<void> {
@@ -226,15 +256,15 @@ export class AgentControllerImpl implements IAgentController {
       if (outcome.ok) {
         await setState('COMPLETED');
         await this.deps.repo.finish(record.id, response, undefined);
-        const proposal =
-          MemoryManager.proposeFromRequest(record.request.text) ??
-          MemoryManager.proposeEpisode(plan.goal, response.slice(0, 200), plan.steps.length);
+        const proposal = MemoryManager.proposeFromRequest(record.request.text);
         if (proposal && this.deps.onMemoryProposal) this.deps.onMemoryProposal(proposal, record.id);
+        this.learnFrom(record, plan, response, true);
       } else {
         const error = outcome.failed[0]?.error;
         record.error = error;
         await setState('FAILED', error?.code);
         await this.deps.repo.finish(record.id, response, error);
+        this.learnFrom(record, plan, response, false, error?.code);
       }
       return toResult(record);
     } catch (e) {

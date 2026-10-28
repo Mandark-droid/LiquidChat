@@ -1,26 +1,21 @@
 /**
- * OpenTelemetry export (opt-in): a span and metrics for every on-device model call (Cactus
- * downloads, loads, completions, embeddings, transcriptions: tokens, time to first token,
- * speed, memory) sent over OTLP/HTTP to the user's own collector, through
- * @traceverse/genai-otel-instrument-node, and optionally to a second destination as well (each
- * batch is sent to both). Off by default; prompts and replies are not exported unless the user
- * turns that on. Auth headers live in the Keystore-backed credential store.
+ * OpenTelemetry export settings (opt-in). Everything else is the SDK's: one instrument() call
+ * traces on-device model calls (Cactus is found on its own), and the app's agent runs, tool calls,
+ * retrieval and pipelines are traced with its helpers where they happen. Sent over OTLP/HTTP to
+ * the user's collector, and optionally to a second destination too. Off by default; prompts and
+ * replies are not exported unless the user turns that on. Auth headers live in the
+ * Keystore-backed credential store.
  */
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   flushTelemetry,
   instrument,
-  instrumentCactus,
   isInstrumented,
-  setLogger,
   uninstrument,
 } from '@traceverse/genai-otel-instrument-node/react-native';
-import { CactusLM, CactusSTT } from 'cactus-react-native';
-import { AppState } from 'react-native';
 
 import { isSafeBaseUrl } from '../inference/ModelRegistry';
 import { credentials } from '../platform/android';
-import { setContentCapture } from './spans';
 
 const KEY = '@liquid_otel_v1';
 const HEADERS_KEY = 'otel.headers';
@@ -99,71 +94,25 @@ export async function saveOtelSettings(
   await applyOtel(s);
 }
 
-type FetchLike = typeof fetch;
-
-/**
- * A fetch that also sends every OTLP request to a second destination: the same body, to the same
- * signal path (/v1/traces, /v1/metrics) under `mirrorBase`, with that destination's own headers.
- * The primary destination's answer is what the SDK sees; a mirror failure is only logged.
- */
-export function mirroringFetch(
-  primaryBase: string,
-  mirrorBase: string,
-  mirrorHeaders: Record<string, string>,
-  base: FetchLike = fetch,
-): FetchLike {
-  const from = primaryBase.trim().replace(/\/+$/, '');
-  const to = mirrorBase.trim().replace(/\/+$/, '');
-  return (async (input: any, init?: any) => {
-    const url = String(input);
-    if (url.startsWith(from)) {
-      const path = url.slice(from.length);
-      const own = Object.fromEntries(
-        Object.entries((init?.headers ?? {}) as Record<string, string>).filter(
-          ([k]) => k.toLowerCase() === 'content-type',
-        ),
-      );
-      base(`${to}${path}`, { ...init, headers: { ...own, ...mirrorHeaders } })
-        .then(r => {
-          if (!r.ok)
-            console.warn(`[OTel] second destination answered HTTP ${r.status} for ${path}`);
-        })
-        .catch(e => console.warn(`[OTel] second destination unreachable: ${String(e)}`));
-    }
-    return base(input, init);
-  }) as FetchLike;
-}
-
 /** Starts or stops export to match the settings. Never throws: telemetry must not break the app. */
 export async function applyOtel(s?: OtelSettings): Promise<boolean> {
   try {
     const settings = s ?? (await getOtelSettings());
-    setContentCapture(settings.enabled && settings.captureContent);
     if (isInstrumented()) uninstrument();
     if (!settings.enabled || endpointProblem(settings.endpoint)) return false;
-    // Export failures are debug-level in the SDK; surface them, or a rejected export is silent.
-    setLogger({
-      debug: (m, ...a) => {
-        if (/export failed/i.test(m)) console.warn('[OTel]', m, ...a);
-      },
-      info: () => {},
-      warn: (m, ...a) => console.warn('[OTel]', m, ...a),
-      error: (m, ...a) => console.warn('[OTel]', m, ...a),
-    });
     const mirror = settings.mirrorEndpoint?.trim() ?? '';
-    const mirrorOk = !!mirror && !endpointProblem(mirror);
     instrument({
       serviceName: 'liquidchat',
       endpoint: settings.endpoint.trim(),
-      fetch: mirrorOk
-        ? mirroringFetch(settings.endpoint, mirror, parseHeaders(await getOtelMirrorHeaders()))
-        : undefined,
       headers: parseHeaders(await getOtelHeaders()),
+      additionalDestinations:
+        mirror && !endpointProblem(mirror)
+          ? [{ endpoint: mirror, headers: parseHeaders(await getOtelMirrorHeaders()) }]
+          : [],
       enableContentCapture: settings.captureContent,
-      // Flush when the app leaves the foreground: a backgrounded app can be killed.
-      appState: AppState,
+      // Whole tool results and transcripts, not the SDK's 200-character default.
+      contentMaxLength: 8000,
     });
-    instrumentCactus({ CactusLM, CactusSTT });
     return true;
   } catch (e) {
     console.warn('[OTel] export not started:', e);

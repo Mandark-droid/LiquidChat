@@ -9,7 +9,8 @@
  * models, and skill/plan "requiresApproval: false" can only add friction, never
  * remove the gateway's own approval requirements.
  */
-import { traceTool } from '../observability/spans';
+import { traceTool } from '@traceverse/genai-otel-instrument-node/react-native';
+
 import type { Tracer } from '../observability/types';
 import { nullTracer } from '../observability/types';
 import type { PermissionChecker } from '../platform/types';
@@ -60,13 +61,14 @@ export class PermissionGateway {
     return traceTool(
       name,
       {
-        executionId: ctx.executionId,
         callId: ctx.toolCallId,
-        risk: tool?.riskLevel,
-        mcpServer: mcp?.[1],
         description: tool?.description,
+        mcpServer: mcp?.[1],
+        arguments: rawArgs,
+        failure: r => (r.success ? undefined : (r.error?.code ?? 'tool_error')),
+        attributes: { 'liquidchat.tool.risk': tool?.riskLevel },
+        resultAttributes: r => ({ 'liquidchat.tool.success': r.success }),
       },
-      rawArgs,
       () => this.invokeTool(name, rawArgs, ctx, opts),
     );
   }

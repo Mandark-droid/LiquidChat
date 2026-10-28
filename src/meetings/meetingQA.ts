@@ -3,9 +3,9 @@
  * relevant to it, instead of the first few minutes of transcript. Small on-device models only
  * attend to a short window, so what goes in the prompt has to be chosen, not truncated.
  */
-import { trace } from '@opentelemetry/api';
 
-import { recordDocuments, setContent } from '../observability/spans';
+import { traceRetrieval } from '@traceverse/genai-otel-instrument-node/react-native';
+
 import { transcriptLines } from './MinutesGenerator';
 import type { Meeting } from './types';
 
@@ -104,32 +104,28 @@ export function notes(m: Meeting): string {
  * best-matching transcript passages in meeting order (the opening of the meeting when nothing matches).
  */
 // On the phone the model reads ~20 tokens/s, so ~3000 characters (~750 tokens) keeps answers under a minute.
-export function meetingContext(m: Meeting, question: string, budgetChars = 3000): string {
-  const span = trace.getTracer('liquidchat').startSpan('retrieve meeting', {
-    attributes: {
-      'gen_ai.operation.name': 'retrieve',
-      'liquidchat.retrieval.method': 'bm25',
-      'liquidchat.meeting.id': m.id,
+export async function meetingContext(
+  m: Meeting,
+  question: string,
+  budgetChars = 3000,
+): Promise<string> {
+  const { ctx } = await traceRetrieval(
+    'meeting',
+    {
+      query: question,
+      attributes: { 'liquidchat.retrieval.method': 'bm25', 'liquidchat.meeting.id': m.id },
+      documents: ({ picked }) =>
+        picked.map(({ p, score }) => ({
+          id: `${m.id}#${p.order}`,
+          score,
+          content: p.text,
+          metadata: { position: p.order },
+        })),
+      resultAttributes: ({ ctx: c }) => ({ 'liquidchat.retrieval.context_chars': c.length }),
     },
-  });
-  try {
-    const { ctx, picked } = buildMeetingContext(m, question, budgetChars);
-    span.setAttribute('liquidchat.retrieval.context_chars', ctx.length);
-    recordDocuments(
-      span,
-      picked.map(({ p, score }) => ({
-        id: `${m.id}#${p.order}`,
-        score,
-        content: p.text,
-        metadata: { position: p.order },
-      })),
-      question,
-    );
-    setContent(span, 'liquidchat.retrieval.context', ctx);
-    return ctx;
-  } finally {
-    span.end();
-  }
+    async () => buildMeetingContext(m, question, budgetChars),
+  );
+  return ctx;
 }
 
 /** The context, and the passages chosen for it in rank order (best first). */

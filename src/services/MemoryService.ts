@@ -225,7 +225,7 @@ class MemoryService {
     // Nothing stored: no reason to load a 750 MB model to search it.
     if (!this.memoryStore.count) return [];
     const embedding = await this.embed(query);
-    const results = await this.memoryStore.query(embedding, topK, 0.0);
+    const results = await this.memoryStore.query(embedding, topK, 0.0, query);
     return results.map(r => ({
       id: r.id,
       text: r.text,
@@ -307,7 +307,7 @@ class MemoryService {
     await this.ensureInit();
     if (!this.documentStore.count) return [];
     const embedding = await this.embed(query);
-    const results = await this.documentStore.query(embedding, topK, 0.0);
+    const results = await this.documentStore.query(embedding, topK, 0.0, query);
     return results.map(r => ({
       id: r.id,
       text: r.text,

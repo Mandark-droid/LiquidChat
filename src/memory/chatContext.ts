@@ -3,7 +3,8 @@
  * search), similar earlier conversations, and passages from imported documents and meetings
  * marked searchable (both by embedding similarity). Any source that is unavailable is skipped.
  */
-import { setContent, withSpan } from '../observability/spans';
+import { traceWorkflow } from '@traceverse/genai-otel-instrument-node/react-native';
+
 import { memoryService } from '../services/MemoryService';
 import type { MemoryResult } from '../types';
 import { MemoryManager, memoryManager } from './MemoryManager';
@@ -20,12 +21,15 @@ export function chatMemoryContext(
   /** Shown to the user as chips under the reply. */
   onRecalled?: (past: MemoryResult[]) => void,
 ): Promise<string> {
-  return withSpan('retrieve chat_context', { 'gen_ai.operation.name': 'retrieve' }, async span => {
-    const ctx = await buildContext(text, onRecalled);
-    span.setAttribute('liquidchat.retrieval.context_chars', ctx.length);
-    setContent(span, 'liquidchat.retrieval.context', ctx);
-    return ctx;
-  });
+  return traceWorkflow(
+    'chat_context',
+    {
+      input: text,
+      output: ctx => ctx,
+      resultAttributes: ctx => ({ 'liquidchat.retrieval.context_chars': ctx.length }),
+    },
+    () => buildContext(text, onRecalled),
+  );
 }
 
 async function buildContext(

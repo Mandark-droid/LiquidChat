@@ -22,33 +22,33 @@ function longMeeting() {
 }
 
 describe('meeting Q&A retrieval', () => {
-  it('drops stop words and plural endings', () => {
+  it('drops stop words and plural endings', async () => {
     expect(terms('What are the latency numbers?')).toEqual(['latency', 'number']);
   });
 
-  it('finds facts from late in a long meeting, not just the opening', () => {
-    const ctx = meetingContext(longMeeting(), 'What did we decide about Mule?');
+  it('finds facts from late in a long meeting, not just the opening', async () => {
+    const ctx = await meetingContext(longMeeting(), 'What did we decide about Mule?');
     expect(ctx).toContain('drop Mule');
     expect(ctx).toContain('[41:30]');
   });
 
-  it('keeps the action items with owners in every answer', () => {
-    const ctx = meetingContext(longMeeting(), 'how long are logs retained?');
+  it('keeps the action items with owners in every answer', async () => {
+    const ctx = await meetingContext(longMeeting(), 'how long are logs retained?');
     expect(ctx).toContain('Share LiteLLM latency numbers — owner: Lalit — due: Thursday');
     expect(ctx).toContain('retention is thirty days');
   });
 
-  it('stays within the character budget', () => {
-    const ctx = meetingContext(longMeeting(), 'routine item', 3000);
+  it('stays within the character budget', async () => {
+    const ctx = await meetingContext(longMeeting(), 'routine item', 3000);
     expect(ctx.length).toBeLessThan(3200);
   });
 
-  it('falls back to the opening when nothing matches', () => {
-    const ctx = meetingContext(longMeeting(), 'zzz qqq');
+  it('falls back to the opening when nothing matches', async () => {
+    const ctx = await meetingContext(longMeeting(), 'zzz qqq');
     expect(ctx).toContain('routine item 0');
   });
 
-  it('windows overlap by one line so a reply stays with its question', () => {
+  it('windows overlap by one line so a reply stays with its question', async () => {
     const ps = passages(['a'.repeat(300), 'b'.repeat(300), 'c'.repeat(300)], 650);
     expect(ps.map(p => p.text.length)).toEqual([601, 601]);
     expect(rank('', ps)).toHaveLength(2);

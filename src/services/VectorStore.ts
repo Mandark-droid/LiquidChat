@@ -1,6 +1,5 @@
 import * as RNFS from '@dr.pogodin/react-native-fs';
-
-import { recordDocuments, recordScores, withSpan } from '../observability/spans';
+import { traceRetrieval } from '@traceverse/genai-otel-instrument-node/react-native';
 
 export interface VectorEntry {
   id: string;
@@ -25,6 +24,14 @@ export interface SearchResult {
   score: number;
   metadata?: Record<string, any>;
   createdAt: number;
+}
+
+function chunkMetadata(m?: Record<string, any>): Record<string, string | number> | undefined {
+  if (!m) return undefined;
+  const out: Record<string, string | number> = {};
+  if (m.sourceFile !== undefined) out.source = m.sourceFile;
+  if (m.chunkIndex !== undefined) out.chunk = m.chunkIndex;
+  return Object.keys(out).length ? out : undefined;
 }
 
 function cosineSimilarity(a: number[], b: number[]): number {
@@ -152,34 +159,33 @@ export class VectorStore {
     }
   }
 
-  query(embedding: number[], topK: number = 5, threshold: number = 0.0): Promise<SearchResult[]> {
-    return withSpan(
-      `query ${this.name}`,
+  /** The closest entries, best first. `queryText` is recorded on the span (with content capture). */
+  query(
+    embedding: number[],
+    topK: number = 5,
+    threshold: number = 0.0,
+    queryText?: string,
+  ): Promise<SearchResult[]> {
+    return traceRetrieval(
+      this.name,
       {
-        'db.system.name': 'liquidchat.vectorstore',
-        'db.operation.name': 'query',
-        'db.collection.name': this.name,
-        'db.vector.query.top_k': topK,
-        'liquidchat.vectorstore.entries': this.entries.length,
-        'gen_ai.embeddings.dimension.count': embedding.length,
-      },
-      async span => {
-        const top = this.search(embedding, topK, threshold);
-        recordScores(
-          span,
-          top.map(r => r.score),
-        );
-        recordDocuments(
-          span,
+        query: queryText,
+        system: 'liquidchat.vectorstore',
+        topK,
+        attributes: {
+          'gen_ai.embeddings.dimension.count': embedding.length,
+          'liquidchat.vectorstore.entries': this.entries.length,
+        },
+        // Each chunk with its cosine similarity, the document it came from and its position there.
+        documents: top =>
           top.map(r => ({
             id: r.id,
             score: r.score,
             content: r.text,
-            metadata: r.metadata?.sourceFile ? { source: r.metadata.sourceFile } : undefined,
+            metadata: chunkMetadata(r.metadata),
           })),
-        );
-        return top;
       },
+      async () => this.search(embedding, topK, threshold),
     );
   }
 

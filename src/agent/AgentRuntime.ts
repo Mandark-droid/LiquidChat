@@ -13,6 +13,7 @@ import type { FetchLike } from '../inference/providers/http';
 import { McpClient } from '../mcp/McpClient';
 import { McpServerStore, mcpTokenKey } from '../mcp/McpServerStore';
 import { adaptMcpTools, discoverMcpTools } from '../mcp/McpToolAdapter';
+import { learnFromRun } from '../memory/learning';
 import { MemoryManager, type MemoryProposal } from '../memory/MemoryManager';
 import { NotificationStore } from '../notifications/NotificationStore';
 import { type AgentTracer, createTracer } from '../observability/AgentTracer';
@@ -235,6 +236,7 @@ export class AgentRuntime {
       memory: this.memory,
       tracer: this.tracer,
       onMemoryProposal: deps.onMemoryProposal,
+      learn: run => learnFromRun(this.memory, run),
       approvals: this.approvals,
     });
   }

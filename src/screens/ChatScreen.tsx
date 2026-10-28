@@ -338,7 +338,7 @@ Try selecting a different model from the Models tab.`,
           setStreamingText('');
         }
         if (!answer) {
-          const context = meeting ? meetingContext(meeting, text) : '';
+          const context = meeting ? await meetingContext(meeting, text) : '';
           const recent = updatedMessages.slice(-3); // the question plus one earlier exchange
           ({ text: answer, metrics: turnMetrics } = await generateResponse(recent, context));
         }

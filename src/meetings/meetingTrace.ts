@@ -1,48 +1,52 @@
 /**
  * OpenTelemetry: one span per meeting processed (on the phone or on the LiquidChat Space), with
- * what came out of it. The transcript and minutes text are attached only when content capture is
- * on. On-device speech-to-text and model calls appear as their own Cactus spans.
+ * what came out of it. Counts and status always; the transcript, minutes, action items and any
+ * error text only with content capture (the SDK decides). On-device speech-to-text and model
+ * calls appear inside it as their own spans.
  */
-import { setContent, withSpan } from '../observability/spans';
+import { traceWorkflow } from '@traceverse/genai-otel-instrument-node/react-native';
+
 import { meetingStore } from './MeetingStore';
 import { transcriptPlain } from './MinutesGenerator';
+import type { Meeting } from './types';
 
-export function traceMeeting<T>(id: string, mode: string, fn: () => Promise<T>): Promise<T> {
-  return withSpan(
+export async function traceMeeting<T>(id: string, mode: string, fn: () => Promise<T>): Promise<T> {
+  const { result } = await traceWorkflow(
     `meeting.${mode}`,
-    { 'liquidchat.meeting.id': id, 'liquidchat.meeting.mode': mode },
-    async span => {
+    {
+      attributes: { 'liquidchat.meeting.id': id, 'liquidchat.meeting.mode': mode },
+      resultAttributes: ({ m }) => (m ? summary(m) : {}),
+      output: ({ m }) =>
+        m && {
+          transcript: transcriptPlain(m),
+          minutes: m.minutes?.summary,
+          actionItems: m.actionItems.map(a => `${a.task}${a.owner ? ` (${a.owner})` : ''}`),
+          error: m.error,
+        },
+    },
+    async () => {
       const result = await fn();
       const m = await meetingStore.get(id).catch(() => null);
-      if (m) {
-        span.setAttribute('liquidchat.meeting.status', m.status);
-        span.setAttribute('liquidchat.meeting.duration_s', Math.round(m.durationMs / 1000));
-        span.setAttribute('liquidchat.meeting.stt_model', m.sttModel ?? '');
-        span.setAttribute(
-          'liquidchat.meeting.segments',
-          m.segments.filter(s => s.status === 'done').length,
-        );
-        span.setAttribute('liquidchat.meeting.speakers', m.speakers?.length ?? 0);
-        span.setAttribute('liquidchat.meeting.action_items', m.actionItems.length);
-        if (m.minutes?.model)
-          span.setAttribute('liquidchat.meeting.minutes_model', m.minutes.model);
-        if (m.error) {
-          // A category always; the message (it can quote the Space or the transcript) only with content capture.
-          span.setAttribute(
-            'error.type',
-            m.status === 'error' ? 'meeting_failed' : 'meeting_warning',
-          );
-          setContent(span, 'liquidchat.meeting.error', m.error);
-        }
-        setContent(span, 'liquidchat.meeting.transcript', transcriptPlain(m));
-        setContent(span, 'liquidchat.meeting.minutes', m.minutes?.summary);
-        setContent(
-          span,
-          'liquidchat.meeting.action_items_text',
-          m.actionItems.map(a => `${a.task}${a.owner ? ` (${a.owner})` : ''}`),
-        );
-      }
-      return result;
+      return { result, m };
     },
   );
+  return result;
+}
+
+function summary(m: Meeting): Record<string, string | number | undefined> {
+  return {
+    'liquidchat.meeting.status': m.status,
+    'liquidchat.meeting.duration_s': Math.round(m.durationMs / 1000),
+    'liquidchat.meeting.stt_model': m.sttModel ?? '',
+    'liquidchat.meeting.segments': m.segments.filter(s => s.status === 'done').length,
+    'liquidchat.meeting.speakers': m.speakers?.length ?? 0,
+    'liquidchat.meeting.action_items': m.actionItems.length,
+    'liquidchat.meeting.minutes_model': m.minutes?.model,
+    // A category always; the message itself (it can quote the transcript) is in the output.
+    'error.type': m.error
+      ? m.status === 'error'
+        ? 'meeting_failed'
+        : 'meeting_warning'
+      : undefined,
+  };
 }

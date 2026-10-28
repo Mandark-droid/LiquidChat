@@ -9,7 +9,8 @@
  * Memory is context, never authority: retrieval returns text the controller
  * places in the model context as data, and permissions are unaffected by it.
  */
-import { recordDocuments, setContent, withSpan } from '../observability/spans';
+import { traceRetrieval } from '@traceverse/genai-otel-instrument-node/react-native';
+
 import { fromJson, ftsQuery, getDatabase, type Row, type SqlDb } from '../storage/db';
 
 export type MemoryKind = 'profile' | 'episodic' | 'procedural';
@@ -174,31 +175,22 @@ export class MemoryManager {
    * alarm" must not pick up "I prefer meetings after 11 am").
    */
   retrieveScored(query: string, opts: RetrieveOptions = {}): Promise<ScoredMemory[]> {
-    return withSpan(
-      'retrieve memory',
+    return traceRetrieval(
+      'memory',
       {
-        'gen_ai.operation.name': 'retrieve',
-        'db.system.name': 'sqlite',
-        'db.collection.name': 'memories',
-        'liquidchat.retrieval.method': 'bm25',
-        'db.vector.query.top_k': opts.limit ?? 5,
-      },
-      async span => {
-        setContent(span, 'liquidchat.retrieval.query', query);
-        const found = await this.retrieveRanked(query, opts);
-        span.setAttribute('db.response.returned_rows', found.length);
-        recordDocuments(
-          span,
-          found.map(({ memory, score }) => ({
+        query,
+        system: 'sqlite',
+        topK: opts.limit ?? 5,
+        attributes: { 'liquidchat.retrieval.method': 'bm25' },
+        documents: found =>
+          found.map(({ memory, score, matched }) => ({
             id: memory.id,
             score,
             content: memory.title ? `${memory.title}: ${memory.content}` : memory.content,
-            metadata: { kind: memory.kind, pinned: memory.pinned },
+            metadata: { kind: memory.kind, pinned: memory.pinned, matched },
           })),
-          query,
-        );
-        return found;
       },
+      () => this.retrieveRanked(query, opts),
     );
   }
 

@@ -22,7 +22,6 @@ import * as sdk from '@traceverse/genai-otel-instrument-node/react-native';
 import {
   applyOtel,
   endpointProblem,
-  mirroringFetch,
   parseHeaders,
   saveOtelSettings,
 } from '../../src/observability/otelExport';
@@ -60,41 +59,30 @@ describe('OpenTelemetry export settings', () => {
         endpoint: 'https://otel.example.com:4318',
         headers: { Authorization: 'Bearer k' },
         enableContentCapture: false,
+        additionalDestinations: [],
       }),
     );
-    expect(sdk.instrumentCactus).toHaveBeenCalled();
   });
 
-  it('sends each OTLP request to the second destination too, with its own headers', async () => {
-    const calls: { url: string; headers: Record<string, string>; body: string }[] = [];
-    const base = jest.fn(async (url: any, init: any) => {
-      calls.push({ url: String(url), headers: init.headers, body: init.body });
-      return { ok: true, status: 200 } as Response;
-    });
-    const f = mirroringFetch(
-      'https://collector.example.com/',
-      'https://otlp.arize.com',
-      { space_id: 's', api_key: 'k', 'x-project-name': 'liquidchat' },
-      base as unknown as typeof fetch,
+  it('sends to a second destination through the SDK, with its own headers', async () => {
+    await saveOtelSettings(
+      {
+        enabled: true,
+        endpoint: 'https://collector.example.com',
+        captureContent: true,
+        mirrorEndpoint: 'https://otlp.example.net',
+      },
+      'Authorization=Bearer mine',
+      'api_key=k2',
     );
-    const r = await f('https://collector.example.com/v1/traces', {
-      method: 'POST',
-      headers: { Authorization: 'Bearer mine', 'content-type': 'application/json' },
-      body: '{"resourceSpans":[]}',
-    });
-    expect(r.ok).toBe(true);
-    expect(calls.map(c => c.url).sort()).toEqual([
-      'https://collector.example.com/v1/traces',
-      'https://otlp.arize.com/v1/traces',
-    ]);
-    const mirrored = calls.find(c => c.url.startsWith('https://otlp.arize.com'))!;
-    // The primary's credentials never go to the second destination.
-    expect(mirrored.headers).toEqual({
-      'content-type': 'application/json',
-      space_id: 's',
-      api_key: 'k',
-      'x-project-name': 'liquidchat',
-    });
-    expect(mirrored.body).toBe('{"resourceSpans":[]}');
+    expect(sdk.instrument).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        headers: { Authorization: 'Bearer mine' },
+        additionalDestinations: [
+          { endpoint: 'https://otlp.example.net', headers: { api_key: 'k2' } },
+        ],
+        enableContentCapture: true,
+      }),
+    );
   });
 });
