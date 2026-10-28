@@ -1,5 +1,6 @@
 package com.liquidchat.meetings
 
+import android.annotation.SuppressLint
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -91,6 +92,9 @@ class MeetingRecorderService : Service(), MeetingRecorderEngine.Listener {
         return START_NOT_STICKY
     }
 
+    // The manifest declares foregroundServiceType="microphone|dataSync|mediaProcessing" for this
+    // service (present in the merged manifest); lint does not see it and reports both calls.
+    @SuppressLint("ForegroundServiceType")
     private fun goForeground() {
         val n = build()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {

@@ -193,7 +193,8 @@ class SystemControlsModule(reactContext: ReactApplicationContext) :
             // visibility hides the calendar app from it even though startActivity works.
             val activity = reactApplicationContext.currentActivity
             if (activity != null) {
-                intent.removeFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                // Intent.removeFlags() needs API 26; this works on every version we support.
+                intent.flags = intent.flags and Intent.FLAG_ACTIVITY_NEW_TASK.inv()
                 activity.startActivity(intent)
             } else {
                 reactApplicationContext.startActivity(intent)
