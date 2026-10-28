@@ -23,6 +23,7 @@ import {
   endpointProblem,
   parseHeaders,
   saveOtelSettings,
+  withProjectRouting,
 } from '../../src/observability/otelExport';
 
 describe('OpenTelemetry export settings', () => {
@@ -56,5 +57,17 @@ describe('OpenTelemetry export settings', () => {
       }),
     );
     expect(sdk.instrumentCactus).toHaveBeenCalled();
+  });
+
+  it('names an Arize project unless the user did', () => {
+    const keys = { space_id: 's', api_key: 'k' };
+    expect(withProjectRouting('https://otlp.arize.com', keys)).toEqual({
+      ...keys,
+      'x-project-name': 'liquidchat',
+    });
+    const named = { ...keys, 'X-Project-Name': 'mine' };
+    expect(withProjectRouting('https://otlp.arize.com', named)).toBe(named);
+    expect(withProjectRouting('https://notarize.com', keys)).toBe(keys);
+    expect(withProjectRouting('https://otel.example.com:4318', keys)).toBe(keys);
   });
 });
