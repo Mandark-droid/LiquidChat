@@ -174,3 +174,31 @@ describe('embedding model and the RAM budget', () => {
     jest.useRealTimers();
   });
 });
+
+describe('chunking for embeddings', () => {
+  const { chunkText } = require('../../src/services/MemoryService');
+  const LIMIT = 500 + 50 + 1; // maxChars plus the overlap carried over, plus the joining space
+
+  it('splits a transcript with no blank lines into bounded chunks', () => {
+    const transcript = Array.from(
+      { length: 400 },
+      (_, i) =>
+        `[${i}] Speaker ${i % 3}: we discussed the rollout plan and the LiteLLM gateway limits.`,
+    ).join('\n');
+    expect(transcript.length).toBeGreaterThan(20000);
+    const chunks: string[] = chunkText(transcript);
+    expect(chunks.length).toBeGreaterThan(30);
+    for (const c of chunks) expect(c.length).toBeLessThanOrEqual(LIMIT);
+    expect(chunks.join(' ')).toContain('[399] Speaker 0');
+  });
+
+  it('splits one huge line with no breaks at all', () => {
+    const chunks: string[] = chunkText('word '.repeat(5000));
+    for (const c of chunks) expect(c.length).toBeLessThanOrEqual(LIMIT);
+    expect(chunks.length).toBeGreaterThan(40);
+  });
+
+  it('keeps short paragraphs together as before', () => {
+    expect(chunkText('First note.\n\nSecond note.')).toEqual(['First note.\n\nSecond note.']);
+  });
+});

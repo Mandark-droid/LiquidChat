@@ -31,47 +31,53 @@ function generateId(): string {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 }
 
-function chunkText(text: string, maxChars: number = 500, overlap: number = 50): string[] {
-  const paragraphs = text.split(/\n\s*\n/);
+/** Splits text over `maxChars` at line breaks, then sentence ends, then spaces, then anywhere. */
+function splitLong(text: string, maxChars: number): string[] {
+  if (text.length <= maxChars) return [text];
+  for (const sep of [/\n/, /(?<=[.!?])\s+/, /\s+/]) {
+    const parts = text.split(sep).filter(Boolean);
+    if (parts.length < 2) continue;
+    const out: string[] = [];
+    let current = '';
+    for (const part of parts) {
+      if (current && current.length + part.length + 1 > maxChars) {
+        out.push(current);
+        current = '';
+      }
+      if (part.length > maxChars) out.push(...splitLong(part, maxChars));
+      else current = current ? `${current} ${part}` : part;
+    }
+    if (current) out.push(current);
+    return out;
+  }
+  const out: string[] = [];
+  for (let i = 0; i < text.length; i += maxChars) out.push(text.slice(i, i + maxChars));
+  return out;
+}
+
+/**
+ * Chunks of at most about `maxChars` (plus `overlap` carried from the previous chunk), on
+ * paragraph boundaries where it can. A paragraph longer than that is split too: a meeting
+ * transcript has no blank lines, and embedding it as one piece took gigabytes of native memory.
+ */
+export function chunkText(text: string, maxChars: number = 500, overlap: number = 50): string[] {
+  const pieces = text
+    .split(/\n\s*\n/)
+    .map(p => p.trim())
+    .filter(Boolean)
+    .flatMap(p => splitLong(p, maxChars));
   const chunks: string[] = [];
   let current = '';
-
-  for (const para of paragraphs) {
-    const trimmed = para.trim();
-    if (!trimmed) continue;
-
-    if (current.length + trimmed.length + 1 > maxChars && current.length > 0) {
+  for (const piece of pieces) {
+    if (current && current.length + piece.length + 2 > maxChars) {
       chunks.push(current.trim());
       // Keep overlap from the end of current chunk
-      const overlapText = current.slice(-overlap);
-      current = overlapText + ' ' + trimmed;
+      current = `${current.slice(-overlap)} ${piece}`;
     } else {
-      current = current ? current + '\n\n' + trimmed : trimmed;
+      current = current ? `${current}\n\n${piece}` : piece;
     }
   }
-
-  if (current.trim()) {
-    chunks.push(current.trim());
-  }
-
-  // If no paragraphs found, chunk by character limit
-  if (chunks.length === 0 && text.trim()) {
-    const words = text.trim().split(/\s+/);
-    current = '';
-    for (const word of words) {
-      if (current.length + word.length + 1 > maxChars && current.length > 0) {
-        chunks.push(current.trim());
-        const overlapText = current.slice(-overlap);
-        current = overlapText + ' ' + word;
-      } else {
-        current = current ? current + ' ' + word : word;
-      }
-    }
-    if (current.trim()) {
-      chunks.push(current.trim());
-    }
-  }
-
+  if (current.trim()) chunks.push(current.trim());
   return chunks;
 }
 
