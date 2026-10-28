@@ -1,4 +1,4 @@
-import { CactusLM, type CactusLMMessage } from 'cactus-react-native';
+import { type CactusLM, type CactusLMMessage } from 'cactus-react-native';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -31,7 +31,7 @@ import MetricsBar from '../components/MetricsBar';
 import ScreenshotPreview from '../components/ScreenshotPreview';
 import VisionModeOverlay from '../components/VisionModeOverlay';
 import VoiceInputButton from '../components/VoiceInputButton';
-import { getModelBySlug, quantizationFor } from '../config/models';
+import { getModelBySlug } from '../config/models';
 import { theme } from '../config/theme';
 import { useIntentRouter } from '../hooks/useIntentRouter';
 import { useMemory } from '../hooks/useMemory';
@@ -172,87 +172,37 @@ export default function ChatScreen({ chatId, onBack, onOpenModelSelector }: Chat
     }
   };
 
+  // ModelLifecycleManager owns every loaded model; the chat only holds a reference.
   const releaseModel = async () => {
-    if (managedModelRef.current) {
-      // Lifecycle manager owns the instances; just clear refs
-      cactusLMRef.current = null;
-      setModelLoaded(false);
-      return;
-    }
-
-    try {
-      if (cactusLMRef.current) {
-        await cactusLMRef.current.destroy();
-        cactusLMRef.current = null;
-      }
-    } catch (e) {
-      // Ignore destroy errors
-    }
+    cactusLMRef.current = null;
     setModelLoaded(false);
   };
 
-  const initializeModel = async (requestedSlug: string, activeSettings?: ChatSettings | null) => {
+  const initializeModel = async (requestedSlug: string, _activeSettings?: ChatSettings | null) => {
     const modelSlug = await resolveSuperseded(requestedSlug);
-    // Use passed-in settings to avoid stale React state closure on first call
-    const currentSettings = activeSettings !== undefined ? activeSettings : settings;
-    // A. Orchestration / agent runtime: ModelLifecycleManager owns the instance so the
-    // chat and the agent's on-device steps share one loaded model.
-    if (currentSettings?.orchestrationEnabled || currentSettings?.agentRuntimeEnabled !== false) {
-      managedModelRef.current = true;
-      setIsModelLoading(true);
-      setLoadProgress(0);
-      setModelLoaded(false);
-      try {
-        if (!modelLifecycle.initialized) await modelLifecycle.init();
-        const managed = await modelLifecycle.ensure(modelSlug);
-        cactusLMRef.current = managed.instance;
-        setModelLoaded(true);
-        setModelDisplayName(getModelBySlug(modelSlug)?.name || modelSlug);
-        console.log(`[LiquidChat] Orchestration: loaded "${modelSlug}" via lifecycle manager`);
-      } catch (error) {
-        const errMsg = error instanceof Error ? error.message : String(error);
-        Alert.alert('Model Error', `Failed to load model "${modelSlug}":\n\n${errMsg}`);
-        cactusLMRef.current = null;
-      } finally {
-        setIsModelLoading(false);
-      }
-      return;
-    }
-
-    // Non-orchestration path: use CactusLM SDK directly
+    // The chat and the agent's on-device steps share one loaded model.
+    managedModelRef.current = true;
     setIsModelLoading(true);
     setLoadProgress(0);
     setModelLoaded(false);
-
     try {
-      await releaseModel();
-      managedModelRef.current = false;
-
-      console.log(`[LiquidChat] Loading "${modelSlug}" via CactusLM SDK...`);
-      const quantization = quantizationFor(modelSlug);
-      const cactusLM = new CactusLM({
-        model: modelSlug,
-        options: quantization ? { quantization } : undefined,
+      if (!modelLifecycle.initialized) await modelLifecycle.init();
+      const managed = await modelLifecycle.ensure(modelSlug, {
+        onProgress: p => setLoadProgress(Math.round(p * 100)),
       });
-      cactusLMRef.current = cactusLM;
-
-      await cactusLM.download({
-        onProgress: (progress: number) => {
-          setLoadProgress(Math.round(progress * 100));
-        },
-      });
-      console.log(`[LiquidChat] Download complete for "${modelSlug}", initializing...`);
-
-      await cactusLM.init();
+      cactusLMRef.current = managed.instance;
       setModelLoaded(true);
       setModelDisplayName(getModelBySlug(modelSlug)?.name || modelSlug);
-      console.log(`[LiquidChat] Model "${modelSlug}" loaded successfully`);
+      console.log(`[LiquidChat] Loaded "${modelSlug}" via lifecycle manager`);
     } catch (error) {
       const errMsg = error instanceof Error ? error.message : String(error);
-      console.error(`[LiquidChat] Failed to load "${modelSlug}": ${errMsg}`);
       Alert.alert(
         'Model Error',
-        `Failed to load model "${modelSlug}":\n\n${errMsg}\n\nTry selecting a different model from the Models tab.`,
+        `Failed to load model "${modelSlug}":
+
+${errMsg}
+
+Try selecting a different model from the Models tab.`,
       );
       cactusLMRef.current = null;
     } finally {
@@ -708,6 +658,7 @@ export default function ChatScreen({ chatId, onBack, onOpenModelSelector }: Chat
       onToken,
     });
     fullResponse = result.response || fullResponse;
+    modelLifecycle.recordCompletion(cactusLMRef.current, result);
     usageLedger.record('local', result.prefillTokens, result.decodeTokens || tokenCount);
     const functionCalls:
       Array<{ name: string; arguments: string | Record<string, any> }> | undefined =

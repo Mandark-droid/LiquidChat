@@ -17,6 +17,7 @@ import ModelCard from '../components/ModelCard';
 import { getModelsByCategory, getModelTier } from '../config/models';
 import { theme } from '../config/theme';
 import { useModelManager } from '../hooks/useModelManager';
+import { modelLifecycle } from '../services/ModelLifecycleManager';
 import type { LiquidModel, ModelCategory, ModelTier } from '../types';
 import { listDownloadedCactusModels } from '../utils/engineMigration';
 
@@ -140,18 +141,9 @@ export default function ModelSelectionScreen({
         }
 
         // CactusLM registry model - use built-in download
-        const cactus = new CactusLM({
-          model: model.slug,
-          options: model.quantization ? { quantization: model.quantization } : undefined,
-        });
-        await cactus.download({
-          onProgress: (progress: number) => {
-            setDownloadProgress(prev => ({
-              ...prev,
-              [model.slug]: Math.round(progress * 100),
-            }));
-          },
-        });
+        await modelLifecycle.download(model.slug, progress =>
+          setDownloadProgress(prev => ({ ...prev, [model.slug]: Math.round(progress * 100) })),
+        );
       } else if (model.hfRepo) {
         // Custom model - download from HuggingFace
         const modelsDir = `${RNFS.DocumentDirectoryPath}/models`;

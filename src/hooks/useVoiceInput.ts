@@ -1,8 +1,6 @@
 import * as RNFS from '@dr.pogodin/react-native-fs';
-import { useCactusSTT } from 'cactus-react-native';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import { quantizationFor } from '../config/models';
 import { meetingSession } from '../meetings/MeetingSession';
 import {
   ensureRecordingPermissions,
@@ -12,6 +10,7 @@ import {
 } from '../meetings/native';
 import { cleanTranscript } from '../meetings/Transcriber';
 import type { RecorderSegmentEvent } from '../meetings/types';
+import { modelLifecycle } from '../services/ModelLifecycleManager';
 
 /**
  * Push-to-talk voice input.
@@ -64,11 +63,8 @@ export function useVoiceInput({
   const stateRef = useRef<VoiceInputState>('idle');
   stateRef.current = state;
 
-  const quantization = quantizationFor(sttModel);
-  const cactusSTT = useCactusSTT({
-    model: sttModel,
-    options: quantization ? { quantization } : undefined,
-  });
+  const [sttDownloading, setSttDownloading] = useState(false);
+  const [sttDownloadProgress, setSttDownloadProgress] = useState(0);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -91,20 +87,30 @@ export function useVoiceInput({
   };
 
   const ensureSttReady = async (): Promise<boolean> => {
-    if (sttReady) return true;
+    if (sttReady && modelLifecycle.getModelState(sttModel) === 'ready') return true;
     try {
-      if (!cactusSTT.isDownloaded && !cactusSTT.isDownloading) {
-        await cactusSTT.download();
-      }
-      setSttInitializing(true);
-      await cactusSTT.init();
+      setSttDownloading(true);
+      await modelLifecycle.ensureSTT(sttModel, {
+        onProgress: p => {
+          if (!mountedRef.current) return;
+          setSttDownloadProgress(p);
+          if (p >= 1) {
+            setSttDownloading(false);
+            setSttInitializing(true);
+          }
+        },
+      });
       if (mountedRef.current) {
         setSttReady(true);
+        setSttDownloading(false);
         setSttInitializing(false);
       }
       return true;
     } catch (e) {
-      if (mountedRef.current) setSttInitializing(false);
+      if (mountedRef.current) {
+        setSttDownloading(false);
+        setSttInitializing(false);
+      }
       fail(e instanceof Error ? e.message : 'Failed to initialize STT');
       return false;
     }
@@ -113,7 +119,7 @@ export function useVoiceInput({
   const prepareStt = useCallback(async () => {
     await ensureSttReady();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sttReady, cactusSTT.isDownloaded]);
+  }, [sttReady, sttModel]);
 
   const startRecording = async () => {
     if (!isRecorderAvailable()) {
@@ -185,7 +191,11 @@ export function useVoiceInput({
 
     setState('transcribing');
     try {
-      const result = await cactusSTT.transcribe({ audio: seg.path });
+      // Through the manager: the model may have been evicted since it was prepared.
+      const stt = await modelLifecycle.ensureSTT(sttModel);
+      const started = Date.now();
+      const result = await stt.transcribe({ audio: seg.path });
+      modelLifecycle.recordUse(sttModel, Date.now() - started);
       if (!mountedRef.current) return;
       const text = cleanTranscript(result.response ?? '');
       if (text) {
@@ -218,8 +228,8 @@ export function useVoiceInput({
     state,
     recordingDurationMs,
     sttReady,
-    sttDownloading: cactusSTT.isDownloading,
-    sttDownloadProgress: Math.round(cactusSTT.downloadProgress * 100),
+    sttDownloading,
+    sttDownloadProgress: Math.round(sttDownloadProgress * 100),
     sttInitializing,
     error,
     toggleRecording,

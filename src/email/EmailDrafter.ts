@@ -207,6 +207,7 @@ async function run(
     messages,
     options: { temperature: 0.5, topP: 0.9, maxTokens: 700 },
   });
+  modelLifecycle.recordCompletion(lm, r);
   usageLedger.record('local', r.prefillTokens, r.decodeTokens);
   return r.response ?? '';
 }

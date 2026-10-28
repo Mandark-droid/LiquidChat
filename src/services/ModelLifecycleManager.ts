@@ -1,4 +1,4 @@
-import { CactusLM } from 'cactus-react-native';
+import { CactusAudio, CactusLM, CactusSTT } from 'cactus-react-native';
 import DeviceInfo from 'react-native-device-info';
 
 import { getModelBySlug, LIQUID_MODELS, quantizationFor } from '../config/models';
@@ -8,19 +8,66 @@ import { ensurePinnedWeights } from './cactusWeights';
 
 const RAM_MULTIPLIER = 1.3;
 
+/** Audio models outside the catalog (voice activity, speaker embeddings) and their RAM. */
+const AUDIO_RAM_MB: Record<string, number> = {
+  'silero-vad': 10,
+  'wespeaker-voxceleb-resnet34-lm': 60,
+};
+
+/** Chat/vision models, speech-to-text, and audio analysis (VAD, speaker embeddings). */
+export type ModelKind = 'lm' | 'stt' | 'audio';
+
 export interface ManagedModel {
   slug: string;
+  kind: ModelKind;
   tier: ModelTier;
   state: ModelState;
+  /** The loaded instance for `kind: 'lm'`. */
   instance: CactusLM | null;
+  stt: CactusSTT | null;
+  audio: CactusAudio | null;
   nativeInstance: any;
   isCustomModel: boolean;
   lastUsed: number;
   ramMb: number;
+  /** Owners that hold it across many calls (a meeting's Whisper): never evicted while > 0. */
+  pins: number;
+  /** Calls since it was loaded, their total time and the decode speed of the last one. */
+  uses?: number;
+  totalMs?: number;
+  tokensPerSecond?: number;
+}
+
+export interface EnsureOptions {
+  onProgress?: (progress: number) => void;
+  /** Keep it loaded (not evictable) until `release(slug)`. */
+  pin?: boolean;
 }
 
 type Listener = () => void;
 
+function kindOf(slug: string): ModelKind {
+  if (slug in AUDIO_RAM_MB) return 'audio';
+  return getModelBySlug(slug)?.isSTT ? 'stt' : 'lm';
+}
+
+function estimateRamMb(slug: string): number {
+  if (slug in AUDIO_RAM_MB) return AUDIO_RAM_MB[slug];
+  const def = getModelBySlug(slug);
+  return def ? Math.round(def.sizeMb * RAM_MULTIPLIER) : 500;
+}
+
+function progressLogger(slug: string, label: string) {
+  return (p: number) => {
+    if (p % 0.25 < 0.01)
+      console.log(`[ModelLifecycle] ${label} "${slug}": ${Math.round(p * 100)}%`);
+  };
+}
+
+/**
+ * Every on-device model loads through here (chat and vision LMs, speech-to-text, VAD and speaker
+ * embeddings), so the app has one RAM budget, one load queue and one list of what is loaded.
+ */
 class ModelLifecycleManager {
   private models = new Map<string, ManagedModel>();
   private profile: DeviceProfile | null = null;
@@ -51,119 +98,145 @@ class ModelLifecycleManager {
     );
 
     // Register all catalog models
-    for (const model of LIQUID_MODELS) {
-      this.models.set(model.slug, {
-        slug: model.slug,
-        tier: getModelTier(model.slug),
-        state: 'unloaded',
-        instance: null,
-        nativeInstance: null,
-        isCustomModel: model.isCustom ?? false,
-        lastUsed: 0,
-        ramMb: 0,
-      });
-    }
+    for (const model of LIQUID_MODELS) this.entry(model.slug);
 
     this._initialized = true;
     this.notify();
   }
 
-  async ensure(slug: string): Promise<ManagedModel> {
+  private entry(slug: string): ManagedModel {
+    let managed = this.models.get(slug);
+    if (!managed) {
+      managed = {
+        slug,
+        kind: kindOf(slug),
+        tier: getModelTier(slug),
+        state: 'unloaded',
+        instance: null,
+        stt: null,
+        audio: null,
+        nativeInstance: null,
+        isCustomModel: getModelBySlug(slug)?.isCustom ?? false,
+        lastUsed: 0,
+        ramMb: 0,
+        pins: 0,
+      };
+      this.models.set(slug, managed);
+    }
+    return managed;
+  }
+
+  /** A chat or vision model, loaded (and downloaded) if needed. */
+  async ensure(slug: string, opts: EnsureOptions = {}): Promise<ManagedModel> {
+    if (kindOf(slug) === 'stt')
+      throw new Error(`"${slug}" is a speech-to-text model; use ensureSTT().`);
+    return this.ensureAny(slug, opts);
+  }
+
+  /** A speech-to-text model (Whisper, Parakeet, Moonshine). */
+  async ensureSTT(slug: string, opts: EnsureOptions = {}): Promise<CactusSTT> {
+    if (kindOf(slug) !== 'stt') throw new Error(`"${slug}" is not a speech-to-text model.`);
+    const managed = await this.ensureAny(slug, opts);
+    if (!managed.stt) throw new Error(`${slug} failed to load`);
+    return managed.stt;
+  }
+
+  /** An audio analysis model (voice activity detection, speaker embeddings). */
+  async ensureAudio(slug: string, opts: EnsureOptions = {}): Promise<CactusAudio> {
+    if (kindOf(slug) !== 'audio') throw new Error(`"${slug}" is not an audio model.`);
+    const managed = await this.ensureAny(slug, opts);
+    if (!managed.audio) throw new Error(`${slug} failed to load`);
+    return managed.audio;
+  }
+
+  private async ensureAny(slug: string, opts: EnsureOptions): Promise<ManagedModel> {
     if (!this._initialized) await this.init();
 
     const existing = this.models.get(slug);
     if (existing && existing.state === 'ready') {
       existing.lastUsed = Date.now();
+      if (opts.pin) existing.pins++;
       this.notify();
       return existing;
     }
 
     // Per-slug dedup: if already loading this exact slug, wait for it
-    const activeLock = this.loadingLocks.get(slug);
-    if (activeLock) return activeLock;
+    let loadPromise = this.loadingLocks.get(slug);
+    if (!loadPromise) {
+      // Serialize ALL model loads through global queue —
+      // native Cactus crashes when two init() calls run concurrently
+      loadPromise = this._globalLoadQueue.then(
+        () => this.loadModel(slug, opts.onProgress),
+        () => this.loadModel(slug, opts.onProgress), // proceed even if previous load failed
+      );
+      this._globalLoadQueue = loadPromise.catch(() => {}); // keep queue moving
+      this.loadingLocks.set(slug, loadPromise);
+      loadPromise.finally(() => this.loadingLocks.delete(slug)).catch(() => {});
+    }
+    const managed = await loadPromise;
+    if (opts.pin) managed.pins++;
+    return managed;
+  }
 
-    // Serialize ALL model loads through global queue —
-    // native Cactus crashes when two init() calls run concurrently
-    const loadPromise = this._globalLoadQueue.then(
-      () => this.loadModel(slug),
-      () => this.loadModel(slug), // proceed even if previous load failed
-    );
-    this._globalLoadQueue = loadPromise.catch(() => {}); // keep queue moving
-    this.loadingLocks.set(slug, loadPromise);
-
+  /** Downloads a model's weights without loading it. */
+  async download(slug: string, onProgress?: (progress: number) => void): Promise<void> {
+    const kind = kindOf(slug);
+    const quantization = quantizationFor(slug);
+    if (kind !== 'audio')
+      // The SDK would pick v1.12 weights, which mismatch this engine; fetch v1.14 where published.
+      await ensurePinnedWeights(slug, quantization ?? 'int8', onProgress);
+    else if (slug !== 'silero-vad') await ensurePinnedWeights(slug, 'int8');
+    const model = this.construct(slug, kind);
     try {
-      const result = await loadPromise;
-      return result;
+      await model.download({ onProgress: onProgress ?? progressLogger(slug, 'Download') });
     } finally {
-      this.loadingLocks.delete(slug);
+      await model.destroy().catch(() => {});
     }
   }
 
-  private async loadModel(slug: string): Promise<ManagedModel> {
-    const modelDef = getModelBySlug(slug);
-    const estimatedRam = modelDef ? Math.round(modelDef.sizeMb * RAM_MULTIPLIER) : 500;
+  private construct(slug: string, kind: ModelKind): CactusLM | CactusSTT | CactusAudio {
+    const quantization = quantizationFor(slug);
+    const options = quantization ? { quantization } : undefined;
+    if (kind === 'stt') return new CactusSTT({ model: slug, options });
+    if (kind === 'audio') return new CactusAudio({ model: slug });
+    return new CactusLM({ model: slug, options });
+  }
 
-    // STT models (Whisper) are managed by CactusSTT, not here
-    if (modelDef?.isSTT) {
-      throw new Error(`"${slug}" is an STT model and cannot be loaded as a chat model.`);
-    }
+  private async loadModel(
+    slug: string,
+    onProgress?: (progress: number) => void,
+  ): Promise<ManagedModel> {
+    const kind = kindOf(slug);
+    const estimatedRam = estimateRamMb(slug);
 
     // Evict if needed
     await this.evictIfNeeded(estimatedRam);
 
-    let managed = this.models.get(slug);
-    if (!managed) {
-      managed = {
-        slug,
-        tier: getModelTier(slug),
-        state: 'unloaded',
-        instance: null,
-        nativeInstance: null,
-        isCustomModel: modelDef?.isCustom ?? false,
-        lastUsed: 0,
-        ramMb: 0,
-      };
-      this.models.set(slug, managed);
-    }
-
+    const managed = this.entry(slug);
     managed.state = 'loading';
     this.notify();
 
     try {
-      // Use CactusLM high-level SDK: handles registry lookup, download, and init.
-      // The model key (slug like "lfm2-1.2b") maps directly to the registry key
-      // derived from weight filenames on Cactus-Compute HuggingFace repos.
-      console.log(`[ModelLifecycle] Loading "${slug}" via CactusLM SDK...`);
-      const quantization = quantizationFor(slug);
-      // The SDK would pick v1.12 weights, which mismatch this engine; fetch v1.14 where published.
-      await ensurePinnedWeights(slug, quantization ?? 'int8', p => {
-        if (p % 0.25 < 0.01)
-          console.log(`[ModelLifecycle] Updating "${slug}" weights: ${Math.round(p * 100)}%`);
-      });
-      const cactusLM = new CactusLM({
-        model: slug,
-        options: quantization ? { quantization } : undefined,
-      });
-
-      // Download if not already cached
-      await cactusLM.download({
-        onProgress: (progress: number) => {
-          if (progress % 0.25 < 0.01) {
-            console.log(`[ModelLifecycle] Download "${slug}": ${Math.round(progress * 100)}%`);
-          }
-        },
-      });
-      console.log(`[ModelLifecycle] Download complete for "${slug}", initializing...`);
-
-      await cactusLM.init();
-      managed.instance = cactusLM;
+      // Cactus SDK classes handle registry lookup, download, and init. The model key (slug like
+      // "lfm2-1.2b") maps directly to the registry key derived from weight filenames on
+      // Cactus-Compute HuggingFace repos.
+      console.log(`[ModelLifecycle] Loading "${slug}" (${kind})...`);
+      await this.download(slug, onProgress ?? progressLogger(slug, 'Download'));
+      const model = this.construct(slug, kind);
+      await model.init();
+      managed.instance = kind === 'lm' ? (model as CactusLM) : null;
+      managed.stt = kind === 'stt' ? (model as CactusSTT) : null;
+      managed.audio = kind === 'audio' ? (model as CactusAudio) : null;
       managed.nativeInstance = null;
       managed.isCustomModel = false;
-      console.log(`[ModelLifecycle] CactusLM init succeeded for "${slug}"`);
 
       managed.state = 'ready';
       managed.lastUsed = Date.now();
       managed.ramMb = estimatedRam;
+      managed.pins = 0;
+      managed.uses = 0;
+      managed.totalMs = 0;
+      managed.tokensPerSecond = undefined;
       this.notify();
       console.log(`[ModelLifecycle] Loaded "${slug}" (~${estimatedRam}MB)`);
       return managed;
@@ -172,10 +245,16 @@ class ModelLifecycleManager {
       console.error(`[ModelLifecycle] FAILED to load "${slug}": ${errMsg}`);
       managed.state = 'error';
       managed.instance = null;
+      managed.stt = null;
+      managed.audio = null;
       managed.nativeInstance = null;
       this.notify();
       throw error;
     }
+  }
+
+  private isEvictable(m: ManagedModel): boolean {
+    return m.state === 'ready' && m.tier !== 'hot' && m.pins === 0;
   }
 
   private async evictIfNeeded(neededMb: number): Promise<void> {
@@ -186,17 +265,18 @@ class ModelLifecycleManager {
 
     if (freeSpace >= neededMb) return;
 
-    // Get loaded non-hot models sorted by lastUsed (LRU first)
+    // Loaded, non-hot, unpinned models, least recently used first
     const evictable = Array.from(this.models.values())
-      .filter(m => m.state === 'ready' && m.tier !== 'hot')
+      .filter(m => this.isEvictable(m))
       .sort((a, b) => a.lastUsed - b.lastUsed);
 
     for (const model of evictable) {
       if (freeSpace >= neededMb) break;
 
       console.log(`[ModelLifecycle] Evicting "${model.slug}" (~${model.ramMb}MB)`);
+      const freed = model.ramMb;
       await this.releaseOne(model);
-      freeSpace += model.ramMb;
+      freeSpace += freed;
     }
 
     if (freeSpace < neededMb) {
@@ -207,21 +287,22 @@ class ModelLifecycleManager {
   }
 
   private async releaseOne(managed: ManagedModel): Promise<void> {
-    try {
-      if (managed.instance) {
-        await managed.instance.destroy();
-      }
-      if (managed.nativeInstance) {
-        await managed.nativeInstance.destroy();
-      }
-    } catch {}
+    for (const model of [managed.instance, managed.stt, managed.audio, managed.nativeInstance]) {
+      try {
+        if (model) await model.destroy();
+      } catch {}
+    }
     managed.instance = null;
+    managed.stt = null;
+    managed.audio = null;
     managed.nativeInstance = null;
     managed.state = 'unloaded';
     managed.ramMb = 0;
+    managed.pins = 0;
     this.notify();
   }
 
+  /** Unloads it (its owner is done with it), pinned or not. */
   async release(slug: string): Promise<void> {
     const managed = this.models.get(slug);
     if (managed && managed.state === 'ready') {
@@ -238,6 +319,30 @@ class ModelLifecycleManager {
     console.log('[ModelLifecycle] Released all models');
   }
 
+  /** One call to a loaded model (e.g. a transcription), for the dashboard. */
+  recordUse(slug: string, ms: number, tokensPerSecond?: number): void {
+    const m = this.models.get(slug);
+    if (m?.state === 'ready') this.recordOn(m, ms, tokensPerSecond);
+  }
+
+  /** One completion by a CactusLM instance loaded here. */
+  recordCompletion(
+    instance: unknown,
+    r: { totalTimeMs?: number; tokensPerSecond?: number } | undefined,
+  ): void {
+    if (!instance || !r) return;
+    const m = Array.from(this.models.values()).find(x => x.instance === instance);
+    if (m) this.recordOn(m, r.totalTimeMs ?? 0, r.tokensPerSecond);
+  }
+
+  private recordOn(m: ManagedModel, ms: number, tokensPerSecond?: number): void {
+    m.uses = (m.uses ?? 0) + 1;
+    m.totalMs = (m.totalMs ?? 0) + Math.max(0, ms);
+    if (tokensPerSecond && tokensPerSecond > 0) m.tokensPerSecond = tokensPerSecond;
+    m.lastUsed = Date.now();
+    this.notify();
+  }
+
   getLoadedModels(): ManagedModel[] {
     return Array.from(this.models.values()).filter(m => m.state === 'ready');
   }
@@ -252,17 +357,15 @@ class ModelLifecycleManager {
 
   /**
    * Whether `slug` can be loaded without going over the RAM budget, counting what could be evicted
-   * (loaded, not hot, not generating). Already loaded counts as yes. Without a device profile, yes.
+   * (loaded, not hot, not pinned). Already loaded counts as yes. Without a device profile, yes.
    */
   fitsInBudget(slug: string): boolean {
     if (!this.profile) return true;
     if (this.models.get(slug)?.state === 'ready') return true;
-    const def = getModelBySlug(slug);
-    const needed = def ? Math.round(def.sizeMb * RAM_MULTIPLIER) : 500;
     const evictable = this.getLoadedModels()
-      .filter(m => m.tier !== 'hot' && m.slug !== slug)
+      .filter(m => this.isEvictable(m) && m.slug !== slug)
       .reduce((sum, m) => sum + m.ramMb, 0);
-    return this.profile.ramBudgetMb - this.getTotalLoadedRamMb() + evictable >= needed;
+    return this.profile.ramBudgetMb - this.getTotalLoadedRamMb() + evictable >= estimateRamMb(slug);
   }
 
   getRamBudgetMb(): number {

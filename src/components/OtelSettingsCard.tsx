@@ -7,6 +7,7 @@ import {
   endpointProblem,
   flushOtel,
   getOtelHeaders,
+  getOtelMirrorHeaders,
   getOtelSettings,
   type OtelSettings,
   saveOtelSettings,
@@ -18,12 +19,15 @@ export default function OtelSettingsCard({ bare = false }: { bare?: boolean }) {
   const [s, setS] = useState<OtelSettings>(DEFAULT_OTEL);
   const [headers, setHeaders] = useState('');
   const [hasHeaders, setHasHeaders] = useState(false);
+  const [mirrorHeaders, setMirrorHeaders] = useState('');
+  const [hasMirrorHeaders, setHasMirrorHeaders] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     getOtelSettings().then(setS);
     getOtelHeaders().then(h => setHasHeaders(!!h));
+    getOtelMirrorHeaders().then(h => setHasMirrorHeaders(!!h));
   }, []);
 
   const change = (patch: Partial<OtelSettings>) => {
@@ -32,16 +36,25 @@ export default function OtelSettingsCard({ bare = false }: { bare?: boolean }) {
   };
 
   const save = async () => {
-    const problem = s.enabled ? endpointProblem(s.endpoint) : null;
+    const problem = s.enabled
+      ? (endpointProblem(s.endpoint) ??
+        (s.mirrorEndpoint.trim() ? endpointProblem(s.mirrorEndpoint) : null))
+      : null;
     if (problem) {
       Alert.alert('OpenTelemetry', problem);
       return;
     }
     setBusy(true);
     try {
-      await saveOtelSettings(s, headers.trim() ? headers : null);
+      await saveOtelSettings(
+        s,
+        headers.trim() ? headers : null,
+        mirrorHeaders.trim() ? mirrorHeaders : null,
+      );
       if (headers.trim()) setHasHeaders(true);
+      if (mirrorHeaders.trim()) setHasMirrorHeaders(true);
       setHeaders('');
+      setMirrorHeaders('');
       setDirty(false);
     } finally {
       setBusy(false);
@@ -92,6 +105,29 @@ export default function OtelSettingsCard({ bare = false }: { bare?: boolean }) {
         placeholder={hasHeaders ? '•••• saved (type to replace)' : 'Authorization=Bearer …'}
         hint="Comma-separated key=value, e.g. for an API key. Stored in Android Keystore-encrypted storage."
       />
+      <Field
+        label="Second destination (optional)"
+        value={s.mirrorEndpoint}
+        onChangeText={v => change({ mirrorEndpoint: v })}
+        autoCapitalize="none"
+        keyboardType="url"
+        placeholder="https://otlp.arize.com"
+        hint="Another OTLP/HTTP endpoint that gets the same telemetry, e.g. a SaaS backend next to your own collector. Leave empty for one destination."
+      />
+      {s.mirrorEndpoint.trim() ? (
+        <Field
+          label="Second destination headers"
+          value={mirrorHeaders}
+          onChangeText={v => {
+            setMirrorHeaders(v);
+            setDirty(true);
+          }}
+          autoCapitalize="none"
+          secureTextEntry
+          placeholder={hasMirrorHeaders ? '•••• saved (type to replace)' : 'space_id=…,api_key=…'}
+          hint="Comma-separated key=value. Stored in Android Keystore-encrypted storage."
+        />
+      ) : null}
       <ToggleRow
         label="Include prompts and replies"
         hint="Off: spans carry counts and timings only. On: message text is exported too."
@@ -109,7 +145,10 @@ export default function OtelSettingsCard({ bare = false }: { bare?: boolean }) {
         <Button label="Save" style={{ flex: 1 }} disabled={busy || !dirty} onPress={save} />
       </View>
       {s.enabled && !dirty ? (
-        <Text style={[ui.muted, { marginTop: 8 }]}>Exporting to {s.endpoint}</Text>
+        <Text style={[ui.muted, { marginTop: 8 }]}>
+          Exporting to {s.endpoint}
+          {s.mirrorEndpoint.trim() ? ` and ${s.mirrorEndpoint.trim()}` : ''}
+        </Text>
       ) : null}
     </>
   );

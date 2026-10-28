@@ -1,7 +1,6 @@
 import * as RNFS from '@dr.pogodin/react-native-fs';
-import { CactusAudio } from 'cactus-react-native';
 
-import { ensurePinnedWeights } from '../services/cactusWeights';
+import { modelLifecycle } from '../services/ModelLifecycleManager';
 import { meetingStore } from './MeetingStore';
 import {
   assignSentences,
@@ -49,13 +48,10 @@ export async function identifySpeakers(
   if (!segs.length) return null;
 
   onProgress?.('Preparing speaker models', 0);
-  await ensurePinnedWeights(SPEAKER_MODEL, 'int8');
-  const vad = new CactusAudio({ model: VAD_MODEL });
-  const emb = new CactusAudio({ model: SPEAKER_MODEL });
   const tmp = `${dir}/speakers_tmp`;
   try {
-    await vad.download();
-    await emb.download();
+    const vad = await modelLifecycle.ensureAudio(VAD_MODEL, { pin: true });
+    const emb = await modelLifecycle.ensureAudio(SPEAKER_MODEL, { pin: true });
     await RNFS.mkdir(tmp);
 
     const units: SpeechUnit[] = [];
@@ -160,7 +156,7 @@ export async function identifySpeakers(
     return { speakers: speakers.length, units: units.length };
   } finally {
     await RNFS.unlink(tmp).catch(() => {});
-    await vad.destroy().catch(() => {});
-    await emb.destroy().catch(() => {});
+    await modelLifecycle.release(VAD_MODEL).catch(() => {});
+    await modelLifecycle.release(SPEAKER_MODEL).catch(() => {});
   }
 }

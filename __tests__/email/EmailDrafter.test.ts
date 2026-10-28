@@ -21,7 +21,12 @@ jest.mock('../../src/utils/engineMigration', () => ({
   listDownloadedCactusModels: async () => mockDownloaded.map(slug => ({ slug })),
 }));
 jest.mock('../../src/services/ModelLifecycleManager', () => ({
-  modelLifecycle: { ensure: jest.fn(), getLoadedModels: () => [], getRamBudgetMb: () => 0 },
+  modelLifecycle: {
+    ensure: jest.fn(),
+    recordCompletion: jest.fn(),
+    getLoadedModels: () => [],
+    getRamBudgetMb: () => 0,
+  },
 }));
 
 const ensure = modelLifecycle.ensure as jest.Mock;

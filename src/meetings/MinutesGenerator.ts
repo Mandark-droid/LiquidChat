@@ -1,6 +1,6 @@
-import { CactusLM } from 'cactus-react-native';
+import { type CactusLM } from 'cactus-react-native';
 
-import { getModelBySlug, LIQUID_MODELS, quantizationFor } from '../config/models';
+import { getModelBySlug, LIQUID_MODELS } from '../config/models';
 import { usageLedger } from '../observability/usageLedger';
 import { modelLifecycle } from '../services/ModelLifecycleManager';
 import { listDownloadedCactusModels } from '../utils/engineMigration';
@@ -463,17 +463,10 @@ export async function resolveSummaryModel(preferred: string): Promise<SummaryMod
 
 /** Downloads with visible progress so ensure() then finds the weights cached. */
 async function downloadWithProgress(slug: string, onProgress?: MinutesProgress): Promise<void> {
-  const quantization = quantizationFor(slug);
-  const lm = new CactusLM({ model: slug, options: quantization ? { quantization } : undefined });
   const name = getModelBySlug(slug)?.name ?? slug;
-  try {
-    await lm.download({
-      onProgress: p =>
-        onProgress?.(`Downloading ${name} · ${Math.round(p * 100)}%`, 0.02 + 0.3 * p),
-    });
-  } finally {
-    await lm.destroy().catch(() => {});
-  }
+  await modelLifecycle.download(slug, p =>
+    onProgress?.(`Downloading ${name} · ${Math.round(p * 100)}%`, 0.02 + 0.3 * p),
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -489,6 +482,7 @@ async function complete(lm: CactusLM, user: string, maxTokens: number): Promise<
     ],
     options: { temperature: 0.2, topP: 0.9, maxTokens },
   });
+  modelLifecycle.recordCompletion(lm, r);
   usageLedger.record('local', r.prefillTokens, r.decodeTokens);
   return r.response ?? '';
 }

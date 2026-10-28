@@ -1,7 +1,6 @@
-import { CactusSTT } from 'cactus-react-native';
+import type { CactusSTT } from 'cactus-react-native';
 
-import { quantizationFor } from '../config/models';
-import { ensurePinnedWeights } from '../services/cactusWeights';
+import { modelLifecycle } from '../services/ModelLifecycleManager';
 
 /**
  * Serial on-device transcription for meeting segments.
@@ -190,25 +189,21 @@ class TranscriberImpl {
       this.model = model;
       this.promptSupported = true;
       this.detectionWorks = true;
-      const quantization = quantizationFor(model);
-      const stt = new CactusSTT({ model, options: quantization ? { quantization } : undefined });
       try {
         this.set({ model, phase: 'downloading', downloadProgress: 0, error: undefined });
-        await ensurePinnedWeights(model, quantization ?? 'int8', p =>
-          this.set({ downloadProgress: p }),
-        );
-        await stt.download({ onProgress: p => this.set({ downloadProgress: p }) });
-        this.set({ phase: 'initializing', downloadProgress: 1 });
-        await stt.init();
-        this.stt = stt;
+        // Pinned: a chat model loading mid-meeting must not evict the meeting's speech model.
+        this.stt = await modelLifecycle.ensureSTT(model, {
+          pin: true,
+          onProgress: p =>
+            this.set(
+              p >= 1 ? { phase: 'initializing', downloadProgress: 1 } : { downloadProgress: p },
+            ),
+        });
         this.set({ phase: 'ready' });
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
         console.warn(`[Transcriber] Preparing ${model} failed: ${msg}`);
         this.set({ phase: 'error', error: msg });
-        try {
-          await stt.destroy();
-        } catch {}
         throw e;
       } finally {
         this.preparing = null;
@@ -260,11 +255,13 @@ class TranscriberImpl {
         ? buildWhisperPrompt({ ...job, contextPrompting: job.contextPrompting && usePrompt })
         : undefined;
 
+      const started = Date.now();
       let result = await stt.transcribe({
         audio: job.audioPath,
         prompt,
         options: { maxTokens: 448, temperature: 0 },
       });
+      modelLifecycle.recordUse(this.model, Date.now() - started);
       let text = cleanTranscript(result.response);
 
       // If context prompting confused the decoder (echoed the prompt or produced nothing
@@ -332,11 +329,7 @@ class TranscriberImpl {
     const stt = this.stt;
     this.stt = null;
     this.detectionWorks = true;
-    if (stt) {
-      try {
-        await stt.destroy();
-      } catch {}
-    }
+    if (stt && this.model) await modelLifecycle.release(this.model);
     this.set({ phase: 'idle', downloadProgress: 0 });
   }
 }

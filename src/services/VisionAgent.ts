@@ -1,9 +1,11 @@
-import { CactusLM, type CactusLMMessage } from 'cactus-react-native';
+import type { CactusLM, CactusLMMessage } from 'cactus-react-native';
 
 import { usageLedger } from '../observability/usageLedger';
+import { modelLifecycle } from './ModelLifecycleManager';
 
 class VisionAgent {
   private vlm: CactusLM | null = null;
+  private model = 'lfm2-vl-450m';
   private initialized = false;
   private initializing = false;
 
@@ -12,11 +14,9 @@ class VisionAgent {
     this.initializing = true;
 
     try {
-      const cactus = new CactusLM({ model });
-      await cactus.download();
-      await cactus.init();
-      this.vlm = cactus;
-      this.initialized = true;
+      this.model = model;
+      this.vlm = (await modelLifecycle.ensure(model)).instance;
+      this.initialized = !!this.vlm;
     } finally {
       this.initializing = false;
     }
@@ -24,9 +24,9 @@ class VisionAgent {
 
   async destroy(): Promise<void> {
     if (this.vlm) {
-      await this.vlm.destroy();
       this.vlm = null;
       this.initialized = false;
+      await modelLifecycle.release(this.model);
     }
   }
 
@@ -48,6 +48,7 @@ class VisionAgent {
       messages,
       options: { temperature: 0.3, maxTokens: 512 },
     });
+    modelLifecycle.recordCompletion(this.vlm, result);
     usageLedger.record('local', result.prefillTokens, result.decodeTokens);
 
     return result.response || '';
@@ -70,6 +71,7 @@ class VisionAgent {
       messages,
       options: { temperature: 0.3, maxTokens: 512 },
     });
+    modelLifecycle.recordCompletion(this.vlm, result);
     usageLedger.record('local', result.prefillTokens, result.decodeTokens);
 
     return result.response || '';

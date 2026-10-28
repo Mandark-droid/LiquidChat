@@ -6,6 +6,7 @@
  */
 import type { CactusLM } from 'cactus-react-native';
 
+import { modelLifecycle } from '../../services/ModelLifecycleManager';
 import type { JsonSchema } from '../../tools/types';
 import { isAbortError, ProviderError } from '../errors';
 import { LOCAL_PROVIDER_ID } from '../ModelRegistry';
@@ -132,6 +133,7 @@ export class CactusProvider implements InferenceProvider {
         },
         onToken: req.onToken,
       });
+      modelLifecycle.recordCompletion(lm, r);
       if (signal?.aborted) throw new ProviderError('aborted', 'Request cancelled', this.id);
       if (r.success === false)
         throw new ProviderError('model_error', `${modelId} failed to generate`, this.id);

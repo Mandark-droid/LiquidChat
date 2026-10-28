@@ -25,6 +25,15 @@ function formatWhen(ts: number): string {
   return `${d.toLocaleDateString([], { day: 'numeric', month: 'short' })} ${time}`;
 }
 
+/** "12 calls · avg 1.4 s · 19 tok/s" for a model used since it loaded. */
+function usageLine(m: { uses?: number; totalMs?: number; tokensPerSecond?: number }): string {
+  const uses = m.uses ?? 0;
+  const avg = uses ? (m.totalMs ?? 0) / uses / 1000 : 0;
+  const parts = [`${uses} ${uses === 1 ? 'call' : 'calls'}`, `avg ${avg.toFixed(1)} s`];
+  if (m.tokensPerSecond) parts.push(`${Math.round(m.tokensPerSecond)} tok/s`);
+  return parts.join(' · ');
+}
+
 export type AgentSection = 'insights' | 'skills' | 'memory' | 'agentSettings';
 
 const SECTIONS: { key: AgentSection; title: string; body: string }[] = [
@@ -110,6 +119,7 @@ export default function AgentDashboardScreen({ onOpen }: { onOpen?: (s: AgentSec
             <View style={styles.modelInfo}>
               <Text style={styles.modelName}>{model.slug}</Text>
               <Text style={styles.modelRam}>~{model.ramMb}MB</Text>
+              {model.uses ? <Text style={styles.modelRam}>{usageLine(model)}</Text> : null}
             </View>
             <TierBadge tier={model.tier} />
           </View>

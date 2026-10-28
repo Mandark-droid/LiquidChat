@@ -18,7 +18,13 @@ import { modelLifecycle } from '../../src/services/ModelLifecycleManager';
 import { action, makeMeeting, MEETING_DATE, MEETING_TS, runSourceInChild, seg } from './fixtures';
 
 jest.mock('../../src/services/ModelLifecycleManager', () => ({
-  modelLifecycle: { ensure: jest.fn(), getLoadedModels: () => [], getRamBudgetMb: () => 0 },
+  modelLifecycle: {
+    ensure: jest.fn(),
+    download: jest.fn(async () => undefined),
+    recordCompletion: jest.fn(),
+    getLoadedModels: () => [],
+    getRamBudgetMb: () => 0,
+  },
 }));
 jest.mock('../../src/utils/engineMigration', () => ({
   listDownloadedCactusModels: async () =>
@@ -615,7 +621,7 @@ describe('generateMinutes', () => {
           newActionId: () => 'act_1',
         }`,
         '../services/ModelLifecycleManager': `{
-          modelLifecycle: { getLoadedModels: () => [], getRamBudgetMb: () => 0, ensure: async () => ({ instance: {
+          modelLifecycle: { recordCompletion: () => {}, getLoadedModels: () => [], getRamBudgetMb: () => 0, ensure: async () => ({ instance: {
             reset: async () => {},
             complete: async ({ messages }) => {
               globalThis.prompts.push(messages[1].content);
