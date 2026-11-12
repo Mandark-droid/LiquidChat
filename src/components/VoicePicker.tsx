@@ -93,15 +93,17 @@ export default function VoicePicker({
   }, []);
 
   const selected = voices?.find(v => v.id === value);
-  const label = !value ? DEFAULT_LABEL : selected ? voiceName(selected) : `${value} (not installed)`;
+  const label = !value
+    ? DEFAULT_LABEL
+    : selected
+      ? voiceName(selected)
+      : `${value} (not installed)`;
 
   const shown = useMemo(() => {
     const q = filter.trim().toLowerCase();
     const list = voices ?? [];
     if (!q) return list;
-    return list.filter(v =>
-      `${voiceName(v)} ${v.id} ${v.language}`.toLowerCase().includes(q),
-    );
+    return list.filter(v => `${voiceName(v)} ${v.id} ${v.language}`.toLowerCase().includes(q));
   }, [voices, filter]);
 
   const pick = async (id: string) => {

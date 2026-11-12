@@ -348,7 +348,9 @@ function StatusCard({
         <View style={[ui.row, { gap: 8 }]}>
           <Text style={[styles.statusText, { flex: 1 }]}>
             {label ?? 'Processing'}…{' '}
-            {remote ? '(on your LiquidChat Space)' : '(on-device, keep the app open for best speed)'}
+            {remote
+              ? '(on your LiquidChat Space)'
+              : '(on-device, keep the app open for best speed)'}
           </Text>
           {label !== 'Stopping' ? (
             <Button
@@ -697,10 +699,7 @@ function SpeakerRenameSheet({
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <KeyboardAvoidingView
-        style={styles.backdrop}
-        behavior={KEYBOARD_BEHAVIOR}
-      >
+      <KeyboardAvoidingView style={styles.backdrop} behavior={KEYBOARD_BEHAVIOR}>
         <View style={styles.sheet}>
           <ScrollView keyboardShouldPersistTaps="handled">
             <Text style={styles.sheetTitle}>Who is who?</Text>
@@ -976,10 +975,7 @@ function ActionEditor({
 
   return (
     <Modal visible transparent animationType="slide" onRequestClose={onClose}>
-      <KeyboardAvoidingView
-        style={styles.backdrop}
-        behavior={KEYBOARD_BEHAVIOR}
-      >
+      <KeyboardAvoidingView style={styles.backdrop} behavior={KEYBOARD_BEHAVIOR}>
         <View style={styles.sheet}>
           <Text style={[styles.sheetTitle, { marginBottom: 12 }]}>
             {editingItem ? 'Edit action item' : 'New action item'}

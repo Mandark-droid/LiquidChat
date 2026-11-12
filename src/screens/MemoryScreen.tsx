@@ -203,81 +203,81 @@ export default function MemoryScreen({ onBack }: { onBack: () => void }) {
         ) : null}
 
         {section === 'saved' ? (
-        <>
-        <View style={{ marginTop: 14 }}>
-          <Field
-            label="Search"
-            value={query}
-            onChangeText={setQuery}
-            placeholder="Full-text search"
-          />
-          <View style={ui.wrap}>
-            {(['all', 'profile', 'episodic', 'procedural'] as Filter[]).map(f => (
-              <Chip
-                key={f}
-                label={f === 'all' ? 'All' : f}
-                active={filter === f}
-                onPress={() => setFilter(f)}
+          <>
+            <View style={{ marginTop: 14 }}>
+              <Field
+                label="Search"
+                value={query}
+                onChangeText={setQuery}
+                placeholder="Full-text search"
               />
-            ))}
-          </View>
-        </View>
+              <View style={ui.wrap}>
+                {(['all', 'profile', 'episodic', 'procedural'] as Filter[]).map(f => (
+                  <Chip
+                    key={f}
+                    label={f === 'all' ? 'All' : f}
+                    active={filter === f}
+                    onPress={() => setFilter(f)}
+                  />
+                ))}
+              </View>
+            </View>
 
-        {items.length === 0 ? (
-          <EmptyState
-            title="Nothing remembered yet"
-            body='Say "remember that I prefer Google Maps" or add one with +. LiquidChat asks before saving anything.'
-          />
-        ) : (
-          items.map(m => (
-            <TouchableOpacity
-              key={m.id}
-              onPress={() => open(m)}
-              onLongPress={() => memoryActions(m, load)}
-            >
-              <Card style={{ marginTop: 8 }}>
-                <View style={[ui.row, { justifyContent: 'space-between' }]}>
-                  <Text style={[ui.body, { fontWeight: '700', flex: 1 }]} numberOfLines={1}>
-                    {m.title}
-                  </Text>
-                  <View style={ui.wrap}>
-                    {m.pinned ? <Chip label="Pinned" tone="info" /> : null}
-                    {m.sensitive ? <Chip label="Sensitive" tone="warn" /> : null}
-                    <Chip label={m.kind} tone="muted" />
-                  </View>
-                </View>
-                <Text style={[ui.body, { marginTop: 6 }]}>{m.content}</Text>
-                <Text style={[ui.muted, { marginTop: 4 }]}>
-                  {m.source} · updated {new Date(m.updatedAt).toLocaleDateString()}
-                </Text>
-              </Card>
-            </TouchableOpacity>
-          ))
-        )}
+            {items.length === 0 ? (
+              <EmptyState
+                title="Nothing remembered yet"
+                body='Say "remember that I prefer Google Maps" or add one with +. LiquidChat asks before saving anything.'
+              />
+            ) : (
+              items.map(m => (
+                <TouchableOpacity
+                  key={m.id}
+                  onPress={() => open(m)}
+                  onLongPress={() => memoryActions(m, load)}
+                >
+                  <Card style={{ marginTop: 8 }}>
+                    <View style={[ui.row, { justifyContent: 'space-between' }]}>
+                      <Text style={[ui.body, { fontWeight: '700', flex: 1 }]} numberOfLines={1}>
+                        {m.title}
+                      </Text>
+                      <View style={ui.wrap}>
+                        {m.pinned ? <Chip label="Pinned" tone="info" /> : null}
+                        {m.sensitive ? <Chip label="Sensitive" tone="warn" /> : null}
+                        <Chip label={m.kind} tone="muted" />
+                      </View>
+                    </View>
+                    <Text style={[ui.body, { marginTop: 6 }]}>{m.content}</Text>
+                    <Text style={[ui.muted, { marginTop: 4 }]}>
+                      {m.source} · updated {new Date(m.updatedAt).toLocaleDateString()}
+                    </Text>
+                  </Card>
+                </TouchableOpacity>
+              ))
+            )}
 
-        <Button
-          label="Clear all saved memories"
-          kind="danger"
-          style={{ marginTop: 24 }}
-          onPress={() =>
-            Alert.alert(
-              'Clear all saved memories?',
-              'This permanently deletes the facts, preferences and procedures saved here. Conversations and documents are cleared from their own tabs.',
-              [
-                { text: 'Cancel', style: 'cancel' },
-                {
-                  text: 'Delete all',
-                  style: 'destructive',
-                  onPress: async () => {
-                    await memoryManager.clearAll();
-                    load();
-                  },
-                },
-              ],
-            )
-          }
-        />
-        </>
+            <Button
+              label="Clear all saved memories"
+              kind="danger"
+              style={{ marginTop: 24 }}
+              onPress={() =>
+                Alert.alert(
+                  'Clear all saved memories?',
+                  'This permanently deletes the facts, preferences and procedures saved here. Conversations and documents are cleared from their own tabs.',
+                  [
+                    { text: 'Cancel', style: 'cancel' },
+                    {
+                      text: 'Delete all',
+                      style: 'destructive',
+                      onPress: async () => {
+                        await memoryManager.clearAll();
+                        load();
+                      },
+                    },
+                  ],
+                )
+              }
+            />
+          </>
         ) : null}
       </ScrollView>
     </SafeAreaView>

@@ -395,10 +395,7 @@ function NewMeetingSheet({
 
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
-      <KeyboardAvoidingView
-        style={styles.backdrop}
-        behavior={KEYBOARD_BEHAVIOR}
-      >
+      <KeyboardAvoidingView style={styles.backdrop} behavior={KEYBOARD_BEHAVIOR}>
         <View style={styles.sheet}>
           <View style={[ui.row, { justifyContent: 'space-between', marginBottom: 12 }]}>
             <Text style={styles.sheetTitle}>New meeting</Text>

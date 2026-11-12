@@ -269,7 +269,8 @@ class MemoryService {
 
     // Embed everything first: a failure halfway leaves the previous version in place.
     const embedded: { text: string; embedding: number[] }[] = [];
-    for (const chunk of chunks) embedded.push({ text: chunk, embedding: await this.embed(chunk, true) });
+    for (const chunk of chunks)
+      embedded.push({ text: chunk, embedding: await this.embed(chunk, true) });
 
     this.removeSource(fileName);
     for (let i = 0; i < embedded.length; i++) {
@@ -355,7 +356,9 @@ class MemoryService {
   }
 
   /** One file's chunks in document order. */
-  async documentChunks(sourceFile: string): Promise<{ id: string; text: string; chunkIndex: number }[]> {
+  async documentChunks(
+    sourceFile: string,
+  ): Promise<{ id: string; text: string; chunkIndex: number }[]> {
     await this.loadStores();
     return this.documentStore
       .getAll()

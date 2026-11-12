@@ -390,9 +390,10 @@ class MeetingSessionImpl {
       const transcribed =
         !!current?.segments.some(s => s.status === 'done') &&
         !current.segments.some(s => s.status === 'pending' || s.status === 'error');
-      const done = opts.forceMinutes && transcribed
-        ? await this.minutesInCloud(id)
-        : await this.processInCloud(id, { fallback: true });
+      const done =
+        opts.forceMinutes && transcribed
+          ? await this.minutesInCloud(id)
+          : await this.processInCloud(id, { fallback: true });
       // Stopped on the Space: not a reason to start over on the phone.
       if (done || this.stopRequested.delete(id)) return;
     }

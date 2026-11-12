@@ -1049,10 +1049,7 @@ Try selecting a different model from the Models tab.`,
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor={theme.colors.primary} />
-      <KeyboardAvoidingView
-        style={styles.flex}
-        behavior={KEYBOARD_BEHAVIOR}
-      >
+      <KeyboardAvoidingView style={styles.flex} behavior={KEYBOARD_BEHAVIOR}>
         {renderHeader()}
         <MetricsBar
           metrics={metrics}
