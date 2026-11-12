@@ -1,6 +1,7 @@
 import React from 'react';
 import {
   ActivityIndicator,
+  Platform,
   type StyleProp,
   StyleSheet,
   Switch,
@@ -280,6 +281,16 @@ export function ProgressBar({ value, color }: { value: number; color?: string })
     </View>
   );
 }
+
+/**
+ * For every KeyboardAvoidingView. Android 15+ draws apps edge-to-edge, where adjustResize no
+ * longer shrinks the window for the keyboard; the view has to move itself or inputs end up
+ * underneath it.
+ */
+export const KEYBOARD_BEHAVIOR =
+  Platform.OS === 'ios' || (Platform.OS === 'android' && Number(Platform.Version) >= 35)
+    ? 'padding'
+    : undefined;
 
 export const ui = StyleSheet.create({
   screen: { flex: 1, backgroundColor: theme.colors.background },

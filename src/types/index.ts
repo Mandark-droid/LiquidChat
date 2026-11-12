@@ -162,7 +162,7 @@ export const DEFAULT_SETTINGS: ChatSettings = {
   enableHaptics: true,
   autoTTS: false,
   speechSpeed: 1.0,
-  ttsVoice: 'en-US-language',
+  ttsVoice: '', // the TTS engine's default voice
   autoExecuteTools: true,
   agentRuntimeEnabled: true,
   hfToken: '',

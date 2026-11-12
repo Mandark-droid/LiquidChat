@@ -168,7 +168,7 @@ export default function AgentDashboardScreen({ onOpen }: { onOpen?: (s: AgentSec
   const renderMemoryStats = () => (
     <>
       <View style={styles.metricRow}>
-        <Text style={styles.metricLabel}>Memories</Text>
+        <Text style={styles.metricLabel}>Remembered conversations</Text>
         <Text style={styles.metricValue}>{memoryStats.memoryCount}</Text>
       </View>
       <View style={styles.metricRow}>
@@ -177,8 +177,8 @@ export default function AgentDashboardScreen({ onOpen }: { onOpen?: (s: AgentSec
       </View>
       {memoryStats.documentFiles.length > 0 && (
         <View style={styles.metricRow}>
-          <Text style={styles.metricLabel}>Files</Text>
-          <Text style={styles.metricValue}>{memoryStats.documentFiles.join(', ')}</Text>
+          <Text style={styles.metricLabel}>Indexed files</Text>
+          <Text style={styles.metricValue}>{memoryStats.documentFiles.length}</Text>
         </View>
       )}
     </>

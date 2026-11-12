@@ -53,10 +53,15 @@ export default function MeetingRecorderScreen({ onBack, onFinished }: Props) {
   const doneText = segments.filter(s => s.status === 'done' && s.text);
   const pending = segments.filter(s => s.status === 'pending').length;
 
+  // On the Space engine the phone only records; the Space transcribes after Stop.
+  const onPhone = meetingSession.transcribesLive;
+
   const stop = () =>
     Alert.alert(
       'Stop recording?',
-      'The rest of the audio will be transcribed and minutes written on-device.',
+      onPhone
+        ? 'The rest of the audio will be transcribed and minutes written on-device.'
+        : 'The recording is then sent to your LiquidChat Space for the transcript and minutes.',
       [
         { text: 'Keep recording', style: 'cancel' },
         {
@@ -75,8 +80,9 @@ export default function MeetingRecorderScreen({ onBack, onFinished }: Props) {
     setMarkerOpen(false);
   };
 
-  const sttLine =
-    stt.phase === 'downloading'
+  const sttLine = !onPhone
+    ? 'Recording — your LiquidChat Space transcribes it after you stop'
+    : stt.phase === 'downloading'
       ? `Downloading speech model… ${Math.round(stt.downloadProgress * 100)}%`
       : stt.phase === 'initializing'
         ? 'Loading speech model…'
@@ -92,7 +98,7 @@ export default function MeetingRecorderScreen({ onBack, onFinished }: Props) {
     <SafeAreaView style={ui.screen} edges={['top', 'bottom']}>
       <ScreenHeader
         title={meeting?.title ?? 'Meeting'}
-        subtitle={meeting?.client ?? 'Recording on-device'}
+        subtitle={meeting?.client ?? (onPhone ? 'Recording on-device' : 'Recording')}
         onBack={onBack}
       />
 
@@ -138,7 +144,9 @@ export default function MeetingRecorderScreen({ onBack, onFinished }: Props) {
       >
         {doneText.length === 0 ? (
           <Text style={[ui.muted, { textAlign: 'center', marginTop: 24 }]}>
-            Speak normally. The phone transcribes every ~20–30 seconds.
+            {onPhone
+              ? 'Speak normally. The phone transcribes every ~20–30 seconds.'
+              : 'Speak normally. No live transcript in LiquidChat Space mode: the full recording is transcribed with the high-accuracy model when you stop.'}
           </Text>
         ) : (
           doneText.map(s => (

@@ -29,6 +29,7 @@ import MemoryChips from '../components/MemoryChips';
 import MessageBubble from '../components/MessageBubble';
 import MetricsBar from '../components/MetricsBar';
 import ScreenshotPreview from '../components/ScreenshotPreview';
+import { KEYBOARD_BEHAVIOR } from '../components/ui';
 import VisionModeOverlay from '../components/VisionModeOverlay';
 import VoiceInputButton from '../components/VoiceInputButton';
 import { getModelBySlug } from '../config/models';
@@ -1050,8 +1051,7 @@ Try selecting a different model from the Models tab.`,
       <StatusBar barStyle="light-content" backgroundColor={theme.colors.primary} />
       <KeyboardAvoidingView
         style={styles.flex}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
+        behavior={KEYBOARD_BEHAVIOR}
       >
         {renderHeader()}
         <MetricsBar

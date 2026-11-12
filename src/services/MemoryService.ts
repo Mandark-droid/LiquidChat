@@ -328,6 +328,42 @@ class MemoryService {
     await this.documentStore.save();
   }
 
+  // === Browsing (Memory screen) ===
+
+  /** Remembered conversations, newest first (no embedding model needed). */
+  async listRecalled(): Promise<{ id: string; text: string; createdAt: number }[]> {
+    await this.loadStores();
+    return this.memoryStore
+      .getAll()
+      .map(e => ({ id: e.id, text: e.text, createdAt: e.createdAt }))
+      .sort((a, b) => b.createdAt - a.createdAt);
+  }
+
+  /** Indexed files with their chunk counts, most recently indexed first. */
+  async listDocuments(): Promise<{ sourceFile: string; chunks: number; indexedAt: number }[]> {
+    await this.loadStores();
+    const files = new Map<string, { sourceFile: string; chunks: number; indexedAt: number }>();
+    for (const e of this.documentStore.getAll()) {
+      const name = e.metadata?.sourceFile;
+      if (!name) continue;
+      const f = files.get(name) ?? { sourceFile: name, chunks: 0, indexedAt: 0 };
+      f.chunks++;
+      f.indexedAt = Math.max(f.indexedAt, e.createdAt);
+      files.set(name, f);
+    }
+    return [...files.values()].sort((a, b) => b.indexedAt - a.indexedAt);
+  }
+
+  /** One file's chunks in document order. */
+  async documentChunks(sourceFile: string): Promise<{ id: string; text: string; chunkIndex: number }[]> {
+    await this.loadStores();
+    return this.documentStore
+      .getAll()
+      .filter(e => e.metadata?.sourceFile === sourceFile)
+      .map(e => ({ id: e.id, text: e.text, chunkIndex: e.metadata?.chunkIndex ?? 0 }))
+      .sort((a, b) => a.chunkIndex - b.chunkIndex);
+  }
+
   // === Stats ===
 
   getStats(): { memoryCount: number; documentCount: number; documentFiles: string[] } {

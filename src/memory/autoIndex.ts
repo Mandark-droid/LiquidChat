@@ -21,7 +21,14 @@ const RETRY_MS = 60_000;
 export function meetingVersion(m: Meeting): string | null {
   if (!m.minutes || m.status !== 'ready') return null;
   const spoken = m.segments.filter(s => s.status === 'done').length;
-  return `${m.minutes.generatedAt}:${m.sttModel ?? ''}:${spoken}`;
+  // Speaker names too: a rename rewrites the transcript lines that were indexed.
+  // Only user names: the version of meetings never renamed stays as it was (no mass re-index).
+  const names = (m.speakers ?? [])
+    .filter(s => s.nameSource === 'user')
+    .map(s => `${s.id}=${s.name}`)
+    .join('|');
+  const base = `${m.minutes.generatedAt}:${m.sttModel ?? ''}:${spoken}`;
+  return names ? `${base}:${names}` : base;
 }
 
 export function indexFileName(meetingId: string): string {

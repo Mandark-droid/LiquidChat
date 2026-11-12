@@ -4,7 +4,6 @@ import {
   Keyboard,
   KeyboardAvoidingView,
   Modal,
-  Platform,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -21,6 +20,7 @@ import {
   EmptyState,
   Field,
   HeaderButton,
+  KEYBOARD_BEHAVIOR,
   ScreenHeader,
   Segmented,
   ui,
@@ -47,12 +47,6 @@ interface Props {
 
 type View_ = 'focus' | 'upcoming' | 'open' | 'done';
 
-// Android 15+ draws apps edge-to-edge, where adjustResize no longer shrinks the window for
-// the keyboard; the sheet has to move itself or the Due/Notes fields end up underneath it.
-const KEYBOARD_BEHAVIOR =
-  Platform.OS === 'ios' || (Platform.OS === 'android' && Platform.Version >= 35)
-    ? 'padding'
-    : undefined;
 type Scope = 'all' | 'mine' | 'personal' | 'meetings';
 
 function dueLabel(t: UnifiedTask): string {

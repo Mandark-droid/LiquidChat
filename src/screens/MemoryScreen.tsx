@@ -8,6 +8,7 @@ import { Alert, ScrollView, Share, Text, TouchableOpacity, View } from 'react-na
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { showActionSheet } from '../components/ActionSheet';
+import { IndexedDocuments, RecalledConversations } from '../components/MemoryStores';
 import {
   Button,
   Card,
@@ -25,10 +26,13 @@ import { type Memory, type MemoryKind, memoryManager } from '../memory/MemoryMan
 import { memoryProposals, type PendingProposal } from '../memory/proposals';
 
 type Filter = 'all' | MemoryKind;
+/** Saved facts (SQLite), conversations chat recalls, documents chat searches (vector stores). */
+type Section = 'saved' | 'recall' | 'documents';
 
 export default function MemoryScreen({ onBack }: { onBack: () => void }) {
   const [items, setItems] = useState<Memory[]>([]);
   const [filter, setFilter] = useState<Filter>('all');
+  const [section, setSection] = useState<Section>('saved');
   const [query, setQuery] = useState('');
   const [proposals, setProposals] = useState<PendingProposal[]>([]);
   const [editing, setEditing] = useState<Memory | 'new' | null>(null);
@@ -94,7 +98,13 @@ export default function MemoryScreen({ onBack }: { onBack: () => void }) {
               label="Export"
               onPress={async () => Share.share({ message: await memoryManager.export() })}
             />
-            <HeaderButton label="+" onPress={() => open('new')} />
+            <HeaderButton
+              label="+"
+              onPress={() => {
+                setSection('saved');
+                open('new');
+              }}
+            />
           </>
         }
       />
@@ -102,7 +112,31 @@ export default function MemoryScreen({ onBack }: { onBack: () => void }) {
         contentContainerStyle={{ padding: theme.spacing.lg, paddingBottom: 60 }}
         keyboardShouldPersistTaps="handled"
       >
-        {proposals.length ? (
+        <Segmented
+          options={[
+            { key: 'saved', label: 'Saved' },
+            { key: 'recall', label: 'Conversations' },
+            { key: 'documents', label: 'Documents' },
+          ]}
+          value={section}
+          onChange={setSection}
+        />
+        {section !== 'saved' ? (
+          <View style={{ marginTop: 14 }}>
+            <Field
+              label="Search"
+              value={query}
+              onChangeText={setQuery}
+              placeholder={section === 'recall' ? 'Filter conversations' : 'Filter documents'}
+            />
+            {section === 'recall' ? (
+              <RecalledConversations query={query} />
+            ) : (
+              <IndexedDocuments query={query} />
+            )}
+          </View>
+        ) : null}
+        {section === 'saved' && proposals.length ? (
           <>
             <SectionTitle>Suggested to remember</SectionTitle>
             {proposals.map(p => (
@@ -133,7 +167,7 @@ export default function MemoryScreen({ onBack }: { onBack: () => void }) {
           </>
         ) : null}
 
-        {editing ? (
+        {section === 'saved' && editing ? (
           <Card style={{ marginTop: 12 }}>
             <Segmented
               options={[
@@ -168,6 +202,8 @@ export default function MemoryScreen({ onBack }: { onBack: () => void }) {
           </Card>
         ) : null}
 
+        {section === 'saved' ? (
+        <>
         <View style={{ marginTop: 14 }}>
           <Field
             label="Search"
@@ -220,13 +256,13 @@ export default function MemoryScreen({ onBack }: { onBack: () => void }) {
         )}
 
         <Button
-          label="Clear all memory"
+          label="Clear all saved memories"
           kind="danger"
           style={{ marginTop: 24 }}
           onPress={() =>
             Alert.alert(
-              'Clear all memory?',
-              'This permanently deletes everything LiquidChat remembers.',
+              'Clear all saved memories?',
+              'This permanently deletes the facts, preferences and procedures saved here. Conversations and documents are cleared from their own tabs.',
               [
                 { text: 'Cancel', style: 'cancel' },
                 {
@@ -241,6 +277,8 @@ export default function MemoryScreen({ onBack }: { onBack: () => void }) {
             )
           }
         />
+        </>
+        ) : null}
       </ScrollView>
     </SafeAreaView>
   );

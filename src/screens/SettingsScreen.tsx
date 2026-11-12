@@ -14,6 +14,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import OtelSettingsCard from '../components/OtelSettingsCard';
+import VoicePicker from '../components/VoicePicker';
 import { theme } from '../config/theme';
 import { memoryManager } from '../memory/MemoryManager';
 import { exportForFineTuning } from '../services/chatExport';
@@ -446,12 +447,9 @@ export default function SettingsScreen({ onOpenModelSelector }: SettingsScreenPr
               <>
                 <View style={styles.settingRow}>
                   <Text style={styles.settingLabel}>TTS Voice</Text>
-                  <TextInput
-                    style={styles.inlineInput}
+                  <VoicePicker
                     value={settings.ttsVoice}
-                    onChangeText={text => updateSetting('ttsVoice', text)}
-                    placeholder="en-US-language"
-                    placeholderTextColor={theme.colors.textMuted}
+                    onChange={id => updateSetting('ttsVoice', id)}
                   />
                 </View>
               </>

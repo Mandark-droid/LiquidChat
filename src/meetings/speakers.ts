@@ -3,7 +3,7 @@
  * speech units from VAD, clustering of speaker embeddings, sentence-to-speaker
  * assignment inside each transcription window, and naming speakers from the text.
  */
-import type { Attendee, Speaker, TranscriptSegment, Utterance } from './types';
+import type { Attendee, Meeting, Speaker, TranscriptSegment, Utterance } from './types';
 
 export interface SpeechUnit {
   startMs: number;
@@ -313,7 +313,72 @@ export function inferSpeakerNames(
   return out;
 }
 
+/**
+ * "Speaker N" for a speaker without a name. On-device ids are "S1", "S2"…; the Space's are
+ * "SPEAKER_00"…, numbered by position like ownerName() does for its action items.
+ */
+export function defaultSpeakerLabel(speakers: Speaker[] | undefined, id: string): string {
+  const own = /^S(\d+)$/.exec(id)?.[1];
+  if (own) return `Speaker ${own}`;
+  const i = speakers?.findIndex(x => x.id === id) ?? -1;
+  return i >= 0 ? `Speaker ${i + 1}` : id;
+}
+
 export function speakerLabel(speakers: Speaker[] | undefined, id: string): string {
   const s = speakers?.find(x => x.id === id);
-  return s?.name || `Speaker ${id.replace(/^S/, '')}`;
+  return s?.name || defaultSpeakerLabel(speakers, id);
+}
+
+const escapeRe = (t: string) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+/** Word characters for name boundaries, Devanagari included (\b only knows ASCII). */
+const NAME_CHAR = '[\\w\\u0900-\\u097F]';
+
+/**
+ * Applies new speaker names to a meeting in place: the speakers, action-item owners and the
+ * names written in the minutes. Renaming no longer re-runs the minutes model (that took the
+ * whole pipeline again, on the phone, with no way to stop it). Returns whether anything changed.
+ */
+export function renameSpeakers(
+  m: Pick<Meeting, 'speakers' | 'minutes' | 'actionItems'>,
+  names: Record<string, string>,
+): boolean {
+  const swaps: [string, string][] = [];
+  m.speakers = (m.speakers ?? []).map(s => {
+    const name = (names[s.id] ?? s.name ?? '').trim();
+    if (name === (s.name ?? '')) return s;
+    const before = speakerLabel(m.speakers, s.id);
+    const next: Speaker = name ? { id: s.id, name, nameSource: 'user' } : { id: s.id };
+    const after = name || defaultSpeakerLabel(m.speakers, s.id);
+    if (before !== after) swaps.push([before, after]);
+    return next;
+  });
+  if (!swaps.length) return false;
+
+  const same = (a?: string) => (a ?? '').trim().toLowerCase();
+  for (const a of m.actionItems) {
+    const hit = swaps.find(([from]) => same(a.owner) === same(from));
+    if (hit) a.owner = hit[1];
+  }
+  if (m.minutes) {
+    // Placeholders swapped at once, so renaming Speaker 1 <-> Speaker 2 does not collide.
+    const tokens = swaps.map((_, i) => `\u0000${i}\u0000`);
+    const rewrite = (text: string) => {
+      let out = text;
+      swaps.forEach(([from, to], i) => {
+        // "Vikram" -> "Vikram Shah" must not turn an existing "Vikram Shah" into "Vikram Shah Shah".
+        const rest = to.startsWith(`${from} `) ? `(?!${escapeRe(to.slice(from.length))})` : '';
+        const re = `(?<!${NAME_CHAR})${escapeRe(from)}(?!${NAME_CHAR})${rest}`;
+        out = out.replace(new RegExp(re, 'g'), tokens[i]);
+      });
+      swaps.forEach(([, to], i) => (out = out.split(tokens[i]).join(to)));
+      return out;
+    };
+    const mm = m.minutes;
+    mm.summary = rewrite(mm.summary);
+    mm.keyPoints = mm.keyPoints.map(rewrite);
+    mm.decisions = mm.decisions.map(rewrite);
+    mm.openQuestions = mm.openQuestions.map(rewrite);
+    mm.nextSteps = mm.nextSteps.map(rewrite);
+  }
+  return true;
 }

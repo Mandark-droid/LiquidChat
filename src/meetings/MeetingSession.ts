@@ -50,6 +50,14 @@ type Listener = (s: LiveState) => void;
 
 const SATURATED_DB = -10;
 
+/** Thrown from a progress callback once the user stops processing; unwinds the pipeline. */
+export class ProcessingStopped extends Error {
+  constructor() {
+    super('Processing stopped');
+    this.name = 'ProcessingStopped';
+  }
+}
+
 function warn(what: string, e: unknown) {
   console.warn(`[MeetingSession] ${what} failed: ${e instanceof Error ? e.message : String(e)}`);
 }
@@ -70,6 +78,9 @@ class MeetingSessionImpl {
   private subs: EmitterSubscription[] = [];
   private segmentChain: Promise<void> = Promise.resolve();
   private processing = new Set<string>();
+  private stopRequested = new Set<string>();
+  /** Engine of the active recording: on 'space' the phone does not transcribe while recording. */
+  private liveEngine: 'device' | 'space' = 'device';
 
   subscribe(l: Listener): () => void {
     this.listeners.add(l);
@@ -80,6 +91,10 @@ class MeetingSessionImpl {
   }
   get live(): LiveState {
     return this.state;
+  }
+  /** Whether the active recording is transcribed on the phone as it goes. */
+  get transcribesLive(): boolean {
+    return this.liveEngine === 'device';
   }
   private set(p: Partial<LiveState>) {
     this.state = { ...this.state, ...p };
@@ -100,6 +115,28 @@ class MeetingSessionImpl {
         (this.state.meetingId === id && this.state.phase !== 'idle') || this.processing.has(id)
       );
     return this.state.phase !== 'idle';
+  }
+
+  /**
+   * Stops on-device or Space processing of a meeting at its next step (a segment, a minutes
+   * part, a Space call). What was already transcribed is kept.
+   */
+  stopProcessing(id: string): void {
+    if (!this.processing.has(id)) return;
+    this.stopRequested.add(id);
+    if (this.state.meetingId === id) this.set({ progressLabel: 'Stopping' });
+  }
+
+  /** Progress reporter for one meeting's pipeline; throws once a stop was requested. */
+  private progressFor(id: string) {
+    return (label: string, progress: number) => {
+      this.checkStop(id);
+      this.set({ progressLabel: label, progress });
+    };
+  }
+
+  private checkStop(id: string): void {
+    if (this.stopRequested.has(id)) throw new ProcessingStopped();
   }
 
   // ---------------------------------------------------------------------
@@ -150,6 +187,7 @@ class MeetingSessionImpl {
         });
       }
 
+      this.liveEngine = settings.engine;
       this.attach(meeting.id);
       const lastIndex = meeting.segments.reduce((n, s) => Math.max(n, s.index), -1);
       await Recorder.start({
@@ -163,11 +201,13 @@ class MeetingSessionImpl {
       this.set({ meetingId: meeting.id, phase: 'recording', elapsedMs: meeting.durationMs });
 
       // Warm up STT while the first segment fills (~20 s); failures surface per segment.
-      transcriber
-        .prepare(settings.sttModel)
-        .catch(e =>
-          this.set({ error: `Speech model: ${e instanceof Error ? e.message : String(e)}` }),
-        );
+      // On the Space engine the whole recording is transcribed there afterwards instead.
+      if (settings.engine === 'device')
+        transcriber
+          .prepare(settings.sttModel)
+          .catch(e =>
+            this.set({ error: `Speech model: ${e instanceof Error ? e.message : String(e)}` }),
+          );
       return meeting.id;
     } catch (e) {
       this.detach();
@@ -342,13 +382,22 @@ class MeetingSessionImpl {
   private async processMeetingTraced(id: string, opts: { forceMinutes?: boolean }): Promise<void> {
     if (this.processing.has(id)) return;
     const settings = await getMeetingSettings();
+    this.stopRequested.delete(id);
     if (settings.engine === 'space') {
-      const done = opts.forceMinutes
+      // Minutes alone only when the transcript is complete; otherwise the Space transcribes too
+      // (an import or a stopped run would else be transcribed on the phone).
+      const current = await meetingStore.get(id);
+      const transcribed =
+        !!current?.segments.some(s => s.status === 'done') &&
+        !current.segments.some(s => s.status === 'pending' || s.status === 'error');
+      const done = opts.forceMinutes && transcribed
         ? await this.minutesInCloud(id)
         : await this.processInCloud(id, { fallback: true });
-      if (done) return;
+      // Stopped on the Space: not a reason to start over on the phone.
+      if (done || this.stopRequested.delete(id)) return;
     }
     this.processing.add(id);
+    const progress = this.progressFor(id);
     try {
       await Recorder.setProcessing('Transcribing meeting…').catch(() => {});
       this.set({
@@ -365,10 +414,12 @@ class MeetingSessionImpl {
         await transcriber.release();
         await Recorder.setProcessing('Identifying speakers…').catch(() => {});
         this.set({ progressLabel: 'Identifying speakers', progress: 0 });
-        await identifySpeakers(id, (label, p) =>
-          this.set({ progressLabel: label, progress: p }),
-        ).catch(e => warn('speakers', e));
+        await identifySpeakers(id, progress).catch(e => {
+          if (e instanceof ProcessingStopped) throw e;
+          warn('speakers', e);
+        });
       }
+      this.checkStop(id);
 
       const meeting = await meetingStore.get(id);
       if (!meeting) return;
@@ -382,9 +433,7 @@ class MeetingSessionImpl {
         });
         await Recorder.setProcessing('Writing minutes…').catch(() => {});
         this.set({ phase: 'summarizing', progressLabel: 'Writing minutes', progress: 0 });
-        const done = await generateMinutes(id, settings.summaryModel, (label, p) =>
-          this.set({ progressLabel: label, progress: p }),
-        );
+        const done = await generateMinutes(id, settings.summaryModel, progress);
         const used = done.minutes?.model ?? settings.summaryModel;
         if (getModelTier(used) !== 'hot') {
           await modelLifecycle.release(used).catch(e => warn(`release ${used}`, e));
@@ -399,6 +448,10 @@ class MeetingSessionImpl {
       if (!settings.keepAudio) await meetingStore.deleteAudio(id);
       if (settings.indexForChat) autoIndexer.enqueue(id);
     } catch (e) {
+      if (e instanceof ProcessingStopped) {
+        await this.markStopped(id);
+        return;
+      }
       const msg = e instanceof Error ? e.message : String(e);
       console.error(`[MeetingSession] Processing ${id} failed: ${msg}`);
       await meetingStore.update(id, m => {
@@ -408,6 +461,7 @@ class MeetingSessionImpl {
       this.set({ error: msg });
     } finally {
       this.processing.delete(id);
+      this.stopRequested.delete(id);
       await transcriber.release();
       await Recorder.release().catch(() => {});
       this.set({ ...IDLE });
@@ -438,6 +492,7 @@ class MeetingSessionImpl {
     const before = await meetingStore.get(id);
     if (!before) return false;
     this.processing.add(id);
+    const progress = this.progressFor(id);
     try {
       // The phone's speech model is not needed while the Space works; free its memory.
       await transcriber.release();
@@ -456,17 +511,19 @@ class MeetingSessionImpl {
       await processMeetingInCloud(
         id,
         { spaceId: settings.spaceId, token, asrModel: settings.spaceAsrModel },
-        (label, p) =>
-          this.set({
-            phase: p >= 0.8 ? 'summarizing' : 'transcribing',
-            progressLabel: label,
-            progress: p,
-          }),
+        (label, p) => {
+          progress(label, p);
+          this.set({ phase: p >= 0.8 ? 'summarizing' : 'transcribing' });
+        },
       );
       if (!settings.keepAudio) await meetingStore.deleteAudio(id);
       if (settings.indexForChat) autoIndexer.enqueue(id);
       return true;
     } catch (e) {
+      if (e instanceof ProcessingStopped) {
+        await this.markStopped(id, before.status);
+        return false;
+      }
       const msg = e instanceof Error ? e.message : String(e);
       console.error(`[MeetingSession] LiquidChat Space failed for ${id}: ${msg}`);
       await meetingStore.update(id, m => {
@@ -482,6 +539,8 @@ class MeetingSessionImpl {
       return false;
     } finally {
       this.processing.delete(id);
+      // With fallback the caller reads the stop request (and clears it) before going on.
+      if (!opts.fallback) this.stopRequested.delete(id);
       await Recorder.release().catch(() => {});
       this.set({ ...IDLE });
     }
@@ -493,6 +552,7 @@ class MeetingSessionImpl {
     const token = (await storage.getSettings())?.hfToken?.trim() ?? '';
     if (!token || this.processing.has(id)) return false;
     this.processing.add(id);
+    const progress = this.progressFor(id);
     try {
       await meetingStore.update(id, m => {
         m.status = 'summarizing';
@@ -508,11 +568,15 @@ class MeetingSessionImpl {
       await minutesInCloud(
         id,
         { spaceId: settings.spaceId, token, asrModel: settings.spaceAsrModel },
-        (label, p) => this.set({ progressLabel: label, progress: p }),
+        progress,
       );
       if (settings.indexForChat) autoIndexer.enqueue(id);
       return true;
     } catch (e) {
+      if (e instanceof ProcessingStopped) {
+        await this.markStopped(id);
+        return false;
+      }
       const msg = e instanceof Error ? e.message : String(e);
       console.error(`[MeetingSession] LiquidChat Space minutes failed for ${id}: ${msg}`);
       await meetingStore.update(id, m => {
@@ -537,6 +601,7 @@ class MeetingSessionImpl {
       await this.adoptOrphanSegments(e.id);
       await meetingStore.update(e.id, m => {
         m.status = 'interrupted';
+        m.error = undefined; // the banner then explains a crash, not an earlier stop
       });
       out.push(e.id);
     }
@@ -600,6 +665,7 @@ class MeetingSessionImpl {
       m.segments.sort((a, b) => a.index - b.index);
       m.durationMs = Math.max(m.durationMs, e.startMs + e.durationMs);
     });
+    if (this.liveEngine === 'space') return; // stays pending; the Space transcribes it after
     this.set({ pendingSegments: this.state.pendingSegments + 1 });
     // Fire-and-forget: the transcriber queue serialises; we don't block new segments.
     this.transcribeSegment(meetingId, seg.index).finally(() =>
@@ -660,6 +726,7 @@ class MeetingSessionImpl {
     await transcriber.prepare(m.sttModel ?? settings.sttModel);
     let done = 0;
     for (const s of todo) {
+      this.checkStop(id);
       await this.transcribeSegment(id, s.index);
       done++;
       this.set({
@@ -668,6 +735,21 @@ class MeetingSessionImpl {
       });
     }
     await transcriber.drain();
+  }
+
+  /** After a stop: the meeting keeps what was done and says how to finish it. */
+  private async markStopped(id: string, previous?: Meeting['status']): Promise<void> {
+    console.log(`[MeetingSession] Processing ${id} stopped by the user`);
+    await meetingStore.update(id, m => {
+      const unfinished = m.segments.some(s => s.status === 'pending' || s.status === 'error');
+      m.status =
+        previous && previous !== 'transcribing' && previous !== 'summarizing'
+          ? previous
+          : unfinished && !m.minutes
+            ? 'interrupted'
+            : 'ready';
+      m.error = 'Processing was stopped. Run it again from the ⋯ menu when you are ready.';
+    });
   }
 
   /** Registers WAV files on disk that never made it into meeting.json (crash). */

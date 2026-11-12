@@ -61,7 +61,7 @@ export default function MeetingSettingsScreen({ onBack }: { onBack: () => void }
           <Text style={[ui.muted, { marginTop: 10 }]}>
             {s.engine === 'device'
               ? 'Private and offline: nothing leaves the phone. Roughly one minute of processing per minute of audio.'
-              : 'Much more accurate transcripts, speakers and action items, in about five minutes for a 45-minute meeting. The recording is uploaded to the Space below and processed with your own Hugging Face ZeroGPU quota (your token from Settings). The Space keeps nothing: audio is deleted after reading and nothing is logged. If the Space is unreachable, the phone takes over.'}
+              : 'Much more accurate transcripts, speakers and action items, in about five minutes for a 45-minute meeting. The recording is uploaded to the Space below and processed with your own Hugging Face ZeroGPU quota (your token from Settings). The Space keeps nothing: audio is deleted after reading and nothing is logged. The phone only records (no live transcript); if the Space is unreachable, the phone takes over.'}
           </Text>
           {s.engine === 'space' && (
             <>

@@ -3,7 +3,6 @@ import {
   Alert,
   KeyboardAvoidingView,
   Modal,
-  Platform,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -20,6 +19,7 @@ import {
   EmptyState,
   Field,
   HeaderButton,
+  KEYBOARD_BEHAVIOR,
   ScreenHeader,
   Segmented,
   ui,
@@ -397,7 +397,7 @@ function NewMeetingSheet({
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
       <KeyboardAvoidingView
         style={styles.backdrop}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior={KEYBOARD_BEHAVIOR}
       >
         <View style={styles.sheet}>
           <View style={[ui.row, { justifyContent: 'space-between', marginBottom: 12 }]}>

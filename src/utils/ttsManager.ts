@@ -11,6 +11,18 @@ export const MAX_SPEECH_SPEED = 2.0;
 
 /** User-facing multiplier: 1.0 is the voice's normal pace. */
 let speechSpeed: number | null = null;
+/** Voice id from Settings; '' or an id the engine no longer has means the engine's default. */
+let voiceId: string | null = null;
+let appliedVoice: string | null = null;
+
+export interface TTSVoice {
+  id: string;
+  name: string;
+  language: string;
+  quality: number;
+  /** Streams from the network (Google's online voices). */
+  network: boolean;
+}
 
 export function clampSpeechSpeed(speed: unknown): number {
   const n = typeof speed === 'number' && Number.isFinite(speed) ? speed : DEFAULT_SPEECH_SPEED;
@@ -23,6 +35,38 @@ async function currentSpeed(): Promise<number> {
     speechSpeed = clampSpeechSpeed(saved?.speechSpeed);
   }
   return speechSpeed;
+}
+
+async function currentVoice(): Promise<string> {
+  if (voiceId === null) {
+    const saved = await storage.getSettings().catch(() => null);
+    voiceId = saved?.ttsVoice ?? '';
+  }
+  return voiceId;
+}
+
+async function applyVoice(id: string): Promise<void> {
+  if (!id || id === appliedVoice) return;
+  try {
+    await Tts.setDefaultVoice(id);
+    appliedVoice = id;
+  } catch (error) {
+    // Uninstalled or unknown voice (e.g. the old free-text default): keep the engine's default.
+    console.warn(`[TTS] Voice "${id}" unavailable:`, error);
+    appliedVoice = id;
+  }
+}
+
+/** Called when the user picks a voice so the next utterance uses it ('' = engine default). */
+export async function setVoice(id: string): Promise<void> {
+  voiceId = id;
+  appliedVoice = null;
+  if (!id) {
+    // No API to reset to the default voice; the language default is the closest.
+    await Tts.setDefaultLanguage('en-US').catch(() => {});
+    return;
+  }
+  if (isInitialized) await applyVoice(id);
 }
 
 async function applyRate(speed: number): Promise<void> {
@@ -38,6 +82,7 @@ export async function initTTS(): Promise<void> {
     await Tts.setDefaultLanguage('en-US');
     await Tts.setDefaultPitch(1.0);
     await applyRate(await currentSpeed());
+    await applyVoice(await currentVoice());
     isInitialized = true;
   } catch (error) {
     console.error('Error initializing TTS:', error);
@@ -69,10 +114,21 @@ export async function stopSpeaking(): Promise<void> {
   }
 }
 
-export async function getAvailableVoices(): Promise<any[]> {
+/** Installed voices, by language then name. */
+export async function getAvailableVoices(): Promise<TTSVoice[]> {
   try {
+    if (!isInitialized) await initTTS();
     const voices = await Tts.voices();
-    return voices;
+    return voices
+      .filter(v => !v.notInstalled)
+      .map(v => ({
+        id: v.id,
+        name: v.name,
+        language: v.language,
+        quality: v.quality,
+        network: !!v.networkConnectionRequired,
+      }))
+      .sort((a, b) => a.language.localeCompare(b.language) || a.name.localeCompare(b.name));
   } catch (error) {
     console.error('Error getting voices:', error);
     return [];

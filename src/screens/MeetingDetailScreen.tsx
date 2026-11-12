@@ -4,7 +4,6 @@ import {
   Alert,
   KeyboardAvoidingView,
   Modal,
-  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -21,6 +20,7 @@ import {
   EmptyState,
   Field,
   HeaderButton,
+  KEYBOARD_BEHAVIOR,
   ProgressBar,
   ScreenHeader,
   SectionTitle,
@@ -44,8 +44,10 @@ import { formatAttendees, parseAttendees } from '../meetings/importTranscript';
 import { meetingSession } from '../meetings/MeetingSession';
 import { meetingStore, newActionId } from '../meetings/MeetingStore';
 import { formatClock } from '../meetings/MinutesGenerator';
-import { speakerLabel } from '../meetings/speakers';
+import { getMeetingSettings } from '../meetings/settings';
+import { defaultSpeakerLabel, renameSpeakers, speakerLabel } from '../meetings/speakers';
 import type { ActionItem, ActionPriority, Meeting, Minutes } from '../meetings/types';
+import { autoIndexer } from '../memory/autoIndex';
 import { createCalendarEvent } from '../tools/calendarEvent';
 
 interface Props {
@@ -343,10 +345,20 @@ function StatusCard({
   if (processing) {
     return (
       <View style={styles.status}>
-        <Text style={styles.statusText}>
-          {label ?? 'Processing'}…{' '}
-          {remote ? '(on your LiquidChat Space)' : '(on-device, keep the app open for best speed)'}
-        </Text>
+        <View style={[ui.row, { gap: 8 }]}>
+          <Text style={[styles.statusText, { flex: 1 }]}>
+            {label ?? 'Processing'}…{' '}
+            {remote ? '(on your LiquidChat Space)' : '(on-device, keep the app open for best speed)'}
+          </Text>
+          {label !== 'Stopping' ? (
+            <Button
+              label="Stop"
+              kind="secondary"
+              small
+              onPress={() => meetingSession.stopProcessing(meeting.id)}
+            />
+          ) : null}
+        </View>
         <ProgressBar value={progress ?? 0} />
       </View>
     );
@@ -356,7 +368,8 @@ function StatusCard({
       <View style={[styles.status, { backgroundColor: '#FFF1E6' }]}>
         <Text style={styles.statusText}>
           {meeting.status === 'interrupted'
-            ? 'This meeting was interrupted (app closed or crashed). Audio on disk is safe.'
+            ? (meeting.error ??
+              'This meeting was interrupted (app closed or crashed). Audio on disk is safe.')
             : `Something went wrong: ${meeting.error ?? 'unknown error'}`}
         </Text>
         <Button
@@ -673,20 +686,12 @@ function SpeakerRenameSheet({
   }, [visible, meeting.speakers]);
 
   const save = async () => {
-    const changed = (meeting.speakers ?? []).some(
-      s => (s.name ?? '') !== (names[s.id] ?? '').trim(),
-    );
-    if (changed) {
-      await meetingStore.update(meeting.id, m => {
-        m.speakers = (m.speakers ?? []).map(s => {
-          const name = (names[s.id] ?? '').trim();
-          if (name === (s.name ?? '')) return s;
-          return name ? { id: s.id, name, nameSource: 'user' } : { id: s.id };
-        });
-      });
-      // Owners in the minutes come from these names, so rewrite them.
-      if (meeting.minutes) meetingSession.processMeeting(meeting.id, { forceMinutes: true });
-    }
+    let changed = false;
+    // Names, owners and the minutes text are updated in place; nothing is processed again.
+    await meetingStore.update(meeting.id, m => {
+      changed = renameSpeakers(m, names);
+    });
+    if (changed && (await getMeetingSettings()).indexForChat) autoIndexer.enqueue(meeting.id);
     onClose();
   };
 
@@ -694,19 +699,18 @@ function SpeakerRenameSheet({
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <KeyboardAvoidingView
         style={styles.backdrop}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior={KEYBOARD_BEHAVIOR}
       >
         <View style={styles.sheet}>
           <ScrollView keyboardShouldPersistTaps="handled">
             <Text style={styles.sheetTitle}>Who is who?</Text>
             <Text style={[ui.body, { marginBottom: 12 }]}>
-              Names apply to every line and to action-item owners. Minutes are rewritten after you
-              save.
+              Names apply at once to every line, the minutes and action-item owners.
             </Text>
             {(meeting.speakers ?? []).map(sp => (
               <Field
                 key={sp.id}
-                label={`Speaker ${sp.id.replace(/^S/, '')}${sp.nameSource === 'auto' ? ' (suggested)' : ''}`}
+                label={`${defaultSpeakerLabel(meeting.speakers, sp.id)}${sp.nameSource === 'auto' ? ' (suggested)' : ''}`}
                 value={names[sp.id] ?? ''}
                 placeholder="Name"
                 onChangeText={t => setNames(n => ({ ...n, [sp.id]: t }))}
@@ -974,7 +978,7 @@ function ActionEditor({
     <Modal visible transparent animationType="slide" onRequestClose={onClose}>
       <KeyboardAvoidingView
         style={styles.backdrop}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior={KEYBOARD_BEHAVIOR}
       >
         <View style={styles.sheet}>
           <Text style={[styles.sheetTitle, { marginBottom: 12 }]}>
