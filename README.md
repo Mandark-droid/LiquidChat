@@ -54,17 +54,20 @@ Most "AI assistants" are a thin client over someone else's GPU. LiquidChat shows
   - Each step is shown in the chat: the goal, 🔧 tools with their arguments, 🧠 reasoning, ✓/✗ and the result.
 - **Skills and routines.** Five built-in skills: meeting prep, morning brief, focus mode, meeting follow-up and end of day. You can also describe a new one in a sentence. Skills are declarative and cannot run code.
 - **MCP servers.** The read-only Hugging Face MCP server is preinstalled. Add any other server in Agent settings.
+- **Voice in and out.** Speak a request, and have replies read aloud in any voice installed on the phone (Settings → Reply voice), at the speed you choose.
 
 ### Meetings
 - **Record, upload or share audio.** A foreground service records 16 kHz audio and transcribes it while the meeting is still going, with Whisper, Parakeet TDT v3 or Moonshine. Language is auto-detected (good with Hindi/English code-switching) and translated to English by default.
-- **Speakers and owners.** Voice fingerprints separate speakers. Names come from introductions. Action-item owners come from who actually said "I'll…".
+- **Speakers and owners.** Voice fingerprints separate speakers. Names come from introductions. Action-item owners come from who actually said "I'll…". Renaming a speaker updates the transcript, minutes and owners at once, without processing the meeting again.
 - **Client-ready minutes.** Summary, decisions, open questions, next steps and action items with real due dates. Export as PDF, Word, Markdown or text, or email them to attendees.
-- **High-accuracy mode on the LiquidChat Space** (optional, free with your HF token): Silero VAD + WeSpeaker diarization, Whisper per speaker turn, and Gemma 4 12B for the minutes. A 52-minute Hinglish meeting takes about 5 minutes. If the Space is unavailable, processing falls back to the phone. Source is in [`space/`](space/).
+- **High-accuracy mode on the LiquidChat Space** (optional, free with your HF token): Silero VAD + WeSpeaker diarization, Whisper per speaker turn, and Gemma 4 12B for the minutes. A 52-minute Hinglish meeting takes about 5 minutes. In this mode the phone only records (no live on-device transcript), so each meeting is processed once. If the Space is unavailable, processing falls back to the phone. Source is in [`space/`](space/).
+- **Stop at any time.** Processing on the phone or on the Space can be stopped from the meeting's status banner; whatever was already transcribed is kept.
 - **Ask about a meeting.** Answers come from the minutes and the passages that match your question.
 
 ### Memory and documents
 - *"Remember that…"* saves a memory immediately. Replies draw on saved memories, similar past conversations, and passages from imported documents and meetings, all embedded on the device with Qwen3-Embedding-0.6B.
 - Indexing runs in the background with capped stores and least-recently-used eviction. Deleting a meeting removes it from the index.
+- **See everything it remembers** in Agent → Memory: *Saved* facts and preferences, the *Conversations* chat can recall, and the *Documents* (meetings and files) chat can search, down to each indexed chunk. Any of them can be forgotten.
 - The embedding model loads only when it fits next to the chat models and is released when idle, so memory never pushes the app over its RAM budget.
 
 ### Tasks, email and the rest
@@ -246,6 +249,8 @@ CI runs `npm run check`, debug builds of both flavors and Android lint.
 
 | Version | Highlights |
 |---|---|
+| **v1.3.1** | Memory screen shows recalled conversations and indexed documents, instant speaker renaming, a Stop button for meeting processing, Space mode no longer transcribes on the phone first, chat input stays above the keyboard on Android 15+, reply-voice picker, fix for telemetry stopping after its settings were saved |
+| **v1.3** | Memory that learns procedures and the user's own words without duplicates, sensitive-memory handling, agent tools matched more strictly, telemetry for retrieval, agent graphs and inference metrics (Arize and any OTLP backend), safer saved export headers |
 | **v1.2** | LiquidChat Space for meetings and larger models, audio export, Q&A that works on real meetings, visible agent plans, memory and RAG with auto-indexing and limits, a 4K prompt window, the *Kept on this phone* insight, OpenTelemetry export |
 | **v1.1** | Streaming chat, task-based routing, Hugging Face MCP, skills from one sentence, speaker identification, upload/share recordings, auto language detection |
 | **v1.0** | Agent runtime with permissions, meetings, tasks, email drafter, memory, skills |
