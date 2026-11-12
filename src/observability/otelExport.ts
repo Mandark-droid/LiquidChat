@@ -135,11 +135,23 @@ export async function saveOtelSettings(
   await applyOtel(s);
 }
 
+let applying: Promise<unknown> = Promise.resolve();
+
 /** Starts or stops export to match the settings. Never throws: telemetry must not break the app. */
-export async function applyOtel(s?: OtelSettings): Promise<boolean> {
+export function applyOtel(s?: OtelSettings): Promise<boolean> {
+  // One at a time: an apply at startup and one from Save must not interleave.
+  const run = applying.then(() => applyOtelNow(s));
+  applying = run;
+  return run;
+}
+
+async function applyOtelNow(s?: OtelSettings): Promise<boolean> {
   try {
     const settings = s ?? (await getOtelSettings());
-    if (isInstrumented()) uninstrument();
+    // Awaited: uninstrument() disables the global tracer and context manager only after its
+    // providers shut down. Not waiting let that land after instrument() below, so every span
+    // (chat included) was a no-op until the app restarted.
+    if (isInstrumented()) await uninstrument();
     if (!settings.enabled || endpointProblem(settings.endpoint)) return false;
     const mirror = settings.mirrorEndpoint?.trim() ?? '';
     instrument({
